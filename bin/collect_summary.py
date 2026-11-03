@@ -45,6 +45,13 @@ positions can be genotyped from the gVCF; prs-table reads pgsc_calc's match
 summary and scores into <sample>_prs_summary.tsv, with the ancestry-adjusted
 percentile and the reference group when pgsc_calc ran with an ancestry panel,
 and then writes the principal components and population of step 26.
+
+  collect_summary.py mito-deletions --eklipse eKLIPse_deletions.csv --out S_chrM_deletions.tsv
+  collect_summary.py mito-copies --idxstats S_idxstats.txt --out S_mtdna_copies.tsv
+
+are step 20's large mtDNA deletions (eKLIPse's CSV as a table) and its mtDNA
+copy number (chrM against autosomal reads per base, from samtools idxstats),
+for scripts/20-mtoolbox.sh and the Nextflow MITO_DELETIONS process.
 """
 import argparse
 import base64
@@ -67,6 +74,7 @@ import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule besid
 import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17's read check reads them
 import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step 22 support join
 import chip_report  # noqa: E402  step 49's detection limit at the median depth
+import traits_report  # noqa: E402  step 42's genotype-rules columns and the rules the traits table holds
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
 # Stranger's status on the repeat loci, the CPIC unclassified count, and the
@@ -384,9 +392,12 @@ def tabix_lines(path, index, chrom, pos):
 
 
 def vep_gnomad_af(vep, hits):
-    """gnomAD exome and genome AF of each hit from step 13's VEP output, as
-    {(chrom, pos, ref, alt): (exome, genome)}; a hit with no record is left
-    out. The fields are VEP's gnomADe_AF and gnomADg_AF (--everything)."""
+    """gnomAD exome and genome AF and the rsIDs of each hit from step 13's VEP
+    output, as {(chrom, pos, ref, alt): (exome, genome, rsids)}; a hit with
+    no record is left out. The fields are VEP's gnomADe_AF, gnomADg_AF and
+    Existing_variation (--everything); rsids keeps the rs ids of
+    Existing_variation ("rs123&COSV1" gives ["rs123"]), sorted, [] without
+    the field."""
     fmt = None
     with open_text(vep) as f:
         for line in f:
@@ -398,6 +409,7 @@ def vep_gnomad_af(vep, hits):
     if not fmt or "Allele" not in fmt:
         return {}
     cols = [fmt.index(c) if c in fmt else None for c in ("gnomADe_AF", "gnomADg_AF")]
+    ev = fmt.index("Existing_variation") if "Existing_variation" in fmt else None
 
     def num(v):
         vals = []
@@ -419,7 +431,7 @@ def vep_gnomad_af(vep, hits):
             # VEP's Allele drops the base an indel's alleles share.
             snv = len(ref) == 1 and all(len(a) == 1 for a in alts)
             allele = alt if snv or any(a[:1] != ref[:1] for a in alts) else (alt[1:] or "-")
-            got = [None, None]
+            got, ids = [None, None], set()
             for tr in info_map(r[7]).get("CSQ", "").split(","):
                 v = tr.split("|")
                 if len(v) != len(fmt) or (len(alts) > 1 and v[fmt.index("Allele")] != allele):
@@ -427,13 +439,17 @@ def vep_gnomad_af(vep, hits):
                 for i, c in enumerate(cols):
                     if c is not None and got[i] is None:
                         got[i] = num(v[c])
-            out[key] = tuple(got)
+                if ev is not None:
+                    ids.update(x.lower() for x in v[ev].split("&") if re.fullmatch(r"(?i)rs\d+", x))
+            out[key] = (got[0], got[1], sorted(ids, key=lambda x: int(x[2:])))
     return out
 
 
 def clinvar_frequencies(d, s, rows):
-    """Put the gnomAD AF from step 13's VEP output on each ClinVar hit, and
-    say where it came from or why there is none."""
+    """Put the gnomAD AF and the rsIDs (rsids, [] when unknown) from step
+    13's VEP output on each ClinVar hit, and say where they came from or why
+    there are none. The hits VCF's ID column is ClinVar's own variation id,
+    not an rsID, so VEP is where a hit's rsID comes from."""
     vep = first_existing(d, [f"vep/{s}_vep.vcf.gz"])
     note = None
     if not vep:
@@ -447,9 +463,10 @@ def clinvar_frequencies(d, s, rows):
         except (OSError, EOFError, ValueError, struct.error, gzip.BadGzipFile, zlib.error) as e:
             note = f"{os.path.relpath(vep, d)} could not be read: {e}"
     for x in rows:
-        e, g = found.get((x["chrom"], x["pos"], x["ref"], x["alt"]), (None, None))
+        e, g, ids = found.get((x["chrom"], x["pos"], x["ref"], x["alt"]), (None, None, []))
         known = [v for v in (e, g) if v is not None]
         x["gnomad_exome_af"], x["gnomad_genome_af"] = e, g
+        x["rsids"] = ids
         x["af"] = max(known) if known else None
         x["common"] = x["af"] is not None and x["af"] > COMMON_AF
     return {"source": os.path.relpath(vep, d) if note is None else None, "note": note, "common_af": COMMON_AF}
@@ -954,7 +971,14 @@ def sec_prs(d, s):
                      # the sex a sex-specific score applies to, and the check against the declared sex
                      "applies_to": r.get("Applies_To", ""), "sex_check": r.get("Sex_Check", ""),
                      "percentile": "" if pct == "NA" else pct,
-                     "group": "" if r.get("Ancestry_Group", "NA") == "NA" else r.get("Ancestry_Group", "")})
+                     "group": "" if r.get("Ancestry_Group", "NA") == "NA" else r.get("Ancestry_Group", ""),
+                     # the groups the PGS Catalog has an OR or HR of the score for, and the
+                     # one of the sample's group ("HR 1.53 (EUR, PPM000591)"); empty in older tables
+                     # None when the table has no Evaluated_In column (a score list without
+                     # evaluations, or an older table): nothing is known, so nothing is said
+                     "evaluated_in": ([x for x in r["Evaluated_In"].split(";") if x]
+                                      if r.get("Evaluated_In") is not None else None),
+                     "effect": r.get("Effect", "") or ""})
     data = {"scores": rows,
             # Percentiles exist only when step 25 ran pgsc_calc with an ancestry panel.
             "adjusted": any(r["percentile"] for r in rows)}
@@ -975,6 +999,10 @@ def sec_prs(d, s):
 PRS_COLUMNS = ["Condition", "PGS_ID", "Score_SUM", "Variants_Matched", "Variants_Total",
                "Matched_Pct", "Percentile", "Ancestry_Group", "ChrX", "Ambiguous", "Applies_To",
                "Sex_Check", "Input"]
+# Written before Input when the score list names PGS Catalog evaluations
+# (ppm_id, ancestry and effect in assets/pgs_scores.tsv): the groups a score
+# was evaluated in, and the effect measured in the sample's group.
+PRS_EFFECT_COLUMNS = ["Evaluated_In", "Effect"]
 # prs-format writes it beside the scores: per score, its chrX rows and
 # whether they were kept (scored) or left out (no sex given).
 CHRX_FILE = "chrx_rows.tsv"
@@ -982,7 +1010,13 @@ CHRX_FILE = "chrx_rows.tsv"
 # to (applies_to of assets/pgs_scores.tsv) and its strand-ambiguous rows (an
 # A/T or C/G pair) with what happened to them.
 SCORE_NOTES_FILE = "score_notes.tsv"
+# prs-format writes it beside the scores as well: per score, the PGS Catalog
+# evaluations of assets/pgs_scores.tsv (pgs_id, ppm_id, ancestry, effect).
+EVALS_FILE = "score_evaluations.tsv"
 SEXES = ("female", "male")
+# The 1000 Genomes groups pgsc_calc places a sample in, which the ancestry
+# column of assets/pgs_scores.tsv names.
+PRS_GROUPS = ("AFR", "AMR", "EAS", "EUR", "SAS")
 # Sex_Check of a sex-specific score: the declared sex is the one it applies
 # to, another one (no percentile then), or none was declared.
 SEX_APPLIES = "applies"
@@ -1032,6 +1066,45 @@ def read_applies_to(path):
             if sex and sex not in SEXES:
                 raise Unreadable(f"{os.path.basename(path)}: applies_to of {pid} is '{sex}', expected female, male or empty")
             out[pid] = sex
+    return out
+
+
+def read_metrics(path):
+    """ID -> [(ancestry, effect, ppm_id), ...]: the PGS Catalog evaluations of
+    each score, from the optional ppm_id, ancestry and effect columns of
+    assets/pgs_scores.tsv (entries separated by ";", in the same order in the
+    three). Raises Unreadable when a row with evaluations has no pgs_id or
+    repeats one, the three lists differ in length, an ancestry is not a 1000
+    Genomes group or appears twice, or an effect is not "OR <number>" or
+    "HR <number>"."""
+    out = {}
+    if not path:
+        return out
+    with open(path, encoding="utf-8") as f:
+        for r in csv.DictReader((line for line in f if not line.startswith("#")), delimiter="\t"):
+            pid = (r.get("pgs_id") or "").strip()
+            cols = [[x.strip() for x in (r.get(k) or "").split(";")] if (r.get(k) or "").strip() else []
+                    for k in ("ppm_id", "ancestry", "effect")]
+            name = os.path.basename(path)
+            if not any(cols):
+                continue
+            if not pid:
+                raise Unreadable(f"{name}: a row has ppm_id, ancestry or effect entries but no pgs_id")
+            if pid in out:
+                raise Unreadable(f"{name}: {pid} has evaluations on two rows")
+            ppm, anc, eff = cols
+            if not (len(ppm) == len(anc) == len(eff)):
+                raise Unreadable(f"{name}: {pid} has {len(ppm)} ppm_id, {len(anc)} ancestry and {len(eff)} effect entries")
+            for p_, a_, e_ in zip(ppm, anc, eff):
+                if a_ not in PRS_GROUPS:
+                    raise Unreadable(f"{name}: ancestry of {pid} is '{a_}', expected one of {', '.join(PRS_GROUPS)}")
+                if not re.fullmatch(r"PPM\d{6}", p_):
+                    raise Unreadable(f"{name}: ppm_id of {pid} is '{p_}', expected PPM and six digits")
+                if not re.fullmatch(r"(OR|HR) \d+(\.\d+)?", e_):
+                    raise Unreadable(f"{name}: effect of {pid} is '{e_}', expected 'OR <number>' or 'HR <number>'")
+            if len(set(anc)) != len(anc):
+                raise Unreadable(f"{name}: {pid} lists an ancestry twice")
+            out[pid] = list(zip(anc, eff, ppm))
     return out
 
 
@@ -1218,6 +1291,7 @@ def prs_format_main(argv):
         return 1
     try:
         applies = read_applies_to(a.labels)
+        metrics = read_metrics(a.labels)
         ref = Fasta(a.reference) if a.keep_ambiguous else None
     except (Unreadable, OSError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
@@ -1262,6 +1336,12 @@ def prs_format_main(argv):
         w.write("pgs_id\tapplies_to\tambiguous_rows\tambiguous\n")
         for pid, sex, n_amb, amb in notes:
             w.write(f"{pid}\t{sex}\t{n_amb}\t{amb}\n")
+    with open(os.path.join(a.out, EVALS_FILE), "w", encoding="utf-8") as w:
+        w.write("pgs_id\tppm_id\tancestry\teffect\n")
+        for pid, *_ in notes:
+            ev = metrics.get(pid)
+            if ev:
+                w.write("\t".join([pid] + [";".join(e[i] for e in ev) for i in (2, 0, 1)]) + "\n")
 
     def key(t):
         return (t[0], int(t[1]) if t[1].isdigit() else 0, t[2])
@@ -1349,12 +1429,17 @@ def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, be
             if n not in ("", "0") and r.get("chrx") == "scored":
                 chrx_scored.add(r.get("pgs_id", ""))
     # "" for a score of both sexes; empty for scores formatted before the file existed
-    applies, ambig = {}, {}
-    if os.path.isfile(os.path.join(scores_dir, SCORE_NOTES_FILE)):
-        for r in read_tsv(os.path.join(scores_dir, SCORE_NOTES_FILE)):
+    applies, ambig, evals = {}, {}, {}
+    notes_path = os.path.join(scores_dir, SCORE_NOTES_FILE)
+    if os.path.isfile(notes_path):
+        for r in read_tsv(notes_path):
             pid, n = r.get("pgs_id", ""), r.get("ambiguous_rows", "")
             applies[pid] = r.get("applies_to", "")
             ambig[pid] = f"{n} {r.get('ambiguous', '')}" if n not in ("", "0") else n
+    # The evaluations prs-format copied from assets/pgs_scores.tsv; none in a
+    # folder formatted before it wrote them.
+    if os.path.isfile(os.path.join(scores_dir, EVALS_FILE)):
+        evals = read_metrics(os.path.join(scores_dir, EVALS_FILE))
     sex = (sex or "").lower()
     matched, sums, pct, group = {}, {}, {}, {}
     pops, rate = {}, {}
@@ -1411,7 +1496,15 @@ def prs_table(results, sampleset, scores_dir, input_kind, zero_matches=False, be
         m, t = matched.get(pid, 0), totals[pid]
         a = applies.get(pid, "")
         check = "" if not a else (SEX_NOT_DECLARED if not sex else (SEX_APPLIES if sex == a else SEX_NOT_APPLICABLE))
-        extra = [chrx.get(pid, ""), ambig.get(pid, ""), a, check, input_kind]
+        ev = evals.get(pid, [])
+        # The effect is printed only for the group pgsc_calc placed the sample
+        # in, and only when that group is one the score was evaluated in: an
+        # odds ratio measured in one ancestry says little about another.
+        g = group.get(pid, "NA")
+        eff = next((f"{e} ({anc}, {ppm})" for anc, e, ppm in ev if anc == g), "")
+        if check == SEX_NOT_APPLICABLE or pct.get(pid, "NA") == "NA" or below_log:
+            eff = ""
+        extra = [chrx.get(pid, ""), ambig.get(pid, ""), a, check, ";".join(x[0] for x in ev), eff, input_kind]
         if below_log:
             rows.append([labels.get(pid, pid), pid, "NA", "NA", str(t), rate.get(pid, "NA"), "NA", "NA"] + extra)
             continue
@@ -1457,10 +1550,14 @@ def prs_table_main(argv):
     except (Unreadable, OSError, ValueError, KeyError, EOFError, csv.Error, zlib.error) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
+    # A score list without evaluations (an older or a custom one) gives the
+    # table its older columns; the shipped list names some, so its table has
+    # Evaluated_In and Effect before Input.
+    evaluated = any(r[12] for r in rows)
     with open(a.out + ".tmp", "w", encoding="utf-8") as f:
-        f.write("\t".join(PRS_COLUMNS) + "\n")
+        f.write("\t".join(PRS_COLUMNS[:-1] + PRS_EFFECT_COLUMNS + PRS_COLUMNS[-1:] if evaluated else PRS_COLUMNS) + "\n")
         for r in rows:
-            f.write("\t".join(r) + "\n")
+            f.write("\t".join(r if evaluated else r[:12] + r[14:]) + "\n")
     os.replace(a.out + ".tmp", a.out)
     if a.ancestry_out and ancestry:
         with open(a.ancestry_out + ".tmp", "w") as f:
@@ -1474,6 +1571,8 @@ def prs_table_main(argv):
             extra = f", {r[10]}-specific: {SEX_NOT_APPLICABLE}, no percentile"
         elif r[11] == SEX_NOT_DECLARED:
             extra += f", {r[10]}-specific score: {SEX_NOT_DECLARED}"
+        if r[13]:
+            extra += f", effect in that group {r[13]}"
         if r[3] == "NA":
             print(f"  {r[0]} ({r[1]}): no sum, under pgsc_calc's minimum overlap ({r[5]}% of {r[4]} variants matched)")
         else:
@@ -1661,8 +1760,15 @@ def sec_annotsv(d, s):
                     "support_callers": sp["Support_callers"].split(",") if sp["Support_callers"] else [],
                     "exon_edge": r["Exon_edge"], "exon_edge_detail": r.get("Exon_edge_detail") or "",
                     "population_af": af, "population_source": r.get("Population_source") or "",
-                    "common": r["Common"] == "yes"})
-    return p, {"count": len(out), "rows": out,
+                    "common": r["Common"] == "yes", "annotsv_class": r.get("AnnotSV_class") or r["ACMG_class"],
+                    "rule": r.get("Rule") or "", "rule_detail": r.get("Rule_detail") or ""})
+    # A call step 05's rules moved from AnnotSV's class 4 or 5 to class 3
+    # (bin/annotsv_postfilter.py: a coding tandem repeat, an IG/TR locus, the
+    # MHC, a pseudogene alias, no read-depth support) is listed apart with
+    # the reason, and the class 4-5 counts leave it out.
+    moved = [x for x in out if str(x["acmg_class"]) not in ("4", "5")]
+    out = [x for x in out if str(x["acmg_class"]) in ("4", "5")]
+    return p, {"count": len(out), "rows": out, "downgraded": moved,
                "consensus": os.path.relpath(cons, d) if cons else None, "consensus_note": cons_note,
                "single_caller": sum(x["support"] == 1 for x in out),
                "exon_edge": sum(x["exon_edge"] == "yes" for x in out),
@@ -1745,6 +1851,39 @@ def rfc1_motif_row(d, s, after):
                                        "dominant_share", "motif_shares", "repeat_reads")}
 
 
+def str_motif_rows(d, s, after):
+    """Step 9b's motif count of the other flagged motif loci (the FAME loci,
+    SCA31, SCA37; expansion_hunter/<id>_str_motifs.tsv, bin/rfc1_motif.py
+    --flagged) by locus, unless the table is older than the Stranger file it
+    was made from."""
+    p = first_existing(d, [f"expansion_hunter/{s}_str_motifs.tsv"])
+    if not p or (after and os.path.getmtime(p) < os.path.getmtime(after)):
+        return {}
+    return {r["locus"]: {k: r.get(k, ".") for k in ("verdict", "note", "dominant_motif", "dominant_class",
+                                                    "dominant_share", "motif_shares", "repeat_reads")}
+            for r in read_tsv(p) if r.get("locus")}
+
+
+def str_not_graded(d, s):
+    """{locus: reason} of the loci the catalog ExpansionHunter ran on gives no
+    thresholds (its NoThresholds field, bin/strchive_convert.py: MUC1, CEL,
+    TYMS and PLIN4 among them), from the copy step 09 keeps beside its VCF
+    (expansion_hunter/<id>_eh_catalog.json). Empty without the copy, or with
+    one that is not a catalog (Stranger's bundled catalog has no such loci)."""
+    p = first_existing(d, [f"expansion_hunter/{s}_eh_catalog.json"])
+    if not p:
+        return {}
+    try:
+        with open(p, encoding="utf-8") as f:
+            cat = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(cat, list):
+        return {}
+    return {e["LocusId"]: str(e["NoThresholds"]) for e in cat
+            if isinstance(e, dict) and e.get("LocusId") and e.get("NoThresholds")}
+
+
 def sec_expansions(d, s):
     eh = first_existing(d, [f"expansion_hunter/{s}_eh.vcf", f"expansion_hunter/{s}.vcf",
                             "expansion_hunter/*_eh.vcf"])
@@ -1760,7 +1899,9 @@ def sec_expansions(d, s):
         return None, {}
     ranges = str_ranges()
     rfc1 = rfc1_motif_row(d, s, st) if st else None
-    loci, tested, flagged, no_status = [], 0, [], 0
+    motifs = str_motif_rows(d, s, st) if st else {}
+    ungraded = str_not_graded(d, s) if st else {}
+    loci, tested, flagged, no_status, not_graded = [], 0, [], 0, []
     for r in vcf_records(p):
         if len(r) < 10:
             continue
@@ -1793,17 +1934,26 @@ def sec_expansions(d, s):
             item["rfc1_motif"] = rfc1 or {"verdict": "not_checked",
                                           "note": "no motif count beside Stranger's output (step 9b runs it "
                                                   "with the sample's BAM): confirm the flag with repeat-primed PCR"}
+        if rep != "RFC1" and rep in motifs and any(x != "normal" for x in status):
+            item["motif"] = motifs[rep]
+        if st and not status and rep in ungraded:
+            item["not_graded"] = ungraded[rep]
         loci.append(item)
         if st:
             # One value per record, the most severe of normal, pre_mutation and
             # full_mutation; a locus outside Stranger's catalog has none.
-            if not status:
+            if not status and "not_graded" in item:
+                if rep not in not_graded:
+                    not_graded.append(rep)
+            elif not status:
                 no_status += 1
             elif any(x != "normal" for x in status):
                 f = {"locus": item["locus"], "repeat_count": item["repeat_count"], "status": item["status"],
                      "sizing": item["sizing"]}
                 if "rfc1_motif" in item:
                     f["rfc1_motif"] = item["rfc1_motif"]
+                if "motif" in item:
+                    f["motif"] = item["motif"]
                 flagged.append(f)
     by = {l["locus"]: l for l in loci}
     # Every locus, the five key loci first, then by name.
@@ -1814,7 +1964,9 @@ def sec_expansions(d, s):
            "unsized": [l["locus"] for l in loci if l["sizing"] not in ("sized", "unknown")],
            "intermediate": [l["locus"] for l in loci if l["zone"]]}
     if st:
-        out.update(flagged=flagged, no_status=no_status)
+        # not_graded: {locus: why} of the loci the catalog gives no thresholds,
+        # so Stranger gives them no status: not graded, never normal.
+        out.update(flagged=flagged, no_status=no_status, not_graded={k: ungraded[k] for k in not_graded})
     return p, out
 
 
@@ -2029,7 +2181,7 @@ def sec_roh(d, s):
 # "Explore your branch further"): FamilyTreeDNA Discover answers its own
 # HaplogroupSearch for R-M269 and H5a7, and YFull's tree pages answer 200 for
 # a branch it has and 404 for one it does not.
-EXPLORE_DOCS = "https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/docs/"
+EXPLORE_DOCS = "https://github.com/GeiserX/OwnGenome/blob/main/docs/"
 
 
 def haplogroup_explore(kind, hg):
@@ -2351,7 +2503,28 @@ def sec_traits(d, s):
     apoe = [r for r in keep if r["gene"] == "APOE"]
     counts = {st: sum(1 for r in keep if r["status"] == st and r["gene"] != "APOE")
               for st in ("called", "not_covered", "other_allele")}
-    return p, {"rows": [r for r in keep if r["gene"] != "APOE"], "apoe": apoe, **counts}
+    return p, {"rows": [r for r in keep if r["gene"] != "APOE"], "apoe": apoe, **counts,
+               "rules": genotype_rules(d, s)}
+
+
+def genotype_rules(d, s):
+    """Step 42's genotype rules (traits/<id>_genotype_rules.tsv): one line per
+    rule that reads several sites together (TAS2R38's haplotypes), or None
+    when the table is not there (a run from before the rules). The rules
+    whose line the traits table already holds (APOE) are left out, so the
+    reports keep folding APOE away."""
+    p = first_existing(d, [f"traits/{s}_genotype_rules.tsv"])
+    if not p:
+        return None
+    with open(p, encoding="utf-8", errors="replace") as f:
+        rows = list(csv.DictReader(f, delimiter="\t", quoting=csv.QUOTE_NONE))
+    need = traits_report.RULE_OUT_COLUMNS
+    if rows and any(k not in rows[0] for k in need):
+        raise Unreadable(f"{os.path.basename(p)} lacks a column of {', '.join(need)}")
+    bad = next((i for i, r in enumerate(rows, 2) if None in r or any(r.get(k) is None for k in need)), None)
+    if bad:
+        raise Unreadable(f"{os.path.basename(p)} line {bad} does not have one field per column")
+    return [{k: r[k] for k in need} for r in rows if r["rule"] not in traits_report.TRAITS_TABLE_RULES]
 
 
 def sec_carrier(d, s):
@@ -2563,6 +2736,215 @@ def mito_annotate_main(argv):
     return 0
 
 
+# --- step 20: large mtDNA deletions (eKLIPse) and the mtDNA copy number ----------
+
+# <id>_chrM_deletions.tsv: eKLIPse's eKLIPse_deletions.csv, one row per
+# deletion. bkp5 and bkp3 are its 5' and 3' breakpoints as it writes them: the
+# last rCRS base kept before the deletion and the first one kept after it, so
+# the deleted bases are bkp5+1 to bkp3-1 (across the origin, m.16569 to m.1,
+# when bkp3 is the smaller). level is the share of the mtDNA
+# molecules with the deletion (in %), the mean of the forward and reverse
+# strand estimates.
+MITO_DEL_COLS = ["bkp5", "bkp3", "length", "level_pct", "level_fwd_pct", "level_rev_pct", "blast_5", "blast_3",
+                 "depth_5", "depth_3", "repeat"]
+# A deletion of assets/mito_confirmed.tsv is named when both breakpoints lie
+# within this many bases of its own: a deletion between two direct repeats
+# can be written anywhere along them (the common one's repeats are 13 bp).
+MITO_DEL_TOLERANCE = 50
+# The report lists every named deletion and any other at this level or more;
+# the rest are counted.
+MITO_DEL_LIST_PCT = 1.0
+MITO_LENGTH = 16569  # the rCRS, GRCh38's chrM
+# The mtDNA copy number: chrM depth over autosomal depth, from the read counts
+# of the BAM index (samtools idxstats), times 2 for the two nuclear copies.
+# Under this many reads per kb of autosome (about 3x at 150 bp) the BAM is a
+# slice, a panel or a shallow genome, and the ratio would mean nothing. An
+# exome can pass the floor and is not told apart from a genome here: the
+# number is meant for whole-genome BAMs (docs/20-mtoolbox.md).
+MITO_CN_MIN_READS_PER_KB = 20
+MITO_CN_COLS = ["status", "reason", "chrm_reads", "chrm_length", "autosomal_reads", "autosomal_length",
+                "depth_ratio", "mtdna_copies"]
+
+
+def _eklipse_num(x):
+    v = float(x.replace(",", "."))
+    if not math.isfinite(v):
+        raise ValueError(f"{x!r} is not a number")
+    return v
+
+
+def eklipse_deletions(path):
+    """The rows of eKLIPse's eKLIPse_deletions.csv (';' between fields, each
+    quoted, a comma for the decimal point), as MITO_DEL_COLS dicts."""
+    with open(path, errors="replace", newline="") as f:
+        rows = [r for r in csv.reader(f, delimiter=";", quotechar='"') if r]
+    if not rows or rows[0][:3] != ["Title", "5' breakpoint", "3' breakpoint"]:
+        raise ValueError(f"{path}: not eKLIPse's deletions table (header {rows[0][:3] if rows else 'missing'})")
+    out = []
+    for r in rows[1:]:
+        if len(r) < 11:
+            raise ValueError(f"{path}: a row with {len(r)} fields, want 11: {';'.join(r)}")
+        b5, b3 = int(r[1]), int(r[2])
+        out.append({"bkp5": b5, "bkp3": b3, "length": b3 - b5 - 1 if b3 > b5 else MITO_LENGTH - b5 + b3 - 1,
+                    "level_pct": round(_eklipse_num(r[3]), 3), "level_fwd_pct": round(_eklipse_num(r[4]), 3),
+                    "level_rev_pct": round(_eklipse_num(r[5]), 3), "blast_5": int(r[6]), "blast_3": int(r[7]),
+                    "depth_5": int(_eklipse_num(r[8])), "depth_3": int(_eklipse_num(r[9])), "repeat": r[10] or "none"})
+    return out
+
+
+def mito_deletions_main(argv):
+    ap = argparse.ArgumentParser(prog="collect_summary.py mito-deletions",
+                                 description="Write step 20's large-deletion table from eKLIPse's deletions CSV.")
+    ap.add_argument("--eklipse", required=True, help="eKLIPse's eKLIPse_deletions.csv")
+    ap.add_argument("--out", required=True, help="<sample>_chrM_deletions.tsv")
+    a = ap.parse_args(argv)
+    try:
+        rows = eklipse_deletions(a.eklipse)
+    except (OSError, ValueError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    tmp = a.out + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\t".join(MITO_DEL_COLS) + "\n")
+        for r in rows:
+            f.write("\t".join("." if r[c] is None else str(r[c]) for c in MITO_DEL_COLS) + "\n")
+    os.replace(tmp, a.out)
+    print(f"  {len(rows)} large deletions (eKLIPse)")
+    return 0
+
+
+def mito_copies(idxstats):
+    """The mtDNA copy number block from `samtools idxstats` text: chrM reads
+    per base over autosomal reads per base, times 2."""
+    chrm = None
+    auto_reads = auto_len = 0
+    for line in idxstats.splitlines():
+        c = line.split("\t")
+        if len(c) < 3 or c[0] == "*":
+            continue
+        name, length, mapped = c[0], int(c[1]), int(c[2])
+        if name in ("chrM", "MT"):
+            chrm = (mapped, length)
+        elif re.fullmatch(r"(chr)?([1-9]|1[0-9]|2[0-2])", name):
+            auto_reads += mapped
+            auto_len += length
+    b = dict.fromkeys(MITO_CN_COLS)
+    b.update(status="not assessed", autosomal_reads=auto_reads, autosomal_length=auto_len)
+    if chrm:
+        b.update(chrm_reads=chrm[0], chrm_length=chrm[1])
+    if not chrm or not chrm[0] or not chrm[1]:
+        b["reason"] = "no_chrM_reads"
+    elif not auto_len or auto_reads / auto_len * 1000 < MITO_CN_MIN_READS_PER_KB:
+        b["reason"] = "low_autosomal_depth"
+    else:
+        ratio = (chrm[0] / chrm[1]) / (auto_reads / auto_len)
+        b.update(status="called", depth_ratio=round(ratio, 3), mtdna_copies=round(2 * ratio, 1))
+    return b
+
+
+def mito_copies_main(argv):
+    ap = argparse.ArgumentParser(prog="collect_summary.py mito-copies",
+                                 description="Write step 20's mtDNA copy number from samtools idxstats.")
+    ap.add_argument("--idxstats", required=True, help="samtools idxstats of the whole BAM")
+    ap.add_argument("--out", required=True, help="<sample>_mtdna_copies.tsv")
+    a = ap.parse_args(argv)
+    try:
+        with open(a.idxstats, errors="replace") as f:
+            b = mito_copies(f.read())
+    except (OSError, ValueError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    tmp = a.out + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("metric\tvalue\n")
+        f.write("".join(f"{k}\t{'.' if b[k] is None else b[k]}\n" for k in MITO_CN_COLS))
+    os.replace(tmp, a.out)
+    print(f"  mtDNA copy number: {b['mtdna_copies'] if b['status'] == 'called' else 'not assessed (' + b['reason'] + ')'}")
+    return 0
+
+
+def mito_confirmed():
+    """(SNVs {(pos, ref, alt): row}, deletions [row]) of assets/mito_confirmed.tsv."""
+    snv, dels = {}, []
+    for r in asset_rows("mito_confirmed.tsv"):
+        if r["kind"] == "snv":
+            snv[(int(r["pos"]), r["ref"], r["alt"])] = r
+        elif r["kind"] == "deletion":
+            dels.append(r)
+    return snv, dels
+
+
+def known_deletion(row, dels):
+    """The deletion of assets/mito_confirmed.tsv a called deletion is, or None."""
+    for k in dels:
+        if abs(row["bkp5"] + 1 - int(k["pos"])) <= MITO_DEL_TOLERANCE \
+                and abs(row["bkp3"] - 1 - int(k["end"])) <= MITO_DEL_TOLERANCE:
+            return k
+    return None
+
+
+def _confirmed_fields(k):
+    return {"hgvs": k["hgvs"], "gene": k["gene"], "disease": k["disease"], "clinvar_id": k["clinvar_id"],
+            "pmids": k["pmids"], "note": k["heteroplasmy_note"]}
+
+
+def mito_extended(d, s, vcf):
+    """Step 20's confirmed variants (assets/mito_confirmed.tsv) among the chrM
+    calls, its large deletions and the mtDNA copy number."""
+    out = {}
+    try:
+        snv, dels = mito_confirmed()
+    except Unreadable as e:
+        snv, dels = None, []
+        out["confirmed_note"] = str(e)
+    confirmed = []
+    for r in vcf_records(vcf) if snv is not None else ():
+        if len(r) < 8:
+            continue
+        fmt = r[8].split(":") if len(r) > 9 else []
+        val = r[9].split(":") if len(r) > 9 else []
+        afs = val[fmt.index("AF")].split(",") if "AF" in fmt and fmt.index("AF") < len(val) else []
+        for i, alt in enumerate(r[4].split(",")):
+            k = snv.get(min_allele(int(r[1]), r[3], alt))
+            if k:
+                confirmed.append(_confirmed_fields(k) | {"pos": int(k["pos"]), "filter": r[6],
+                                                         "af": afs[i] if i < len(afs) else "."})
+    if snv is not None:
+        out["confirmed"] = confirmed
+    p = first_existing(d, [f"mito/{s}_chrM_deletions.tsv"])
+    if not p:
+        out["deletions_note"] = ("no deletion table (mito/<id>_chrM_deletions.tsv): step 20 ran before it looked "
+                                 "for large deletions, eKLIPse wrote no table (see the step's log), or the Nextflow "
+                                 "MITO_DELETIONS task failed (see the Nextflow log)")
+    else:
+        with open(p, errors="replace") as f:
+            rows = list(csv.DictReader(f, delimiter="\t"))
+        listed = []
+        for r in rows:
+            row = {"bkp5": int(r["bkp5"]), "bkp3": int(r["bkp3"]),
+                   "length": None if r["length"] == "." else int(r["length"]), "level_pct": float(r["level_pct"])}
+            k = known_deletion(row, dels)
+            if k or row["level_pct"] >= MITO_DEL_LIST_PCT:
+                listed.append(row | ({"known": _confirmed_fields(k)} if k else {}))
+        out["deletions"] = {"source": os.path.relpath(p, d), "total": len(rows), "listed": listed,
+                            "list_floor_pct": MITO_DEL_LIST_PCT}
+    p = first_existing(d, [f"mito/{s}_mtdna_copies.tsv"])
+    if p:
+        m = dict(read_tsv_pairs(p))
+        out["copies"] = {k: (None if m.get(k) in (None, ".") else m[k]) for k in MITO_CN_COLS}
+    else:
+        out["copies_note"] = ("no copy-number table (mito/<id>_mtdna_copies.tsv): step 20 ran before it counted "
+                              "mtDNA copies, or the Nextflow MITO_DELETIONS task failed (see the Nextflow log)")
+    return out
+
+
+def read_tsv_pairs(path):
+    """[(metric, value)] of a two-column table with a header line."""
+    with open(path, errors="replace") as f:
+        lines = [ln.rstrip("\n").split("\t") for ln in f if ln.strip()]
+    return [(c[0], c[1]) for c in lines[1:] if len(c) >= 2]
+
+
 def mito_annotation(d, s, vcf):
     """Step 20's annotation table, as the report lists it, or a note on why
     there is none."""
@@ -2631,7 +3013,7 @@ def sec_mito(d, s):
                           | {"polyc": in_polyc(int(r["pos"]), r["ref"], r["alt"])})
     if "source" in ann:
         ann.update(variants=listed, clinvar_plp=plp)
-    return p, {"pass": passed, "heteroplasmic": het, "heteroplasmic_sites": sites, "heteroplasmy_floor": 0.05,
+    return p, {**mito_extended(d, s, p), "pass": passed, "heteroplasmic": het, "heteroplasmic_sites": sites, "heteroplasmy_floor": 0.05,
                "polyc_heteroplasmic": polyc,
                "polyc_tracts": [f"m.{a}-{b}" for a, b in POLYC_TRACTS], "annotation": ann}
 
@@ -3225,6 +3607,59 @@ def sec_coverage(d, s):
     return p, {"mean_depth": float(mean) if mean not in (None, "") else None}
 
 
+# A gene of assets/callability_genes.tsv counts as read when at least this
+# share of its bases has the depth step 16b counts (its thresholds column,
+# 10x of reads with MAPQ 20 or more).
+CALLABLE_SHARE = 0.9
+
+
+def callability(catalog, table):
+    """The reading of every gene of the catalog rows from step 16b's per-gene
+    table (mosdepth --thresholds over the catalog's genes: chrom, start, end,
+    gene, bases at the threshold), as the section's data."""
+    with open_text(table) as f:
+        lines = [x.rstrip("\n").split("\t") for x in f if x.strip()]
+    if not lines or not lines[0][0].startswith("#") or len(lines[0]) != 5 \
+            or not re.fullmatch(r"[0-9]+X", lines[0][4]):
+        raise Unreadable(f"{os.path.basename(table)} is not mosdepth's thresholds table of one depth")
+    min_depth = int(lines[0][4][:-1])
+    bases = {}
+    for c in lines[1:]:
+        if len(c) != 5:
+            raise Unreadable(f"{os.path.basename(table)}: a row has {len(c)} columns, not 5")
+        bases[c[3]] = (int(c[2]) - int(c[1]), int(c[4]))
+    genes, unowned, owned, not_on_reference = [], [], [], []
+    for r in catalog:
+        g = {"gene": r["gene"], "hgnc_id": r["hgnc_id"], "reasons": r["reasons"].split(","),
+             "owner": None if r["owner"] == "." else r["owner"], "share": None}
+        if r["start"] == ".":
+            g["status"] = "not on this reference"
+            not_on_reference.append(g["gene"])
+        else:
+            if r["gene"] not in bases:
+                raise Unreadable(f"{os.path.basename(table)} has no row for {r['gene']}: it was written from "
+                                 "another assets/callability_genes.tsv; run step 16b again")
+            n, ok = bases[r["gene"]]
+            g["share"] = round(ok / n, 4) if n else 0.0
+            g["status"] = "read" if g["share"] >= CALLABLE_SHARE else "not read"
+        genes.append(g)
+        if g["status"] != "read":
+            (owned if g["owner"] else unowned).append(g)
+    return {"min_depth": min_depth, "min_mapq": 20, "min_share": CALLABLE_SHARE, "catalog_genes": len(genes),
+            "read": sum(1 for g in genes if g["status"] == "read"),
+            "not_read": [{k: g[k] for k in ("gene", "hgnc_id", "reasons", "share", "status")} for g in unowned],
+            "not_read_owned": [{k: g[k] for k in ("gene", "owner", "share", "status")} for g in owned],
+            "not_on_reference": not_on_reference}
+
+
+def sec_callability(d, s):
+    """Step 16b's gene callability (the MOSDEPTH task's in a Nextflow folder)."""
+    p = first_existing(d, [f"mosdepth/{s}_callability.bed.gz", f"coverage/{s}_callability.bed.gz"])
+    if not p:
+        return None, {}
+    return p, callability(asset_rows("callability_genes.tsv"), p)
+
+
 # How far a chrX or chrY copy number may sit from a whole number and still be
 # read as that number. Further off (a mosaic, a mixed sample, a noisy run)
 # names no karyotype.
@@ -3459,6 +3894,7 @@ NOT_A_STEP = {"read_count", "couple", "carrier"}
 SECTIONS = [
     # key, title, step, reader
     ("coverage", "Coverage (mosdepth)", "16b", sec_coverage),
+    ("callability", "Gene callability (mosdepth)", "16b", sec_callability),
     ("sex_check", "Sex check (indexcov)", "16", sec_sex_check),
     ("sample_qc", "Sample identity and contamination (somalier, VerifyBamID2)", "33", sec_sample_qc),
     ("mosaic_sex_loss", "Mosaic loss of chromosome Y or X", "33", sec_mosaic_sex_loss),
@@ -3730,6 +4166,10 @@ def main(argv=None):
         return prs_table_main(argv[1:])
     if argv[:1] == ["mito-annotate"]:
         return mito_annotate_main(argv[1:])
+    if argv[:1] == ["mito-deletions"]:
+        return mito_deletions_main(argv[1:])
+    if argv[:1] == ["mito-copies"]:
+        return mito_copies_main(argv[1:])
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--sample", required=True)
     ap.add_argument("--sample-dir", required=True)

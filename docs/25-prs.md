@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Scores you for 13 common conditions and traits with the PGS Catalog's own calculator, [pgsc_calc](https://github.com/PGScatalog/pgsc_calc). Each polygenic score adds up the small effects of hundreds to millions of variants into one number. With the ancestry reference panel installed, each score is also given as a **percentile**: where your score falls among the reference samples whose genetic ancestry is most similar to yours. Without the panel the step reports the raw sum and says "raw score only", because a raw sum from one person cannot be compared with anyone.
+Scores you for 15 common conditions and traits with the PGS Catalog's own calculator, [pgsc_calc](https://github.com/PGScatalog/pgsc_calc). Each polygenic score adds up the small effects of hundreds to millions of variants into one number. With the ancestry reference panel installed, each score is also given as a **percentile**: where your score falls among the reference samples whose genetic ancestry is most similar to yours. Without the panel the step reports the raw sum and says "raw score only", because a raw sum from one person cannot be compared with anyone. With the panel, a score that a published study evaluated in your reference group also shows that study's **effect**: the odds or hazard ratio it measured, with the PGS Catalog id of the evaluation.
 
 ## Why
 
@@ -21,7 +21,7 @@ pgsc_calc runs its steps in these images, all pinned in `versions.env`: `PGSC_UT
 
 - VCF from DeepVariant (step 3): `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz`
 - gVCF from DeepVariant (step 3), when present: `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz`. The score positions are genotyped from it, so sites where you match the reference count.
-- The scores of [`assets/pgs_scores.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pgs_scores.tsv), downloaded by `setup.sh` into `${GENOME_DIR}/prs_scores/`.
+- The scores of [`assets/pgs_scores.tsv`](https://github.com/GeiserX/OwnGenome/blob/main/assets/pgs_scores.tsv), downloaded by `setup.sh` into `${GENOME_DIR}/prs_scores/`.
 - Optional: the ancestry reference panel, `${GENOME_DIR}/reference/pgsc_calc/pgsc_1000G_v1.tar.zst` with its site list beside it (`scripts/setup.sh --ancestry-panel <genome_dir>`): 7.4 GB, and about 23 GB of disk while pgsc_calc uses it (measured below).
 - Java 17+ and Nextflow on the host, as for `run-all.sh`.
 
@@ -41,7 +41,7 @@ PRS_KEEP_AMBIGUOUS=true ./scripts/25-prs.sh your_name male   # opt-in: keep the 
 
 ## Conditions Scored
 
-The list is [`assets/pgs_scores.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pgs_scores.tsv). Each label is the `trait_reported` value the [PGS Catalog REST API](https://www.pgscatalog.org/rest/) returns for that score; `scripts/ci/check-pgs-labels.sh` compares the two, so an ID cannot be printed under the wrong disease.
+The list is [`assets/pgs_scores.tsv`](https://github.com/GeiserX/OwnGenome/blob/main/assets/pgs_scores.tsv). Each label is the `trait_reported` value the [PGS Catalog REST API](https://www.pgscatalog.org/rest/) returns for that score; `scripts/ci/check-pgs-labels.sh` compares the two, so an ID cannot be printed under the wrong disease.
 
 | Condition (PGS Catalog trait) | PGS ID | Variants | Publication |
 |---|---|---|---|
@@ -58,17 +58,51 @@ The list is [`assets/pgs_scores.tsv`](https://github.com/GeiserX/Personal-Genome
 | LDL cholesterol | [PGS000065](https://www.pgscatalog.org/score/PGS000065/) | 103 | Kuchenbaecker et al. 2019, Nat Commun |
 | HDL cholesterol | [PGS000064](https://www.pgscatalog.org/score/PGS000064/) | 120 | Kuchenbaecker et al. 2019, Nat Commun |
 | Triglycerides (TG) | [PGS000066](https://www.pgscatalog.org/score/PGS000066/) | 101 | Kuchenbaecker et al. 2019, Nat Commun |
+| Asthma | [PGS002727](https://www.pgscatalog.org/score/PGS002727/) | 985,837 | Namjou et al. 2022, J Allergy Clin Immunol |
+| Height | [PGS002802](https://www.pgscatalog.org/score/PGS002802/) | 1,103,042 | Yengo et al. 2022, Nature |
 
 The blood pressure score comes from a GWAS of over a million people and has been evaluated by four other publications in the catalog. The three lipid scores come from a study of how lipid loci transfer across ancestries: they were evaluated in five cohorts of three ancestries. All four are GRCh38-harmonised, additive and on the autosomes only.
 
+The asthma score is the one the eMERGE network chose for its asthma result (Lennon et al. 2024, Nat Med, [PMID 38374346](https://pubmed.ncbi.nlm.nih.gov/38374346/), Supplementary Table 3). Height is there as a check of the engine on a trait everyone has and that is easy to measure; its evaluations in the catalog report no odds or hazard ratio, so it shows no effect. eMERGE's chronic kidney disease and type 1 diabetes scores are not in the list. Its kidney model is the Khan et al. 2022 score ([PGS002237](https://www.pgscatalog.org/score/PGS002237/)) plus a recessive APOL1 term, so it cannot be scored as published from additive weights alone. Its type 1 diabetes score starts from [PGS000024](https://www.pgscatalog.org/score/PGS000024/), whose file holds HLA interaction terms. This pipeline scores additive weights only, so it cannot score either one.
+
 The third column of the file, `applies_to`, names the sex a score was built for: `female` for PGS000004 (breast cancer), `male` for PGS000662 (prostate cancer), empty for the rest. When you declare the other sex, the score keeps its raw sum and gets no percentile, and its `Sex_Check` says `not applicable to the declared sex`. A percentile of breast cancer for a man, or prostate cancer for a woman, would read as a risk the score was never built to give. Without a declared sex the two scores are reported as usual, with `Sex_Check` `no sex declared` and a line in the reports.
+
+### Effect sizes and the ancestry they were measured in
+
+A polygenic score is built and tested mostly in one ancestry, and its effect in other ancestries can be smaller or larger. The PGS Catalog records each published evaluation of a score as a performance metric with its own id (PPM), the samples it was measured in and the effect it found. The last three columns of the file name the evaluations the reports use, one per ancestry, in the same order in each column:
+
+- `ppm_id`: the evaluations, for example `PPM000591;PPM000594;PPM000597` for PGS000018.
+- `ancestry`: the 1000 Genomes group each was measured in, as pgsc_calc names your reference group: `EUR;AFR;AMR`. The catalog's broad ancestry terms map to them as "European" to EUR; "African unspecified", "African American or Afro-Caribbean" and "Sub-Saharan African" to AFR; "Hispanic or Latin American" to AMR; "East Asian" to EAS; "South Asian" to SAS. An evaluation in mixed, unreported or other ancestries is not used.
+- `effect`: the odds ratio (OR) or hazard ratio (HR) the catalog records for it: `HR 1.53;HR 1.27;HR 1.53`. It is in the unit the evaluation used. Open the PPM on the catalog (https://www.pgscatalog.org/rest/performance/PPM000591, or the score's page) to read it.
+
+The evaluations used today:
+
+| Score | Evaluations (ancestry, effect) | Publication |
+|---|---|---|
+| PGS000018, coronary artery disease | PPM000591 (EUR, HR 1.53), PPM000594 (AFR, HR 1.27), PPM000597 (AMR, HR 1.53) | Dikilitas et al. 2020, Am J Hum Genet |
+| PGS000014, type 2 diabetes | PPM021437 (EUR, OR 1.71), PPM021589 (AFR, OR 1.27), PPM021615 (EAS, OR 1.28), PPM021635 (SAS, OR 1.48) | Ritchie et al. 2024, medRxiv (preprint) |
+| PGS000004, breast cancer | PPM000004 (EUR, OR 1.61) | Mavaddat et al. 2018, Am J Hum Genet |
+| PGS000662, prostate cancer | PPM022982 (EUR, HR 1.72), PPM015482 (AFR, OR 1.86) | Liu et al. 2024; Kim et al. 2022 |
+| PGS000016, atrial fibrillation | PPM014988 (EUR, HR 1.4) | Marston et al. 2022 |
+| PGS000334, late-onset Alzheimer's disease | PPM022981 (EUR, HR 1.93) | Liu et al. 2024 |
+| PGS002727, asthma | PPM014751 (EUR, OR 1.57), PPM014752 (AFR, OR 1.43), PPM014753 (AMR, OR 1.63), PPM014754 (EAS, OR 1.32), PPM014755 (SAS, OR 1.32) | Namjou et al. 2022, J Allergy Clin Immunol |
+
+The other eight have none (checked on 2026-11-03). BMI, blood pressure, the lipids and height are measurements: their scores are evaluated with a beta or a variance explained, and an odds ratio for a related diagnosis (obesity, hypertension) is not the effect on the trait the score measures, so none is used. The catalog has no OR or HR evaluation of PGS000017 (inflammatory bowel disease) or PGS000055 (colorectal cancer).
+
+`scripts/ci/check-pgs-labels.sh` asks https://www.pgscatalog.org/rest/performance/<ppm_id> for every entry. The check fails when the PPM id does not exist, belongs to another score, was measured in another ancestry, or does not report that OR or HR. The reports print an effect only when pgsc_calc placed you in a group the score was evaluated in. An odds ratio measured in Europeans says little about a person of East Asian ancestry, so a sample placed in EAS gets "no published OR or HR for EAS" for PGS000018 instead. The effect describes the score in that group; it is not your own risk. Without the panel there is no group, so no effect is shown.
 
 There is no schizophrenia score yet. An earlier version listed PGS000738 as schizophrenia, but that score is for vitiligo; a schizophrenia row comes back only once a score is chosen from the catalog and checked against the API.
 
-To add a score, add a line to `assets/pgs_scores.tsv` with the label the API gives, and `female` or `male` in the third column when the score is for one sex only:
+To add a score, add a line to `assets/pgs_scores.tsv` with the label the API gives, `female` or `male` in the third column when the score is for one sex only, and its evaluations when it has some:
 
 ```bash
 curl -s https://www.pgscatalog.org/rest/score/PGS000017 | jq -r '.trait_reported, .variants_number'
+url='https://www.pgscatalog.org/rest/performance/search?pgs_id=PGS000017'
+while [ -n "$url" ] && [ "$url" != null ]; do   # the answer comes in pages; follow each next link
+  page=$(curl -s "$url")
+  jq -r '.results[] | [.id, ([.sampleset.samples[].ancestry_broad] | join("; ")), ([.performance_metrics.effect_sizes[] | "\(.name_short) \(.estimate)"] | join("; "))] | @tsv' <<<"$page"
+  url=$(jq -r '.next' <<<"$page")
+done
 ```
 
 Only additive scores are accepted (no `dosage_*_weight` columns, no `is_dominant` or `is_recessive` rows); step 25 stops on any other.
@@ -94,7 +128,7 @@ Which docker flags pgsc_calc's own containers get: they run as you (`-u` with yo
 
 | File | Contents |
 |---|---|
-| `${SAMPLE}_prs_summary.tsv` | `Condition`, `PGS_ID`, `Score_SUM`, `Variants_Matched`, `Variants_Total`, `Matched_Pct`, `Percentile`, `Ancestry_Group`, `ChrX`, `Ambiguous`, `Applies_To`, `Sex_Check`, `Input` |
+| `${SAMPLE}_prs_summary.tsv` | `Condition`, `PGS_ID`, `Score_SUM`, `Variants_Matched`, `Variants_Total`, `Matched_Pct`, `Percentile`, `Ancestry_Group`, `ChrX`, `Ambiguous`, `Applies_To`, `Sex_Check`, `Evaluated_In`, `Effect`, `Input`. `Evaluated_In` and `Effect` are written when the score list names evaluations, as the shipped one does |
 | `${SAMPLE}_prs_summary.<YYYYMMDD-HHMM>.tsv` | The same table under the time it was written, one per run, so a rerun keeps the earlier ones |
 | `pgsc_calc.<YYYYMMDD-HHMM>/` | Step 25 only: the previous run's `pgsc_calc/` folder, moved aside by the rerun |
 | `pgsc_calc/target.vcf.gz` | The genotypes pgsc_calc scored: the score (and panel) positions, from the gVCF or the VCF |
@@ -131,7 +165,7 @@ pgsc_calc v2.3.0 gives `FORMAT_SCOREFILES` 2 CPUs, and 4 on its own retry, under
 - **Step 25:** pgsc_calc gets three quarters of the RAM, 24 GB on a 32 GB machine. When one of its tasks is killed for memory the step says so; run it again with a larger `PGSC_MAX_MEMORY`.
 - **A 16 GB machine** caps both at about 12 to 15 GB, under what `FORMAT_SCOREFILES` needs. Docker lets a container swap as much again as its memory limit when the host has swap, which is how the whole pgsc_calc run above finished it with a 15 GB limit on a 16 GB runner; without swap it was killed.
 
-Both figures depend on the score list: more or larger scoring files need more. The same job measures a changed list. The figures above were measured on the nine scores before the blood pressure and lipid scores were added. Those four have 101 to 884 rows each, against 1.7 to 6.9 million for the five large ones, so they add very little to the memory or the time of either task; they have not been measured on a whole genome yet.
+Both figures depend on the score list: more or larger scoring files need more. The same job measures a changed list. The figures above were measured on the nine scores before the blood pressure and lipid scores were added. Those four have 101 to 884 rows each, against 1.7 to 6.9 million for the five large ones, so they add very little to the memory or the time of either task; they have not been measured on a whole genome yet. The asthma and height scores came later still. They add about 2.1 million rows to the roughly 24 million of the five large ones, so we expect both tasks to need about a tenth more memory. That is an estimate, not a measurement; the same job measures it.
 
 ## The reference panel on a GitHub-hosted runner
 
@@ -159,15 +193,17 @@ That run scored PGS000018 alone and fits a 16 GB machine; the default scores nee
 - **Ambiguous**: the score's strand-ambiguous rows (A/T and C/G) and what happened to them: `11 dropped` by default, `11 kept` with `PRS_KEEP_AMBIGUOUS=true`, `11 dropped, strand check failed` when the score's other rows did not agree with the reference. `0` when it has none.
 - **Applies_To**: `female` or `male` for a score built for one sex, empty for the rest.
 - **Sex_Check**: for those scores, `applies`, `not applicable to the declared sex` or `no sex declared`; empty for the rest.
+- **Evaluated_In**: the groups the score has an evaluation for in the score list (`EUR;AFR;AMR`), empty when it has none.
+- **Effect**: the OR or HR of the evaluation in `Ancestry_Group`, with the group and the PPM id (`HR 1.53 (EUR, PPM000591)`). Empty without the panel, when the score has no percentile or was not evaluated in your group, and for a score that does not apply to the declared sex.
 - **Input**: `gvcf` when the positions were genotyped from the gVCF, `vcf` when only the variant-only VCF was there.
 
-Both reports show the percentile with its group, or one line saying "Raw score only" when no panel was used. When a score's chrX rows were left out because no sex was given, the same line names the score and how many rows; rows left out in a panel run show only in the summary's ChrX column. A score that does not apply to the declared sex shows "not applicable to the declared sex" in place of its percentile, and when no sex was declared the reports say which scores are for one sex only.
+Both reports show the percentile with its group, or one line saying "Raw score only" when no panel was used. With the panel they also show the effect in your group, or say that the score has none for it and name the groups it was evaluated in. When a score's chrX rows were left out because no sex was given, the same line names the score and how many rows; rows left out in a panel run show only in the summary's ChrX column. A score that does not apply to the declared sex shows "not applicable to the declared sex" in place of its percentile, and when no sex was declared the reports say which scores are for one sex only.
 
 A raw `Score_SUM` from a run with the panel is not comparable with one from a run without it: with the panel pgsc_calc scores only the variants the panel has too. Compare percentiles, which only a panel run gives.
 
 ### chrX and the sex
 
-pgsc_calc converts your genotypes with plink2, and plink2 refuses chrX without the sample's sex. So a score's chrX rows are scored only when you give the sex (`./scripts/25-prs.sh your_name male`, or the samplesheet's `sex` column in Nextflow). Without it they are left out of the score: `Variants_Total` does not count them and the sum is the autosomes' alone. Of the 13 scores in the list, PGS000662 (prostate cancer) has 8 chrX rows of 269.
+pgsc_calc converts your genotypes with plink2, and plink2 refuses chrX without the sample's sex. So a score's chrX rows are scored only when you give the sex (`./scripts/25-prs.sh your_name male`, or the samplesheet's `sex` column in Nextflow). Without it they are left out of the score: `Variants_Total` does not count them and the sum is the autosomes' alone. Of the 15 scores in the list, PGS000662 (prostate cancer) has 8 chrX rows of 269.
 
 The two runs of the same score are therefore not comparable: with the sex the sum includes the chrX rows' weights, without it they are absent. Compare a sum only with sums made the same way. pgsc_calc's import does not split the pseudoautosomal regions out of chrX (no `--split-par`), so a row there is read with chrX's ploidy for the declared sex. The step does not take the sex from step 16's indexcov call: on a slice or a targeted BAM that call is not reliable (the test fixture reads a male sample as female), and a wrong sex would change the score silently.
 
@@ -175,7 +211,7 @@ With the ancestry panel, pgsc_calc keeps only the score variants that are also i
 
 ### Strand-ambiguous rows
 
-A row whose two alleles are A and T, or C and G, reads the same on both strands, so a match cannot tell whether the study reported the forward strand or the reverse. pgsc_calc drops these rows by default, and so does step 25. Some scores lose many rows this way: of the 13, PGS002257 has 135 of 884.
+A row whose two alleles are A and T, or C and G, reads the same on both strands, so a match cannot tell whether the study reported the forward strand or the reverse. pgsc_calc drops these rows by default, and so does step 25. Some scores lose many rows this way: of the 15, PGS002257 has 135 of 884.
 
 `PRS_KEEP_AMBIGUOUS=true` (Nextflow `--prs_keep_ambiguous`) keeps them, under two conditions:
 

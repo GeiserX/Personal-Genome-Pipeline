@@ -6,7 +6,7 @@ This page is for maintainers. It says how a pinned version gets bumped, what che
 
 | What | Where it is pinned | Who proposes the bump |
 |---|---|---|
-| Container images | [`versions.env`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/versions.env), copied into `conf/containers.config` and [Image versions](versions.md) | Renovate, one PR per tool |
+| Container images | [`versions.env`](https://github.com/GeiserX/OwnGenome/blob/main/versions.env), copied into `conf/containers.config` and [Image versions](versions.md) | Renovate, one PR per tool |
 | Nextflow | `NEXTFLOW_VERSION` in `versions.env`, the `setup-nextflow` pins in the workflows, the `NXF_VER=` lines in the docs | Renovate, after approval on the dependency dashboard |
 | actionlint, gitleaks and ShellCheck | `ACTIONLINT_VERSION` and `GITLEAKS_VERSION` in `lint.yml`, and the `version:` of its action-shellcheck step | Renovate |
 | Renovate CLI used by the dry run | `RENOVATE_VERSION` in `renovate-dry-run.yml` and the command at the end of this page | Renovate, one PR for both |
@@ -28,7 +28,7 @@ This page is for maintainers. It says how a pinned version gets bumped, what che
 
 Three pins are floors, not versions that drift: Node 24 in `renovate-dry-run.yml`, Java 17 in the workflows that run Nextflow, and `manifest.nextflowVersion` in `nextflow.config`. Nothing proposes a bump for them, on purpose.
 
-Renovate runs only its regex managers ([`renovate.json`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/renovate.json)), so it never touches what Dependabot owns ([`.github/dependabot.yml`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/.github/dependabot.yml)).
+Renovate runs only its regex managers ([`renovate.json`](https://github.com/GeiserX/OwnGenome/blob/main/renovate.json)), so it never touches what Dependabot owns ([`.github/dependabot.yml`](https://github.com/GeiserX/OwnGenome/blob/main/.github/dependabot.yml)).
 
 ## Turning Renovate on
 
@@ -85,7 +85,7 @@ Each hold is a rule in `renovate.json` with its reason in the rule's `descriptio
 
 ## Checking a change to the Renovate config
 
-The [Renovate dry run](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/.github/workflows/renovate-dry-run.yml) workflow runs on every PR that changes `renovate.json`, `versions.env`, `conf/containers.config`, a page in `docs/`, a workflow, `scripts/ci/gen-versions-doc.sh`, `scripts/lib/common.sh` or `tests/demo/retake-screenshots.sh`, and by hand. It runs Renovate's lookups with no app and no write access (`--platform=local --dry-run=lookup`), validates `renovate.json`, and fails when:
+The [Renovate dry run](https://github.com/GeiserX/OwnGenome/blob/main/.github/workflows/renovate-dry-run.yml) workflow runs on every PR that changes `renovate.json`, `versions.env`, `conf/containers.config`, a page in `docs/`, a workflow, `scripts/ci/gen-versions-doc.sh`, `scripts/lib/common.sh` or `tests/demo/retake-screenshots.sh`, and by hand. It runs Renovate's lookups with no app and no write access (`--platform=local --dry-run=lookup`), validates `renovate.json`, and fails when:
 
 - an `*_IMAGE` line of `versions.env` is not a detected dependency;
 - a package name carries a `:` or `@`;

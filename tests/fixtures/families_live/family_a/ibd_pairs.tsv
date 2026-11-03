@@ -1,0 +1,2 @@
+sample_a	sample_b	declared	expected_relatedness	segments	shared_cm	ibd2_cm	longest_cm	analysed_cm	shared_fraction	relatedness	degree
+child_a	child_b	full siblings	0.5	30	2550.0	870.0	180.0	3500.0	0.73	0.48	first (full siblings)

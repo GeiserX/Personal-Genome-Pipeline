@@ -90,7 +90,7 @@
 
 /* The home page keeps an H1 for search, screen readers and the browser tab.
    The banner under it already shows the name, so the H1 is hidden visually.
-   Use it as: # Personal Genome Pipeline { .pgp-visually-hidden } */
+   Use it as: # OwnGenome { .pgp-visually-hidden } */
 .md-typeset h1.pgp-visually-hidden {
   position: absolute;
   width: 1px;

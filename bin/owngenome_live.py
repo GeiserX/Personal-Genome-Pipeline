@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""pgp_live.py: watch a run from a browser while it goes, behind a password.
+"""owngenome_live.py: watch a run from a browser while it goes, behind a password.
 
-  pgp_live.py hash-password            read a password (twice from a terminal,
+  owngenome_live.py hash-password            read a password (twice from a terminal,
                                        or one line on stdin), print its hash
-  pgp_live.py --root GENOME_DIR [--state-dir DIR] [--bind ADDR] [--port N]
+  owngenome_live.py --root GENOME_DIR [--state-dir DIR] [--bind ADDR] [--port N]
               [--ingest-bind ADDR] [--ingest-port N] [--password-file FILE]
               [--allowed-host NAME ...] [--config FILE] ...
 
@@ -33,12 +33,12 @@ Two listeners, Python standard library only:
                                             registered; nothing else from disk
 
 The password is never stored: the server reads a PBKDF2-SHA256 hash from
---password-file or PGP_LIVE_PASSWORD_HASH, and refuses to listen on an address
+--password-file or OWNGENOME_LIVE_PASSWORD_HASH, and refuses to listen on an address
 other than loopback without one (exit 2). The access log
 (<state-dir>/access.log, TSV) records who opened what, never a query string,
 a request body, a result or the password.
 
-Plugins: every bin/pgp_live_*.py (sorted) is imported at start and its
+Plugins: every bin/owngenome_live_*.py (sorted) is imported at start and its
 register(app) called; see App below. docs/live-site.md has the deploy guide.
 """
 import argparse
@@ -69,7 +69,7 @@ sys.path.insert(0, HERE)
 import run_state  # noqa: E402
 
 PBKDF2_ITERATIONS = 600000
-COOKIE = "pgp_live"
+COOKIE = "owngenome_live"
 HEARTBEAT_SECONDS = 15
 TLS_HANDSHAKE_SECONDS = 10
 REQUEST_SECONDS = 60  # a client that stops sending mid-request frees its thread (an event stream writes every 15 s)
@@ -118,7 +118,7 @@ def parse_hash(encoded):
     parts = (encoded or "").strip().split("$")
     if len(parts) != 4 or parts[0] != "pbkdf2_sha256" or not parts[1].isdigit() or not parts[2] \
             or not re.fullmatch(r"[0-9a-f]{64}", parts[3]):
-        raise ValueError("not a pgp_live.py hash-password line (pbkdf2_sha256$<iterations>$<salt>$<hash>)")
+        raise ValueError("not a owngenome_live.py hash-password line (pbkdf2_sha256$<iterations>$<salt>$<hash>)")
     return int(parts[1]), parts[2], parts[3]
 
 
@@ -129,7 +129,7 @@ def verify_password(password, encoded):
 
 
 def hash_password_main(argv):
-    ap = argparse.ArgumentParser(prog="pgp_live.py hash-password",
+    ap = argparse.ArgumentParser(prog="owngenome_live.py hash-password",
                                  description="Print the hash of a password for --password-file.")
     ap.parse_args(argv)
     if sys.stdin.isatty():
@@ -358,7 +358,7 @@ def headline(key, sec, summary=None):
 # --- the plugin interface ---------------------------------------------------------------------
 
 class App:
-    """What a plugin (bin/pgp_live_<name>.py, function register(app)) can add:
+    """What a plugin (bin/owngenome_live_<name>.py, function register(app)) can add:
       app.add_argument(...)            a flag of its own (before the flags are read)
       app.route(method, pattern, fn, auth=True)
                                        fn(req, match) for a path matching the regex pattern
@@ -406,7 +406,7 @@ class App:
 
 
 def load_plugins(app, plugin_dir):
-    names = sorted(f for f in os.listdir(plugin_dir) if re.fullmatch(r"pgp_live_[A-Za-z0-9_]+\.py", f)) \
+    names = sorted(f for f in os.listdir(plugin_dir) if re.fullmatch(r"owngenome_live_[A-Za-z0-9_]+\.py", f)) \
         if os.path.isdir(plugin_dir) else []
     for f in names:
         spec = importlib.util.spec_from_file_location(f[:-3], os.path.join(plugin_dir, f))
@@ -648,7 +648,7 @@ class Live:
             try:
                 summary = collect_summary.collect(sample, d)
             except Exception as e:  # a reader bug must not take the page down
-                print(f"pgp_live: summary of {sample} not read: {type(e).__name__}", file=sys.stderr)
+                print(f"owngenome_live: summary of {sample} not read: {type(e).__name__}", file=sys.stderr)
                 summary = None
             for s in st["steps"]:
                 if s["state"] != "done" or not summary:
@@ -687,7 +687,7 @@ class Live:
 
 
 class BrowserHandler(BaseHTTPRequestHandler):
-    server_version = "pgp-live"
+    server_version = "owngenome-live"
     sys_version = ""
     live = None  # set per server
     tls_failed = False
@@ -710,7 +710,7 @@ class BrowserHandler(BaseHTTPRequestHandler):
     # helpers
     def log_message(self, fmt, *args):
         if not self.live.cfg.quiet:
-            sys.stderr.write("pgp_live: %s %s\n" % (self.command, urllib.parse.urlsplit(self.path).path))
+            sys.stderr.write("owngenome_live: %s %s\n" % (self.command, urllib.parse.urlsplit(self.path).path))
 
     @property
     def client(self):
@@ -1001,7 +1001,7 @@ class BrowserHandler(BaseHTTPRequestHandler):
 
 
 class IngestHandler(BaseHTTPRequestHandler):
-    server_version = "pgp-live-ingest"
+    server_version = "owngenome-live-ingest"
     sys_version = ""
     live = None
     timeout = REQUEST_SECONDS
@@ -1021,7 +1021,7 @@ class IngestHandler(BaseHTTPRequestHandler):
         self.reply(404, "not found")
 
     def do_POST(self):
-        path = re.sub(r"^/+", "/", urllib.parse.urlsplit(self.path).path)  # a PGP_LIVE_URL ending in '/'
+        path = re.sub(r"^/+", "/", urllib.parse.urlsplit(self.path).path)  # a OWNGENOME_LIVE_URL ending in '/'
         if not path.startswith("/ingest/"):
             return self.reply(404, "not found")
         if self.headers.get("Origin"):
@@ -1062,14 +1062,14 @@ def make_server(handler, live, bind, port, tls=None):
 # --- the flags ----------------------------------------------------------------------------------
 
 def parser():
-    ap = argparse.ArgumentParser(prog="pgp_live.py", description=__doc__.split("\n\n")[0])
+    ap = argparse.ArgumentParser(prog="owngenome_live.py", description=__doc__.split("\n\n")[0])
     ap.add_argument("--root", help="GENOME_DIR: the folder holding one folder per run (required, here or in --config)")
-    ap.add_argument("--state-dir", help="where messages and the access log are written (default ROOT/.pgp-live)")
+    ap.add_argument("--state-dir", help="where messages and the access log are written (default ROOT/.owngenome-live)")
     ap.add_argument("--bind", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8787)
     ap.add_argument("--ingest-bind", default="127.0.0.1")
     ap.add_argument("--ingest-port", type=int, default=8788)
-    ap.add_argument("--password-file", help="a file holding one hash-password line (else PGP_LIVE_PASSWORD_HASH)")
+    ap.add_argument("--password-file", help="a file holding one hash-password line (else OWNGENOME_LIVE_PASSWORD_HASH)")
     ap.add_argument("--allowed-host", action="append", default=[],
                     help="a Host name the browser may use besides loopback and the bind address (repeatable)")
     ap.add_argument("--trust-proxy", action="append", default=[],
@@ -1126,7 +1126,7 @@ def configure(argv, app):
     cfg = ap.parse_args(argv)
     if not cfg.root:
         ap.error("--root is required (on the command line or in --config)")
-    cfg.state_dir = cfg.state_dir or os.path.join(cfg.root, ".pgp-live")
+    cfg.state_dir = cfg.state_dir or os.path.join(cfg.root, ".owngenome-live")
     cfg.access_log = cfg.access_log or os.path.join(cfg.state_dir, "access.log")
     app.config = cfg
     return cfg
@@ -1137,7 +1137,7 @@ def read_password_hash(cfg):
         with open(cfg.password_file) as f:
             h = f.read().strip()
     else:
-        h = os.environ.get("PGP_LIVE_PASSWORD_HASH", "").strip()
+        h = os.environ.get("OWNGENOME_LIVE_PASSWORD_HASH", "").strip()
     if h:
         parse_hash(h)
     return h or None
@@ -1153,7 +1153,7 @@ def start(argv, app=None):
         raise SystemExit(f"ERROR: password hash: {e}") from None
     if not pw and not is_loopback(cfg.bind):
         print(f"ERROR: --bind {cfg.bind} is not loopback and no password hash is set: run "
-              "'pgp_live.py hash-password' and pass --password-file (or PGP_LIVE_PASSWORD_HASH)", file=sys.stderr)
+              "'owngenome_live.py hash-password' and pass --password-file (or OWNGENOME_LIVE_PASSWORD_HASH)", file=sys.stderr)
         raise SystemExit(2)
     if bool(cfg.tls_cert) != bool(cfg.tls_key):
         raise SystemExit("ERROR: --tls-cert and --tls-key go together")
@@ -1163,9 +1163,9 @@ def start(argv, app=None):
     live = Live(app, cfg, pw)
     app.access = AccessLog(cfg.access_log, cfg.access_log_max_mb)
     if not pw:
-        print("pgp_live: no password hash set: anyone who can reach the loopback port sees the runs", file=sys.stderr)
+        print("owngenome_live: no password hash set: anyone who can reach the loopback port sees the runs", file=sys.stderr)
     if not is_loopback(cfg.ingest_bind):
-        print(f"pgp_live: WARNING: the ingest port listens on {cfg.ingest_bind}: anyone who reaches it can post "
+        print(f"owngenome_live: WARNING: the ingest port listens on {cfg.ingest_bind}: anyone who reaches it can post "
               "fake progress (it serves nothing)", file=sys.stderr)
     tls = (cfg.tls_cert, cfg.tls_key) if cfg.tls_cert else None
     web = make_server(BrowserHandler, live, cfg.bind, cfg.port, tls)
@@ -1182,7 +1182,7 @@ def main(argv=None):
     live, web, ingest = start(argv)
     threading.Thread(target=ingest.serve_forever, daemon=True).start()
     scheme = "https" if live.cfg.tls_cert else "http"
-    print(f"pgp_live: browser {scheme}://{live.cfg.bind}:{web.server_address[1]}/ ; "
+    print(f"owngenome_live: browser {scheme}://{live.cfg.bind}:{web.server_address[1]}/ ; "
           f"ingest http://{live.cfg.ingest_bind}:{ingest.server_address[1]}/ingest/<run>", file=sys.stderr)
     try:
         web.serve_forever()

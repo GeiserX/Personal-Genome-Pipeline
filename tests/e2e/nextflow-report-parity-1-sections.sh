@@ -16,7 +16,9 @@
 #      STRANGER_RFC1 and MITO_VARIANTS_ANNOTATE, run for real, must write
 #      the tables steps 9b and 20 wrote, byte for byte.
 #   3. Step 24 on NFPAR and HTML_REPORT on the same tables (the RFC1 and
-#      chrM ones from the Nextflow processes): the clinvar, pypgx, annotsv,
+#      chrM ones from the Nextflow processes; step 20's mtDNA copy number and
+#      deletion tables, and the confirmed mtDNA list, as main.nf stages them):
+#      the clinvar, pypgx, annotsv,
 #      expansions, mito and slivar sections of the two summary.json files
 #      must be equal. Control: the comparison reports a changed section.
 #   4. main.nf passes every new table on: a stub run of every tool
@@ -282,7 +284,9 @@ workflow {
         file('${SD}/slivar/${S}_prioritized.vcf.gz'), file('${SD}/slivar/${S}_compound_het_pairs.tsv'),
         file('${SD}/annotsv/${S}_sv_class4_5_checked.tsv'), file('${SD}/expansion_hunter/${S}_eh.vcf'),
         file('${NF_DIR}/expansion_hunter/${S}_eh_stranger.vcf'), file('${NF_DIR}/expansion_hunter/${S}_rfc1_motif.tsv'),
-        file('${MT_VCF}'), file('${NF_DIR}/mito/${S}_chrM_annotated.tsv')]]))
+        file('${MT_VCF}'), file('${NF_DIR}/mito/${S}_chrM_annotated.tsv'),
+        file('${SD}/mito/${S}_mtdna_copies.tsv'), file('${SD}/mito/${S}_chrM_deletions.tsv'),
+        file('${REPO}/assets/mito_confirmed.tsv')]]))
 }
 NF
 nf_run report

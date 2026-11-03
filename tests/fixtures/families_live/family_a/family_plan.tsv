@@ -1,0 +1,3 @@
+family	analysis	members	decision	reason
+family_a	joint_call	child_a,child_b,father_a,mother_a,gf_a,gm_a	runs	six members have a gVCF
+family_a	couple_carrier	father_a,mother_a	runs	both partners have ClinVar hits

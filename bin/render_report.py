@@ -3,8 +3,12 @@
 
   render_report.py --sample S --sample-dir DIR [--json OUT.json] [-o REPORT.txt] [-o REPORT.html]
   render_report.py --summary IN.json [-o REPORT.txt] [-o REPORT.html]
+  ... [--search-index INDEX.json]
 
 -o writes the text report for a .txt name and the HTML report for .html.
+--search-index also writes every gene and rsID the results mention, with the
+sections that name them (bin/results_index.py); the HTML report closes with
+the same list.
 
 With --sample-dir it first collects the summary (bin/collect_summary.py) and
 writes it to --json (default DIR/summary.json). Every number in both reports
@@ -22,6 +26,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import collect_summary  # noqa: E402
+import results_index  # noqa: E402
 import report_charts  # noqa: E402
 
 E = html.escape
@@ -41,6 +46,9 @@ def stale_note(sec):
 CLINVAR_FREQ_NOTE = ("Check every P/LP hit's population frequency, a heterozygous hit in a dominant gene as well as "
                      "a homozygous one: a hit above 1% in gnomAD is unlikely to be a high-penetrance finding, and a "
                      "hit whose frequency is unknown has not been checked.")
+CALLABILITY_NOTE = ("A gene listed as not read could not be read reliably: too few of its reads were placed on it "
+                    "with confidence, so a 'no finding' in it says nothing. A gene with a caller of its own is "
+                    "left to that caller's section.")
 HLA_NOTE = ("HLA typing from short-read WGS is approximate. If either HLA-A or HLA-B allele has a T1K quality "
             "of 0 or less, that gene is not passed to PharmCAT (step 36).")
 EH_NOTE = ("Repeat-expansion calls from short reads can be wrong at some loci, and a long expansion "
@@ -364,6 +372,26 @@ def pct(x):
     return f"{x * 100:.1f}%" if isinstance(x, (int, float)) else "?"
 
 
+def callability_gene(g):
+    if g["status"] == "not on this reference":
+        return f"{g['gene']} (not on this reference)"
+    return f"{g['gene']} ({100 * g['share']:.0f}%)"
+
+
+def callability_lines(d):
+    """Step 16b's gene callability: the lines of the text section and the card."""
+    out = [f"{d['read']} of the {d['catalog_genes']} hard-to-read genes of assets/callability_genes.tsv were read: "
+           f"{100 * d['min_share']:.0f}% or more of their bases had {d['min_depth']} or more reads of mapping "
+           f"quality {d['min_mapq']} or more."]
+    nr, owned = d["not_read"], d["not_read_owned"]
+    out.append(f"Not read, and no other step calls them ({len(nr)}): "
+               + (", ".join(callability_gene(g) for g in nr) if nr else "none"))
+    if owned:
+        out.append(f"Not read here, called by a step of their own ({len(owned)}): "
+                   + ", ".join(f"{callability_gene(g)} by {g['owner']}" for g in owned))
+    return out
+
+
 def mosaic_lines(q):
     """The estimate from depth and from chrX allele fractions, one line each, as both reports print them."""
     what = "the Y" if q.get("chrom") == "chrY" else "one X"
@@ -414,6 +442,29 @@ def prs_percentile(r):
     return ""
 
 
+def prs_effect(r):
+    """The effect cell of a PRS row in both reports: the odds or hazard ratio
+    the PGS Catalog records for the score in the sample's group ("HR 1.53
+    (EUR, PPM000591)"), a line saying the score has none for that group, or
+    '' when the sample has no group (no panel, or no percentile), the score
+    does not apply to the declared sex, or the table names no evaluations."""
+    if r.get("evaluated_in") is None:
+        return ""
+    if r.get("percentile") and r.get("group") and r.get("sex_check") != PRS_NOT_APPLICABLE:
+        if r.get("effect"):
+            return r["effect"]
+        where = f"; evaluated in {', '.join(r['evaluated_in'])}" if r.get("evaluated_in") else ""
+        return f"no published OR or HR for {r['group']}{where}"
+    return ""
+
+
+# Part of the PRS caption sentence (prs_note), so not a *_NOTE caveat of its own.
+PRS_EFFECT_TEXT = ("Effect: the odds ratio (OR) or hazard ratio (HR) a published evaluation of the score measured "
+                   "in people of the same reference group, in that evaluation's unit (its PGS Catalog PPM page says "
+                   "which). It describes the score in that group, not your own risk, and is shown only for a group "
+                   "the score was evaluated in.")
+
+
 def prs_sex_note(d):
     """A sentence naming the sex-specific scores when no sex was declared, else ''."""
     named = [f"{r['pgs_id']} ({r['applies_to']})" for r in d.get("scores", [])
@@ -432,9 +483,10 @@ def prs_note(d):
         group = anc.get("population") or next((r.get("group") for r in d["scores"] if r.get("group")), "")
         panel = f" of the {anc['panel']} reference panel" if anc.get("panel") else " of the reference panel"
         low = " The ancestry match is low-confidence: read the percentile with care." if anc.get("low_confidence") == "True" else ""
+        eff = f" {PRS_EFFECT_TEXT}" if any(r.get("evaluated_in") is not None for r in d["scores"]) else ""
         return (f"Percentile: where the score falls among the {group or 'most similar'} samples{panel}, "
                 f"the group whose genetic ancestry is most similar to this sample's (pgsc_calc).{low} "
-                f"A percentile is not a risk. {PRS_ANCESTRY_NOTE} See docs/25-prs.md." + x)
+                f"A percentile is not a risk.{eff} {PRS_ANCESTRY_NOTE} See docs/25-prs.md." + x)
     return ("Raw score only: no ancestry reference panel was installed, so there is no percentile and the sum "
             f"cannot be compared with anyone (scripts/setup.sh --ancestry-panel adds it). {PRS_ANCESTRY_NOTE} "
             "See docs/25-prs.md." + x)
@@ -553,11 +605,44 @@ def traits_text(d, sample):
     if missing:
         out.append(f"  Not read (no genotype in the gVCF): {', '.join(missing)}")
     out.append(f"  {TRAITS_NOTE} Notes per row: traits/{sample}_traits.tsv")
+    if d.get("rules"):
+        out.append(f"  Genotype rules (several sites read together; traits/{sample}_genotype_rules.tsv):")
+        for r in d["rules"]:
+            out.append(f"    {r['trait']} ({r['gene']} {r['rsids'].replace(',', ', ')}): {rule_result(r)}. "
+                       f"{r['reading']} (PMID {r['pmids']})")
     if d.get("apoe"):
         out.append(f"  {APOE_WARNING}")
         for r in d["apoe"]:
             out.append(f"    {r['trait']} ({r['rsid']}): {r['genotype']}. {r['reading']}")
     return out
+
+
+RULE_PHASE_TEXT = {"read_backed": "phased from the reads", "not_needed": "no phase needed",
+                   "not_used": "phase not used", "unphased": "not phased"}
+
+
+def rule_result(r):
+    """A genotype rule's result: its label when called, else its status; and how it was phased."""
+    res = r["result"] if r["status"] == "called" else r["status"].replace("_", " ")
+    ph = RULE_PHASE_TEXT.get(r["phase"])
+    return res + (f" ({ph})" if ph else "")
+
+
+def rules_html(d, sample):
+    """The genotype rules table of the traits card."""
+    rows = []
+    for r in d.get("rules") or []:
+        anc = " " + badge("ancestry", "yellow") if r["ancestry"] == "yes" else ""
+        rows.append(f"      <tr><td>{E(r['trait'])}</td><td>{E(r['gene'])}<br><span style=\"font-size:12px;color:#666\">"
+                    f"{E(r['rsids'].replace(',', ', '))}</span></td><td>{E(r['genotypes'].replace(',', ', '))}</td>"
+                    f"<td>{E(rule_result(r))}{anc}</td><td>{E(r['reading'])}<br><span style=\"font-size:12px;color:#666\">"
+                    f"{E(r['note'])}</span></td><td>PMID {E(r['pmids'])}</td></tr>")
+    if not rows:
+        return []
+    return ["    <h3>Genotype rules (several sites read together)</h3>", "    <table>",
+            "      <tr><th>Trait</th><th>Gene and sites</th><th>Genotypes</th><th>Result</th><th>Reading</th>"
+            "<th>Source</th></tr>"] + rows + ["    </table>",
+                                              small_note(f"Every rule line: traits/{sample}_genotype_rules.tsv")]
 
 
 def traits_html(d, sample):
@@ -571,6 +656,7 @@ def traits_html(d, sample):
     head = "      <tr><th>Trait</th><th>Gene</th><th>Genotype</th><th>Reading</th><th>Source</th></tr>"
     body = [stat("Read / no genotype / other allele", E(f"{d['called']} / {d['not_covered']} / {d['other_allele']}")),
             "    <table>", head] + ["      " + tr(r) for r in d["rows"]] + ["    </table>", small_note(TRAITS_NOTE)]
+    body += rules_html(d, sample)
     if d.get("apoe"):
         body += [f"    <details><summary>{E(APOE_WARNING)} Open to show it.</summary>", "    <table>", head]
         body += ["      " + tr(r) for r in d["apoe"]] + ["    </table></details>"]
@@ -611,7 +697,11 @@ def comphet_phase_html(d):
 
 ANNOTSV_NOTE = ("A class 4 or 5 SV made by one caller, a deletion on the exon edges of a transcript (the reads of "
                "a processed transcript or cDNA aligned across an intron) or one at 1% or more in AnnotSV's benign "
-               "set is unlikely to be a rare pathogenic SV: check the reads before acting on it (docs/05-annotsv.md).")
+               "set is unlikely to be a rare pathogenic SV: check the reads before acting on it (docs/05-annotsv.md). "
+               "Step 05's rules (assets/sv_rule_regions.tsv and the read-depth check) move a class 4 or 5 call to "
+               "class 3 when it lies in a coding tandem repeat, an immunoglobulin or T-cell receptor locus or the "
+               "MHC, names a pseudogene by a disease gene's alias, or its read depth does not show the change; "
+               "those calls are listed apart with the reason and are not counted here.")
 
 
 def annotsv_support_text(x):
@@ -637,7 +727,15 @@ def annotsv_flags(x):
     if x["population_af"] is not None:
         out.append(f"benign-set AF {x['population_af']:g}" + (f" ({x['population_source']})" if x["population_source"] else "")
                    + (", common" if x["common"] else ""))
+    if x.get("rule_detail") and str(x["acmg_class"]) in ("4", "5"):
+        out.append(f"rule {x['rule']}: {x['rule_detail']}")
     return out
+
+
+def annotsv_moved_text(x):
+    """One SV step 05's rules moved to class 3: where, from which class, and why."""
+    return (f"{x['type']} {x['sv']}  {annotsv_genes_text(x)}  AnnotSV class {x['annotsv_class']} -> "
+            f"{x['acmg_class']}  ({x['rule'] or 'rule not named'}: {x['rule_detail'] or 'no detail'})")
 
 
 def annotsv_lines(d):
@@ -647,6 +745,8 @@ def annotsv_lines(d):
         head += (f" (single caller: {d['single_caller'] if d['consensus'] else 'not known'}; deletions on exon edges: "
                  f"{d['exon_edge'] if d['exon_edge_checked'] else 'not checked'}; common: {d['common']})")
     lines = [head]
+    if d.get("downgraded"):
+        lines.append(f"Moved to class 3 by step 05's rules, not counted above: {len(d['downgraded'])}")
     if d["count"] and not d["consensus"]:
         lines.append(d.get("consensus_note") or "Caller support: step 22's consensus did not run, so how many callers "
                      "saw each SV is not known.")
@@ -664,6 +764,7 @@ def annotsv_lines(d):
 CHAPTERS = (
     ("quality", "Quality", "Can I trust this data?", (
         ("qc", "Quality control", ("coverage", "sex_check", "sample_qc", "read_count")),
+        ("callability", "Genes this genome could not read reliably", ("callability",)),
         ("variants", "Variant calling", ("variants",)),
     )),
     ("clinical", "Clinical", "Is there anything to take to a doctor?", (
@@ -794,6 +895,12 @@ def text_report(s):
                 w(f"  ** The same person as: {q['same_person_as']} (a duplicate or a sample swap) **")
         for line in karyotype_lines(S):
             w(f"  {line}")
+        w("")
+
+    if head("callability", "Genes This Genome Could Not Read Reliably"):
+        for line in callability_lines(S["callability"]["data"]):
+            w(f"  {line}")
+        w(f"  {CALLABILITY_NOTE}")
         w("")
 
     if head("mosaic_sex_loss"):
@@ -959,7 +1066,9 @@ def text_report(s):
         for r in d["scores"]:
             pct = prs_percentile(r)
             pct = f"  {pct}" if r.get("sex_check") == PRS_NOT_APPLICABLE else (f"  percentile {pct}" if pct else "")
-            w(f"  {r['condition']:<35} {r['score']} ({r['matched']}/{r['total']} variants matched) {r['pgs_id']}{pct}")
+            e = prs_effect(r)
+            eff = "" if not e else (f"  effect {e}" if r.get("effect") else f"  {e}")
+            w(f"  {r['condition']:<35} {r['score']} ({r['matched']}/{r['total']} variants matched) {r['pgs_id']}{pct}{eff}")
         w("  " + prs_note(d))
         w("")
 
@@ -1007,7 +1116,11 @@ def text_report(s):
               f"support: {annotsv_support_text(x)}")
             for f in annotsv_flags(x):
                 w(f"         {f}")
-        if d["count"]:
+        if d.get("downgraded"):
+            w("  Moved to class 3 by step 05's rules (from AnnotSV's class, with the reason):")
+            for x in d["downgraded"]:
+                w(f"    {annotsv_moved_text(x)}")
+        if d["count"] or d.get("downgraded"):
             w(f"  {ANNOTSV_NOTE}")
         w("")
 
@@ -1025,8 +1138,14 @@ def text_report(s):
                 w(f"    {l['locus']:<8} {str_count(by.get(l['locus'], l))}  {l['status']}")
                 if l.get("rfc1_motif"):
                     w(f"      {rfc1_text(l['rfc1_motif'])}")
+                if l.get("motif"):
+                    w(f"      {motif_text(l['locus'], l['motif'])}")
         else:
             w("  Outside the normal range (Stranger): none")
+        if d.get("not_graded"):
+            w(f"  Not graded (no thresholds in the catalog): {len(d['not_graded'])} ("
+              + "; ".join(f"{k}: {v}" for k, v in d["not_graded"].items()) + ")")
+            w(f"  {NOT_GRADED_NOTE}")
         if d.get("stranger") and d.get("no_status"):
             w(f"  Loci without a Stranger status (not in its catalog): {d['no_status']}")
         if d.get("unsized"):
@@ -1366,6 +1485,8 @@ def str_count(l):
 def str_status(l):
     """Stranger's status, never 'normal' for a locus that was not sized."""
     st = l.get("status") or ""
+    if not st and l.get("not_graded"):
+        return "not graded"
     if st == "normal" and l.get("sizing") not in ("sized", "unknown"):
         return "not sized"
     return st
@@ -1380,6 +1501,10 @@ def str_notes(l):
         out.append(f"normal max {l['normal_max']}")
     if l.get("zone"):
         out.append(f"{l['zone']}: {l['zone_label']}; {l['zone_citation']}")
+    if l.get("not_graded"):
+        out.append(f"no thresholds in the catalog ({l['not_graded']})")
+    if l.get("motif"):
+        out.append(motif_text(l["locus"], l["motif"]))
     return "; ".join(out)
 
 
@@ -1392,7 +1517,18 @@ def str_rows(d):
 
 
 def rfc1_text(m):
-    return f"RFC1 motif count: {m.get('verdict', '.')}: {m.get('note', '')}"
+    return motif_text("RFC1", m)
+
+
+def motif_text(locus, m):
+    """Step 9b's motif count of a flagged locus (bin/rfc1_motif.py)."""
+    return f"{locus} motif count: {m.get('verdict', '.')}: {m.get('note', '')}"
+
+
+NOT_GRADED_NOTE = ("Not graded: the repeat catalog gives these loci no thresholds (for MUC1, CEL, TYMS and PLIN4 "
+                   "the reference repeat is longer than 300 bases, so no short read spans it), so Stranger gives them no "
+                   "status. "
+                   "Not graded is not normal (docs/09-str-expansions.md).")
 
 
 PARALOG_NOTE = ("Paraphase reads PacBio HiFi reads only. A 'no call' means it saw one haplotype and the depth "
@@ -1864,10 +2000,68 @@ def mito_lines(d):
             lines += [f"  {mito_variant_text(v)}" for v in a["variants"]]
     elif a.get("note"):
         lines.append(f"ClinVar and gnomAD: not annotated ({a['note']})")
+    return lines + mito_extended_lines(d)
+
+
+MITO_DELETION_NOTE = ("A single large mtDNA deletion is often found in muscle and not in blood (except in Pearson "
+                      "syndrome), so a blood sample with none does not rule one out (docs/20-mtoolbox.md).")
+MITO_COPIES_NOTE = ("mtDNA copies per cell: twice the chrM depth over the autosomal depth, from the read counts of "
+                    "the BAM index, for a whole-genome BAM (an exome gives no such number). It depends on the tissue "
+                    "and the library, so it compares samples of one kind only.")
+
+
+def mito_confirmed_text(v):
+    return (f"{v['hgvs']} ({v['gene']})  AF {v.get('af') or '.'}  filter {v.get('filter') or '.'}  {v['disease']}; "
+            f"ClinVar {v['clinvar_id']}; PMID {v['pmids'].replace(';', ', ')}. {v['note']}")
+
+
+def mito_deletion_text(r):
+    k = r.get("known")
+    span = (f"m.{r['bkp5'] + 1}_{r['bkp3'] - 1}del ({r['length']} bp)" if r["bkp3"] > r["bkp5"]
+            else f"m.{r['bkp5'] + 1} to m.{r['bkp3'] - 1} across the origin ({r.get('length')} bp)")
+    out = f"{span}  level {r['level_pct']}%"
+    if k:
+        out += f"  {k['disease']}; ClinVar {k['clinvar_id']} ({k['hgvs']}); PMID {k['pmids'].replace(';', ', ')}"
+    return out
+
+
+def mito_copies_text(c):
+    if c.get("status") == "called":
+        return (f"mtDNA copy number: {c['mtdna_copies']} per cell (chrM depth {c['depth_ratio']} times the "
+                f"autosomal depth)")
+    reason = {"low_autosomal_depth": "too few autosomal reads: a sliced BAM, a panel or a shallow genome",
+              "no_chrM_reads": "no chrM reads in the BAM"}.get(c.get("reason"), c.get("reason") or "unknown")
+    return f"mtDNA copy number: not assessed ({reason})"
+
+
+def mito_extended_lines(d):
+    """Step 20's confirmed variants, large deletions and copy number, the same in both reports."""
+    lines = []
+    if "confirmed" in d:
+        conf = d["confirmed"]
+        lines.append(f"Confirmed disease variants (assets/mito_confirmed.tsv): {len(conf)}")
+        lines += [f"  {mito_confirmed_text(v)}" for v in conf]
+    if d.get("confirmed_note"):
+        lines.append(f"Confirmed disease variants: not checked ({d['confirmed_note']})")
+    dl = d.get("deletions")
+    if dl:
+        named = sum(1 for r in dl["listed"] if r.get("known"))
+        lines.append(f"Large deletions (eKLIPse): {dl['total']}, of them {named} named in assets/mito_confirmed.tsv; "
+                     f"listed: named ones and any at {dl['list_floor_pct']}% or more")
+        lines += [f"  {mito_deletion_text(r)}" for r in dl["listed"]]
+        lines.append(MITO_DELETION_NOTE)
+    elif d.get("deletions_note"):
+        lines.append(f"Large deletions: not looked for ({d['deletions_note']})")
+    if d.get("copies"):
+        lines.append(mito_copies_text(d["copies"]))
+        if d["copies"].get("status") == "called":
+            lines.append(MITO_COPIES_NOTE)
+    elif d.get("copies_note"):
+        lines.append(f"mtDNA copy number: not counted ({d['copies_note']})")
     return lines
 
 
-# scripts/pgp-view.sh serves the genome viewer here (PGP_VIEW_PORT's default);
+# scripts/owngenome-view.sh serves the genome viewer here (OWNGENOME_VIEW_PORT's default);
 # the part after '#' is the locus it opens at.
 VIEWER_URL = "http://127.0.0.1:8765/"
 
@@ -1880,7 +2074,7 @@ def viewer_links(sites):
     if not links:
         return []
     return ['    <p class="viewer">See the reads in the genome viewer on this computer (start it first: '
-            "scripts/pgp-view.sh &lt;sample&gt;, docs/viewer.md): " + " &middot; ".join(links) + "</p>"]
+            "scripts/owngenome-view.sh &lt;sample&gt;, docs/viewer.md): " + " &middot; ".join(links) + "</p>"]
 
 
 def variant_site(variant):
@@ -1970,7 +2164,10 @@ def card(sec, title, body, full=False):
     return lines
 
 
-def html_report(s):
+def html_report(s, index=None):
+    """The HTML report. INDEX is the search index (results_index.build) its
+    closing appendix lists; without one it is built from the summary alone,
+    which leaves out the step 23 and 31 tables (they need the sample folder)."""
     S = s["sections"]
     # Each card goes into its section's list; html_page() lays the lists out
     # in CHAPTERS order.
@@ -2016,6 +2213,15 @@ def html_report(s):
     qc_note = [f'    <div class="stale">{E(sec["title"] + ": " + stale_note(sec))}</div>'
                for sec in (cov, sexc, sqc, rdc) if stale_note(sec)]
     a("coverage", ['  <div class="card">', "    <h2>Quality Control</h2>"] + qc_note + qc + ["  </div>"])
+
+    ca = S.get("callability", MISSING)
+    if ca["state"] != "missing":
+        cd = ca["data"]
+        ca_body = ([stat("Genes read", f"{cd['read']} of {cd['catalog_genes']}"),
+                    stat("Not read, no other caller", badge(len(cd["not_read"]), "red" if cd["not_read"] else "green"))]
+                   if ca["state"] in ("ok", "stale") else [])
+        ca_body += [small_note(line) for line in (callability_lines(cd) if ca["state"] in ("ok", "stale") else [])]
+        a("callability", card(ca, "Genes This Genome Could Not Read Reliably", ca_body + [small_note(CALLABILITY_NOTE)]))
 
     mo = S.get("mosaic_sex_loss", MISSING)
     q = mo["data"]
@@ -2140,6 +2346,16 @@ def html_report(s):
                                   f"<td>{E(annotsv_genes_text(x))}</td><td>{E(annotsv_support_text(x))}</td>"
                                   f"<td>{E('; '.join(annotsv_flags(x)) or 'none')}</td></tr>" for x in av["rows"])
                         + "</table>")
+        if av.get("downgraded"):
+            body.append("    <h3>Moved to class 3 by step 05's rules</h3>")
+            body.append("    <table><tr><th>SV</th><th>AnnotSV class</th><th>Class</th><th>Genes</th><th>Rule</th>"
+                        "<th>Why</th></tr>"
+                        + "".join(f"<tr><td>{E(x['type'] + ' ' + x['sv'])}</td><td>{E(x['annotsv_class'])}</td>"
+                                  f"<td>{E(x['acmg_class'])}</td><td>{E(annotsv_genes_text(x))}</td>"
+                                  f"<td>{E(x['rule'] or 'not named')}</td><td>{E(x['rule_detail'] or 'no detail')}</td></tr>"
+                                  for x in av["downgraded"])
+                        + "</table>")
+        if av.get("rows") or av.get("downgraded"):
             body.append(small_note(ANNOTSV_NOTE))
         a("annotsv", card(S["annotsv"], "Structural Variants, Class 4 and 5 (AnnotSV)", body, full=True))
 
@@ -2164,10 +2380,15 @@ def html_report(s):
         eh_body.append(stat("Not sized from short reads (not counted as normal)", badge(len(eh["unsized"]), "yellow")))
     if eh.get("intermediate"):
         eh_body.append(stat("In an intermediate range", badge(", ".join(eh["intermediate"]), "yellow")))
+    if eh.get("not_graded"):
+        eh_body.append(stat("Not graded (no thresholds in the catalog)", badge(", ".join(eh["not_graded"]), "gray")))
+        eh_body.append(small_note(NOT_GRADED_NOTE))
     for l in eh.get("flagged") or []:
         if l.get("rfc1_motif"):
             eh_body.append(small_note(rfc1_text(l["rfc1_motif"])))
             eh_body.append(small_note(RFC1_NOTE))
+        if l.get("motif"):
+            eh_body.append(small_note(motif_text(l["locus"], l["motif"])))
     # Every locus, the five key loci first.
     rows = str_rows(eh)
     if rows:
@@ -2289,6 +2510,29 @@ def html_report(s):
         mito_body.append(small_note(f"ClinVar {ma.get('clinvar') or 'unknown'}; gnomAD {ma.get('gnomad') or 'unknown'}"))
     elif ma.get("note"):
         mito_body.append(small_note(f"ClinVar and gnomAD: not annotated ({ma['note']})"))
+    if "confirmed" in mi:
+        n = len(mi["confirmed"])
+        mito_body.append(stat("Confirmed disease variants", badge(n, "yellow" if n else "gray")))
+        mito_body += [small_note(mito_confirmed_text(v)) for v in mi["confirmed"]]
+    dl = mi.get("deletions")
+    if dl:
+        named = sum(1 for r in dl["listed"] if r.get("known"))
+        mito_body.append(stat("Large deletions (eKLIPse)", dl["total"]))
+        mito_body.append(stat("Named in the confirmed list", badge(named, "yellow" if named else "gray")))
+        mito_body += [small_note(mito_deletion_text(r)) for r in dl["listed"]]
+        mito_body.append(small_note(MITO_DELETION_NOTE))
+    elif mi.get("deletions_note"):
+        mito_body.append(small_note(f"Large deletions: not looked for ({mi['deletions_note']})"))
+    if mi.get("copies"):
+        # mc, not c: c holds the ClinVar data the hits table below reads.
+        mc = mi["copies"]
+        mito_body.append(stat("mtDNA copies per cell", E(str(mc["mtdna_copies"])) if mc.get("status") == "called"
+                              else "not assessed"))
+        mito_body.append(small_note(mito_copies_text(mc)))
+        if mc.get("status") == "called":
+            mito_body.append(small_note(MITO_COPIES_NOTE))
+    elif mi.get("copies_note"):
+        mito_body.append(small_note(f"mtDNA copy number: not counted ({mi['copies_note']})"))
     mito_body.append(small_note(MITO_NOTE))
     a("mito", card(S["mito"], "Mitochondrial Analysis", mito_body, full=bool(ma.get("variants"))))
 
@@ -2324,12 +2568,17 @@ def html_report(s):
 
     if S["prs"]["state"] in ("ok", "stale"):
         d = S["prs"]["data"]
+        # The effect column only when the table names evaluations (Evaluated_In).
+        show_effect = d.get("adjusted") and any(x.get("evaluated_in") is not None for x in d["scores"])
         rows = "".join(f"<tr><td>{E(x['condition'])}</td><td>{E(x['pgs_id'])}</td><td>{E(x['score'])}</td>"
                        f"<td>{E(x['matched'])}/{E(x['total'])}</td>"
-                       f"<td>{E(prs_percentile(x) or 'raw score only')}</td></tr>\n"
+                       f"<td>{E(prs_percentile(x) or 'raw score only')}</td>"
+                       + (f"<td>{E(prs_effect(x))}</td>" if show_effect else "") + "</tr>\n"
                        for x in d["scores"])
+        effect_th = "<th>Effect in your group</th>" if show_effect else ""
         a("prs", card(S["prs"], "Polygenic Risk Scores" + ("" if d.get("adjusted") else " (raw, not percentiles)"),
-               ["    <table>", "      <tr><th>Condition</th><th>PGS</th><th>Score</th><th>Variants matched</th><th>Percentile</th></tr>",
+               ["    <table>", "      <tr><th>Condition</th><th>PGS</th><th>Score</th><th>Variants matched</th><th>Percentile</th>"
+                f"{effect_th}</tr>",
                 rows.rstrip("\n"), "    </table>", f"    <p>{E(prs_note(d))}</p>"], full=True))
 
     if S.get("ancestry_fine", MISSING)["state"] != "missing":
@@ -2417,7 +2666,7 @@ def html_report(s):
                full=True))
 
     add_charts(parts, chart_specs(s))
-    return html_page(s, parts)
+    return html_page(s, parts, index if index is not None else results_index.build(s, anchors=SECTION_OF))
 
 
 # --- charts --------------------------------------------------------------------------
@@ -2570,7 +2819,38 @@ def limits_cards(s):
     return not_run + ["  </div>"], not_assessed + ["  </div>"]
 
 
-def html_page(s, parts):
+TERMS = ("terms", "Genes and rsIDs in these results", "Where in this report does a gene or an rsID come up?")
+
+
+def terms_appendix(index, parts):
+    """The closing appendix: one line per gene symbol or rsID of the search
+    index, with a link to each section that names it. No script: the
+    browser's find (Ctrl+F) searches it; the live site's search box filters
+    the same index."""
+    terms = index.get("terms") or {}
+    # No card title: the chapter title above names it (and the cards' titles are tests/test_render_report.py's list).
+    body = ['  <div class="card">',
+            '    <p class="note">Every gene symbol and rsID a section of this report names, with the sections that '
+            "name it and how many times. A gene listed here is a gene the results mention, not a finding: open the "
+            "section to see what it says. The genes of the clinical filter (step 23) and variant prioritization "
+            "(step 31) come from their tables, which the report counts but does not list.</p>"]
+    if not terms:
+        body.append("    <p>No section of this report names a gene or an rsID.</p>")
+    else:
+        body.append('    <ul class="plain terms">')
+        for term, items in terms.items():
+            links = []
+            for it in items:
+                label = E(it["title"]) + (" (stale)" if it["state"] == "stale" else "")
+                a = it.get("anchor")
+                links.append((f'<a href="#{E(a)}">{label}</a>' if a and parts.get(a) else label)
+                             + (f" ({it['count']})" if it["count"] > 1 else ""))
+            body.append(f"      <li><strong>{E(term)}</strong>: {', '.join(links)}</li>")
+        body.append("    </ul>")
+    return body + ["  </div>"]
+
+
+def html_page(s, parts, index=None):
     S = s["sections"]
     m = s["manifest"]
     commit = next((r[2] for r in m if r[0] == "run" and r[1] == "git_commit"), None) if m else None
@@ -2599,11 +2879,18 @@ def html_page(s, parts):
              f'  <p class="question">{E(question)}</p>', '  <div class="grid">']
     body += frame(S, s["sample"], "not-run", not_run) + frame(S, s["sample"], "not-assessed", not_assessed, always=True)
     body += ["  </div>", "</section>"]
+    if index is not None:
+        cid, title, question = TERMS
+        toc.insert(-2, f'    <li><a href="#ch-{cid}">{E(title)}</a></li>')
+        body += [f'<section class="chapter" id="ch-{cid}">', f'  <h2 class="chapter-title">{E(title)}</h2>',
+                 f'  <p class="question">{E(question)}</p>', '  <div class="grid">']
+        body += frame(S, s["sample"], "terms-list", terms_appendix(index, parts))
+        body += ["  </div>", "</section>"]
 
     out = ["<!DOCTYPE html>", '<html lang="en">', "<head>", '<meta charset="UTF-8">',
            f'<meta http-equiv="Content-Security-Policy" content="{CSP}">',
            '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
-           "<title>Personal Genome Pipeline Report</title>", "<style>" + CSS + "</style>", "</head>",
+           "<title>OwnGenome Report</title>", "<style>" + CSS + "</style>", "</head>",
            "<body>", '<div class="layout">'] + toc + [
            "<main>", '<header class="header">', "  <h1>Genomic Analysis Report</h1>",
            '  <div class="meta">',
@@ -2623,8 +2910,8 @@ def html_page(s, parts):
             "  It is not a clinical diagnosis. Always discuss genomic findings with a qualified healthcare",
             "  professional before making any medical decisions. Variants of Uncertain Significance (VUS)",
             "  are not clinically actionable.", "</div>", "", '<div class="footer">',
-            "  Generated by " + offsite_link("https://github.com/GeiserX/Personal-Genome-Pipeline",
-                                             "Personal-Genome-Pipeline"),
+            "  Generated by " + offsite_link("https://github.com/GeiserX/OwnGenome",
+                                             "OwnGenome"),
             "  &mdash; 100% local analysis, no data uploaded"]
     if m:
         out += (["  <details><summary>Run manifest (run_manifest.tsv)</summary>", "  <table>"]
@@ -2654,6 +2941,8 @@ def main(argv=None):
                                      "(default: the repository's assets/ beside bin/)")
     ap.add_argument("-o", "--out", action="append", default=[],
                     help="report to write: .txt for text, .html for HTML (repeatable)")
+    ap.add_argument("--search-index", help="also write every gene and rsID the results mention, with the "
+                                           "sections that name them, to this JSON file (the live site's search)")
     ap.add_argument("--charts-json", help="also write the report's charts, as data and SVG, to this JSON file "
                                           "(the live page reads it)")
     a = ap.parse_args(argv)
@@ -2670,8 +2959,14 @@ def main(argv=None):
         write(a.json or os.path.join(a.sample_dir, "summary.json"), json.dumps(s, indent=1) + "\n")
     else:
         ap.error("give --summary, or --sample and --sample-dir")
+    # Only the HTML report and --search-index read the index: a text-only run
+    # does not read the step 23 and 31 tables.
+    need_index = bool(a.search_index) or any(o.endswith(".html") for o in a.out)
+    index = results_index.build(s, a.sample_dir, SECTION_OF) if need_index else None
     for o in a.out:
-        write(o, text_report(s) if o.endswith(".txt") else html_report(s))
+        write(o, text_report(s) if o.endswith(".txt") else html_report(s, index))
+    if a.search_index:
+        write(a.search_index, json.dumps(index, indent=1) + "\n")
     if a.charts_json:
         write(a.charts_json, json.dumps(charts_json(s), indent=1) + "\n")
     states = {}

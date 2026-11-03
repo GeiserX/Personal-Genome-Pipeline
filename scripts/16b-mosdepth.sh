@@ -5,6 +5,12 @@
 #
 # Complements indexcov (step 16): indexcov reads only the BAM index for a quick
 # estimate; mosdepth reads actual alignments for precise per-base depth.
+#
+# A second pass measures how well each gene of assets/callability_genes.tsv
+# (CALLABILITY_GENES names another table) could be read: for each gene on
+# chr1-22, X and Y, the bases with 10 or more reads of mapping quality 20 or
+# more, in <sample>_callability.bed.gz. The report lists the genes where
+# fewer than 90% of the bases reach that (docs/16b-mosdepth.md).
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -17,6 +23,8 @@ ALIGN_DIR=${ALIGN_DIR:-aligned}
 SAMPLE_DIR="${GENOME_DIR}/${SAMPLE}"
 BAM="${SAMPLE_DIR}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 OUTPUT_DIR="${SAMPLE_DIR}/mosdepth"
+CALLABILITY_GENES=${CALLABILITY_GENES:-${PGP_ROOT}/assets/callability_genes.tsv}
+CALLABLE="${OUTPUT_DIR}/${SAMPLE}_callability.bed.gz"
 
 echo "=== mosdepth Coverage: ${SAMPLE} ==="
 echo "BAM: ${BAM}"
@@ -32,15 +40,54 @@ if [ ! -f "${BAM}.bai" ]; then
   exit 1
 fi
 
-# Skip if output already exists. mosdepth writes the summary last, so a
-# non-empty summary means the run finished.
-if have_output "${OUTPUT_DIR}/${SAMPLE}.mosdepth.summary.txt"; then
-  echo "mosdepth output already exists in ${OUTPUT_DIR}/, skipping."
-  echo "Delete to re-run: rm -rf ${OUTPUT_DIR}"
-  exit 0
+if [ ! -s "$CALLABILITY_GENES" ]; then
+  echo "ERROR: gene table not found or empty: ${CALLABILITY_GENES}" >&2
+  exit 1
 fi
 
 mkdir -p "$OUTPUT_DIR"
+
+# callability_pass: mosdepth over the genes of the table, reads of MAPQ 20 or
+# more only, the bases at 10x or more per gene (the same command as the
+# MOSDEPTH module). The genes with no position on chr1-22, X or Y (ALT-only)
+# are left out of the BED; the report reads them from the table.
+callability_pass() {
+  local work="${OUTPUT_DIR}/callability.part"
+  rm -rf "$work"
+  mkdir -p "$work"
+  awk -F'\t' -v OFS='\t' '!/^#/ && $1 != "gene" && $4 ~ /^[0-9]+$/ {print $3, $4, $5, $1}' \
+    "$CALLABILITY_GENES" > "${work}/genes.bed"
+  echo "Gene callability (MAPQ >= 20, 10x) over $(grep -c . "${work}/genes.bed") genes of ${CALLABILITY_GENES}..."
+  run_in --cpus "${THREADS}" --memory 4g \
+    "${MOSDEPTH_IMAGE}" \
+    mosdepth \
+      --by "/genome/${SAMPLE}/mosdepth/callability.part/genes.bed" \
+      --mapq 20 \
+      --fast-mode \
+      --no-per-base \
+      --threads "${THREADS}" \
+      --thresholds 10 \
+      "/genome/${SAMPLE}/mosdepth/callability.part/c" \
+      "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
+  if [ -f "${work}/c.thresholds.bed.gz" ]; then
+    mv "${work}/c.thresholds.bed.gz" "$CALLABLE"
+  else
+    echo "WARNING: mosdepth wrote no gene table; the report says the gene callability was not measured." >&2
+  fi
+  rm -rf "$work"
+}
+
+# Skip if output already exists. mosdepth writes the summary last, so a
+# non-empty summary means the run finished. The gene pass runs on its own
+# when only its table is missing (a folder from before it existed).
+if have_output "${OUTPUT_DIR}/${SAMPLE}.mosdepth.summary.txt"; then
+  echo "mosdepth output already exists in ${OUTPUT_DIR}/, skipping."
+  if ! have_output "$CALLABLE"; then
+    callability_pass
+  fi
+  echo "Delete to re-run: rm -rf ${OUTPUT_DIR}"
+  exit 0
+fi
 
 # mosdepth flags:
 #   --by 500        Window size for per-region coverage (500bp bins; WGS default)
@@ -76,11 +123,15 @@ run_in --cpus "${THREADS}" --memory 4g \
     "/genome/${SAMPLE}/mosdepth/${SAMPLE}" \
     "/genome/${SAMPLE}/${ALIGN_DIR}/${SAMPLE}_sorted.bam"
 
+rm -f "$CALLABLE"
+callability_pass
+
 echo "=== mosdepth complete ==="
 echo "Summary:        ${OUTPUT_DIR}/${SAMPLE}.mosdepth.summary.txt"
 echo "Distribution:   ${OUTPUT_DIR}/${SAMPLE}.mosdepth.global.dist.txt"
 echo "Region coverage: ${OUTPUT_DIR}/${SAMPLE}.regions.bed.gz"
 echo "Thresholds:     ${OUTPUT_DIR}/${SAMPLE}.thresholds.bed.gz"
+echo "Gene callability: ${CALLABLE}"
 
 # Print summary
 if [ -f "${OUTPUT_DIR}/${SAMPLE}.mosdepth.summary.txt" ]; then

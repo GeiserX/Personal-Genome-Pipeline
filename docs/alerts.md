@@ -1,6 +1,6 @@
 # Run Alerts
 
-The live site (`bin/pgp_live.py`, its guide is `docs/live-site.md`) can warn you before a run goes wrong, and say so to Prometheus. The plugin `bin/pgp_live_ops.py` adds a **Run health** card to each run's page and a `GET /metrics` endpoint. Both read the same numbers:
+The live site (`bin/owngenome_live.py`, its guide is `docs/live-site.md`) can warn you before a run goes wrong, and say so to Prometheus. The plugin `bin/owngenome_live_ops.py` adds a **Run health** card to each run's page and a `GET /metrics` endpoint. Both read the same numbers:
 
 - **Hours left**, as a range, from `bin/run_eta.py` ([How long is left](run-state.md#how-long-is-left)).
 - **Memory and disk headroom**, from `bin/run_headroom.py` ([Memory and disk headroom](run-state.md#memory-and-disk-headroom)).
@@ -24,12 +24,12 @@ Late and stalled need the step history of this box. The site reads `GENOME_DIR/p
 
 ## Flags
 
-The plugin adds these flags to `bin/pgp_live.py`. Each also works as a `KEY=VALUE` line in its `--config` file (`disk_warn_percent=85`).
+The plugin adds these flags to `bin/owngenome_live.py`. Each also works as a `KEY=VALUE` line in its `--config` file (`disk_warn_percent=85`).
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--disk-warn-percent N` | `PGP_DISK_WARN_PERCENT` or 90 | A disk at or above N% used, or N% of its inodes, warns. One knob for the card and the rules |
-| `--mem-warn-percent N` | `PGP_MEM_WARN_PERCENT` or 90 | A task at or above N% of its memory request is a hint |
+| `--disk-warn-percent N` | `OWNGENOME_DISK_WARN_PERCENT` or 90 | A disk at or above N% used, or N% of its inodes, warns. One knob for the card and the rules |
+| `--mem-warn-percent N` | `OWNGENOME_MEM_WARN_PERCENT` or 90 | A task at or above N% of its memory request is a hint |
 | `--stall-minutes N` | 60 | Minutes with no activity before a running run is stalled |
 | `--metrics-token-file FILE` | none | A file holding the token Prometheus sends as `Authorization: Bearer <token>` |
 | `--eta-box NAME` | `PGP_BOX` or the short host name | The step history to read |
@@ -45,7 +45,7 @@ Without a password the site listens on loopback only, and `/metrics` is open lik
 mkdir -p ~/.config/owngenome
 python3 -c "import secrets; print(secrets.token_urlsafe(32))" > ~/.config/owngenome/metrics.token
 chmod 600 ~/.config/owngenome/metrics.token
-python3 bin/pgp_live.py --root "${GENOME_DIR:?Set GENOME_DIR to your data directory}" \
+python3 bin/owngenome_live.py --root "${GENOME_DIR:?Set GENOME_DIR to your data directory}" \
   --password-file ~/.config/owngenome/live.hash --metrics-token-file ~/.config/owngenome/metrics.token
 ```
 
@@ -97,4 +97,4 @@ The hours left, the late steps and the unknown steps are written only while a ru
 
 ## How it is tested
 
-`tests/test_pgp_live_ops.py` runs the plugin on the made-up run of `tests/fixtures/live/ops/` with a fake disk and a fake host, then against planted mistakes that must fail it. The `promtool` job in `.github/workflows/lint.yml` runs `pgp-alerts.test.yml`, then changes one threshold and requires the test to fail.
+`tests/test_owngenome_live_ops.py` runs the plugin on the made-up run of `tests/fixtures/live/ops/` with a fake disk and a fake host, then against planted mistakes that must fail it. The `promtool` job in `.github/workflows/lint.yml` runs `pgp-alerts.test.yml`, then changes one threshold and requires the test to fail.

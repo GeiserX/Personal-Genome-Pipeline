@@ -1,5 +1,5 @@
 // ops.js: the "Run health" card of the live page, drawn from state.json's plugins.ops
-// (bin/pgp_live_ops.py): the alerts, the hours left as a range, and the memory and disk headroom.
+// (bin/owngenome_live_ops.py): the alerts, the hours left as a range, and the memory and disk headroom.
 // No outside request, no inline script, text only (never innerHTML).
 (function () {
   'use strict';

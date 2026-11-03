@@ -8,6 +8,8 @@
 # same summary, so the two reports show the same values. A result from an
 # earlier run whose step was skipped or failed in the latest run-all.sh run is
 # marked stale with its date. No internet connection is needed to view it.
+# ${SAMPLE}_search_index.json lists every gene and rsID the results mention
+# (bin/results_index.py), for the report's closing list and the live search.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -37,7 +39,7 @@ if [ ! -f "${SAMPLE_DIR}/run_manifest.tsv" ]; then
 fi
 
 echo "Reading pipeline outputs and writing the report..."
-rm -f "$OUTPUT" "${SAMPLE_DIR}/${SAMPLE}_charts.json"
+rm -f "$OUTPUT" "${SAMPLE_DIR}/${SAMPLE}_search_index.json" "${SAMPLE_DIR}/${SAMPLE}_charts.json"
 # assets/: the ACMG SF rules (acmg_sf.tsv) and the carrier list (carrier_genes.tsv).
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro" "${PYTHON_IMAGE}" \
   python3 /pgp-bin/render_report.py \
@@ -46,6 +48,7 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro" "
     --sample-dir "/genome/${SAMPLE}" \
     --json "/genome/${SAMPLE}/summary.json" \
     -o "/genome/${SAMPLE}/${SAMPLE}_report.html" \
+    --search-index "/genome/${SAMPLE}/${SAMPLE}_search_index.json" \
     --charts-json "/genome/${SAMPLE}/${SAMPLE}_charts.json"
 
 if [ ! -f "$OUTPUT" ]; then
@@ -58,6 +61,7 @@ echo ""
 echo "============================================"
 echo "  HTML report generated: ${OUTPUT}"
 echo "  Summary: ${SAMPLE_DIR}/summary.json"
+echo "  Search index: ${SAMPLE_DIR}/${SAMPLE}_search_index.json"
 echo "  Charts:  ${SAMPLE_DIR}/${SAMPLE}_charts.json"
 echo "  Size: ${REPORT_KB} KB"
 echo "============================================"

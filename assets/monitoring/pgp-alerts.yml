@@ -1,4 +1,4 @@
-# Example Prometheus alert rules for OwnGenome runs, on the metrics of bin/pgp_live_ops.py
+# Example Prometheus alert rules for OwnGenome runs, on the metrics of bin/owngenome_live_ops.py
 # (GET /metrics of the live site). docs/alerts.md says how to scrape them and what each one means.
 # The thresholds the page also shows (disk warn percent, stall minutes) are flags of the site,
 # so the page and these rules always agree. Each disk is compared with the warn ratio of the site

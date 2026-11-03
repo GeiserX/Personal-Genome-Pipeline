@@ -1,4 +1,4 @@
-# Contributing to Personal Genome Pipeline
+# Contributing to OwnGenome
 
 Thank you for your interest in contributing. This pipeline aims to be the most accessible WGS analysis tool for non-bioinformaticians. Every contribution should be evaluated through that lens.
 
@@ -6,7 +6,7 @@ Thank you for your interest in contributing. This pipeline aims to be the most a
 
 ### Reporting Bugs
 
-[Open an issue](https://github.com/GeiserX/Personal-Genome-Pipeline/issues/new) with:
+[Open an issue](https://github.com/GeiserX/OwnGenome/issues/new) with:
 - Which step failed (step number and script name)
 - Full error message (copy-paste, not screenshot)
 - Your platform (OS, Docker version, CPU architecture)

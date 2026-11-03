@@ -1,4 +1,4 @@
-# CLAUDE.md — Personal Genome Pipeline
+# CLAUDE.md — OwnGenome
 
 ## Overview
 Whole genome sequencing (WGS) analysis pipeline for consumer hardware. Takes raw FASTQ/BAM/VCF data and runs the numbered steps 1 to 37 (with 1b, 9b and 16b, plus alternative aligners and callers) locally in Docker containers: variant calling, pharmacogenomics, structural variants, cancer predisposition, polygenic risk scores, ancestry, mitochondrial and Y haplogroups, telomere length, and more. The step list and what a default run covers live in `docs/pipeline-overview.md`. Designed for non-bioinformaticians analyzing their own genome data.
@@ -37,7 +37,7 @@ After modifying any script, verify:
 ## Architecture
 
 ```
-personal-genome-pipeline/
+owngenome/
   README.md                    # Pipeline overview, quick start
   docs/
     00-reference-setup.md      # One-time reference data downloads

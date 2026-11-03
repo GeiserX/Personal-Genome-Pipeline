@@ -17,7 +17,7 @@ W_ARG=${1:?Usage: $0 <work_dir>}
 mkdir -p "$W_ARG"
 W="$(cd "$W_ARG" && pwd)"
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
-GH_REPO=${GITHUB_REPOSITORY:-GeiserX/Personal-Genome-Pipeline}
+GH_REPO=${GITHUB_REPOSITORY:-GeiserX/OwnGenome}
 TAG=$(tr -d '[:space:]' < "${REPO}/tests/fixtures/VERSION")
 SLICE=chr20:10000000-10500000
 
