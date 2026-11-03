@@ -104,7 +104,8 @@ def cf(t, system):
 
 # 1. table and code
 names = set(SITES)
-ruled = set(bt.PAIRS) | bt.SPECIAL_SITES
+NULLS = {n for n, r in SITES.items() if r["alt_means"] == "null"}
+ruled = set(bt.PAIRS) | bt.SPECIAL_SITES | NULLS
 check("1 every site of the table has a rule", sorted(names - ruled), [])
 check("1 every rule has a site in the table", sorted(ruled - names), [])
 for n, (label, tmpl) in bt.PAIRS.items():
@@ -117,6 +118,14 @@ check("1 positions are unique", len({(r["chrom"], r["pos"]) for r in SITES.value
 check("1 the RhD depth regions are there",
       sorted(n for n in REGIONS if not n.startswith("RHD_EX")), ["RHD_FLANK_DOWN", "RHD_FLANK_UP", "RHD_GENE"])
 check("1 RHD has ten exons", sorted(int(n[6:]) for n in REGIONS if n.startswith("RHD_EX")), list(range(1, 11)))
+check("1 every null row is in a system that reads null rows",
+      sorted(n for n in NULLS if SITES[n]["system"] not in set(bt.NULL_SYSTEMS) | bt.NULL_HOSTS), [])
+check("1 every system read from null rows has some",
+      sorted(s for s in bt.NULL_SYSTEMS if not any(SITES[n]["system"] == s for n in NULLS)), [])
+check("1 a null row of Kell or Kidd names the alleles it sits with",
+      sorted(n for n in NULLS if SITES[n]["system"] in bt.NULL_HOSTS and not SITES[n]["null_on"]), [])
+check("1 the high_prevalence antigen is one the row gives",
+      sorted(n for n, r in SITES.items() if r["high_prevalence"] and r["high_prevalence"] not in (r["ref_means"], r["alt_means"])), [])
 
 # 2. nothing planted
 ref = run(depth=rhd(2))
@@ -222,6 +231,153 @@ check("7 Kell (chr7, covered) is read as usual", (ph(part, "Kell"), cf(part, "Ke
 empty = run(depth={}, drop=tuple({r["chrom"] for r in SITES.values()}))
 check("7 an empty depth file (no marker contig in the BAM): RhD not determined", ph(empty, "RhD"), "not determined")
 check("7 and a system with no record is not determined", ph(empty, "Kidd"), "not determined")
+
+# 8. the orientation of the null and HPA-7 to -35 rows: each row's REF and ALT are
+# its c. change on the gene's strand (Ensembl GRCh38, 2026-11-03). A row with REF
+# and ALT swapped, or on the wrong strand, fails here.
+STRAND = {"SMIM1": 1, "ABCB6": -1, "ABCG2": -1, "FUT1": -1, "FUT2": 1, "KEL": -1, "SLC14A1": 1,
+          "ITGB3": 1, "ITGA2B": -1, "GP1BB": 1, "ITGA2": 1, "GP9": 1}
+COMP = str.maketrans("ACGT", "TGCA")
+
+
+def oriented(gene, ref, alt, change):
+    """The VCF REF/ALT agree with one c. change on the gene's strand: the bases
+    of a substitution or a delins, the length of a deletion, duplication or insertion."""
+    import re
+    flip = (lambda s: s.translate(COMP)[::-1]) if STRAND[gene] == -1 else (lambda s: s)
+    m = re.fullmatch(r"c\.[-*0-9+_]+([ACGT])>([ACGT])", change)
+    if m:
+        return (flip(ref), flip(alt)) == m.groups()
+    m = re.fullmatch(r"c\.([-*0-9+]+)(?:_([-*0-9+]+))?delins([ACGT]+)", change)
+    if m:
+        return len(ref) == span(m.group(1), m.group(2)) and flip(alt) == m.group(3)
+    m = re.fullmatch(r"c\.([-*0-9+]+)(?:_([-*0-9+]+))?(del|dup)([ACGT]*)", change)
+    if m:
+        n = len(m.group(4)) or span(m.group(1), m.group(2))
+        d = len(ref) - len(alt) if m.group(3) == "del" else len(alt) - len(ref)
+        return d == n and ref[0] == alt[0]
+    m = re.fullmatch(r"c\.[0-9]+_[0-9]+ins([ACGT]+)", change)
+    if m:
+        return len(alt) - len(ref) == len(m.group(1)) and ref[0] == alt[0]
+    return False
+
+
+def span(a, b):
+    def pos(x):
+        base, _, off = x.partition("+")
+        return int(base) + (int(off) if off else 0)
+    return 1 if b is None else pos(b) - pos(a) + 1
+
+
+NEW = sorted(NULLS | set(bt.HPA_RARE))
+for n in NEW:
+    r = SITES[n]
+    gene, _, changes = r["hgvs"].partition(" ")
+    changes = changes.split(", ")
+    alts = r["alt"].split(",")
+    check(f"8 {n}: one c. change per ALT", len(changes), len(alts))
+    check(f"8 {n}: REF and ALT read the c. change on the {gene} strand",
+          [c for a, c in zip(alts, changes) if not oriented(gene, r["ref"], a, c)], [])
+check("8 control: a swapped REF and ALT fails the orientation", oriented("KEL", "A", "G", "c.578C>T"), False)
+check("8 control: the right one passes", oriented("KEL", "G", "A", "c.578C>T"), True)
+check("8 control: a deletion one base short fails", oriented("FUT2", "CG", "C", "c.719_720delGT"), False)
+
+
+# 9. every new row, positive and negative: a reference genome carries the antigen
+# (the a antigen for HPA-7 to -35), the row's ALT on both chromosomes lacks it.
+def run_inproc(records):
+    """Like run(), in this process (bin/bloodtype_report.py's main), with reads everywhere."""
+    with tempfile.TemporaryDirectory() as tmp:
+        vcf, dp, out = os.path.join(tmp, "s.vcf"), os.path.join(tmp, "d.tsv"), os.path.join(tmp, "t.tsv")
+        with open(vcf, "w") as f:
+            f.write("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n" + "".join(records))
+        with open(dp, "w") as f:
+            for r in list(SITES.values()) + list(REGIONS.values()):
+                f.write("\t".join([r["chrom"], str(r["start"]), str(r["end"]), r["kind"], r["system"], r["name"],
+                                   str(30 * (r["end"] - r["start"]))]) + "\n")
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = bt.main(["--sample", "S", "--vcf", vcf, "--markers", MARKERS, "--depth", dp, "--out", out,
+                          "--evidence", os.path.join(tmp, "e.tsv")])
+        if rc:
+            return f"exit {rc}"
+        with open(out) as f:
+            return [dict(r) for r in csv.DictReader(f, delimiter="\t")]
+
+
+NEG = {"Vel": "Vel-", "Langereis": "Lan-", "Junior": "Jr(a-)", "H": "H- (Bombay, Oh)",
+       "Secretor": "non-secretor", "Kell": "K-k- Kp(a-b-) Js(a-b-)", "Kidd": "Jk(a-b-)"}
+POS = {"Vel": "Vel+", "Langereis": "Lan+", "Junior": "Jr(a+)", "H": "H+", "Secretor": "secretor",
+       "Kell": "K-k+ Kp(a-b+) Js(a-b+)", "Kidd": "Jk(a+b-)"}
+base = {r["system"]: r for r in run_inproc([])}
+for n in NEW:
+    r = SITES[n]
+    s = r["system"]
+    want_pos = POS.get(s) or f"{s}(a+b-)"
+    check(f"9 {n}: the reference genome is {want_pos}", base[s]["phenotype"], want_pos)
+    for a in r["alt"].split(","):
+        recs = [vcf_line(n, "1/1", alt=a)]
+        if s == "H":
+            recs.append(vcf_line("FUT2_01N02", "1/1"))   # FUT1 null with a non-secretor: Bombay
+        t = run_inproc(recs)
+        got = {x["system"]: x for x in t} if isinstance(t, list) else {}
+        want_neg = NEG.get(s) or f"{s}(a-b+)"
+        check(f"9 {n} {r['ref']}>{a} on both chromosomes: {want_neg}",
+              got.get(s, {}).get("phenotype"), want_neg)
+check("9 a reference genome lacks no high-prevalence antigen: ABO is the first row",
+      [x["system"] for x in run_inproc([])][:3], ["ABO", "RhD", "RhCE"])
+
+# 10. synthetic gVCF records: Jk(a-b-) from SLC14A1 c.342-1G>A and HPA-21b/21b,
+# each with the <*> allele DeepVariant's gVCF adds; a reference block at the
+# sites gives the common phenotypes.
+jk, hpa = SITES["JK_01N06"], SITES["HPA21_1960"]
+gv = [f"{jk['chrom']}\t{jk['pos']}\t.\tG\tA,<*>\t40\tPASS\t.\tGT:GQ\t1/1:40\n",
+      f"{hpa['chrom']}\t{hpa['pos']}\t.\t{hpa['ref']}\t{hpa['alt']},<*>\t40\tPASS\t.\tGT:GQ\t1/1:40\n"]
+g = {x["system"]: x for x in run_inproc(gv)}
+check("10 gVCF: c.342-1G>A 1/1 is Jk(a-b-), lacking Jk3",
+      (g["Kidd"]["phenotype"], g["Kidd"]["genotype"], "lacks Jk3, carried by most people" in g["Kidd"]["note"]),
+      ("Jk(a-b-)", "null/null", True))
+check("10 gVCF: HPA-21b/21b", (g["HPA-21"]["phenotype"], g["HPA-21"]["genotype"]), ("HPA-21(a-b+)", "21b/21b"))
+order = [x["system"] for x in run_inproc(gv)]
+check("10 the systems that lack a high-prevalence antigen come first", order[:2], ["Kidd", "HPA-21"])
+blocks = [f"{r['chrom']}\t{r['pos']}\t.\t{r['ref'][0]}\t<*>\t0\t.\tEND={r['pos'] + 5}\tGT:GQ\t0/0:50\n" for r in (jk, hpa)]
+gb = {x["system"]: x for x in run_inproc(blocks)}
+check("10 gVCF reference blocks: Jk(a+b-) and HPA-21(a+b-), confidence high",
+      (gb["Kidd"]["phenotype"], gb["HPA-21"]["phenotype"], gb["Kidd"]["confidence"]),
+      ("Jk(a+b-)", "HPA-21(a+b-)", "high"))
+
+# 11. null alleles in detail
+one = {x["system"]: x for x in run_inproc([vcf_line("VEL_01N01", "0/1")])}
+check("11 one SMIM1 null copy: Vel+, Vel/null, the note names it",
+      (one["Vel"]["phenotype"], one["Vel"]["genotype"], "SMIM1 c.64_80del" in one["Vel"]["note"]), ("Vel+", "Vel/null", True))
+cpd = {x["system"]: x for x in run_inproc([vcf_line("LAN_01N02", "0/1"), vcf_line("LAN_01N13", "0/1")])}
+check("11 two different ABCB6 nulls: Lan-, confidence low (no phase), the note says so",
+      (cpd["Langereis"]["phenotype"], cpd["Langereis"]["confidence"], "phase is not read" in cpd["Langereis"]["note"]),
+      ("Lan-", "low", True))
+kk = {x["system"]: x for x in run_inproc([vcf_line("KEL_578", "0/1"), vcf_line("KEL_02N03", "0/1")])}
+check("11 K/k with one KEL null: the null goes on the k chromosome, K+k-",
+      (kk["Kell"]["phenotype"], kk["Kell"]["genotype"]), ("K+k- Kp(a-b+) Js(a-b+)", "K/null Kpb/null Jsb/null"))
+check("11 and that lacks k, a high-prevalence antigen, so Kell comes first",
+      (run_inproc([vcf_line("KEL_578", "0/1"), vcf_line("KEL_02N03", "0/1")])[0]["system"],
+       "lacks k, carried by most people (high prevalence)" in kk["Kell"]["note"]), ("Kell", True))
+jb = {x["system"]: x for x in run_inproc([vcf_line("JK_838", "0/1"), vcf_line("JK_02N06", "0/1")])}
+check("11 Jka/Jkb with JK*02N.06 (c.871T>C): the null goes on Jkb, Jk(a+b-)",
+      (jb["Kidd"]["phenotype"], jb["Kidd"]["genotype"]), ("Jk(a+b-)", "Jka/null"))
+para = {x["system"]: x for x in run_inproc([vcf_line("FUT1_01N08", "1/1"), vcf_line("ABO_261", "0/1")])}
+check("11 FUT1 null with a working FUT2: para-Bombay", para["H"]["phenotype"], "H- (para-Bombay)")
+check("11 and the ABO row says the red cells group as O", "the cells usually group as O" in para["ABO"]["note"], True)
+check("11 a non-secretor alone leaves H and ABO as they are",
+      [(x["system"], x["phenotype"]) for x in run_inproc([vcf_line("FUT2_01N02", "1/1")])
+       if x["system"] in ("H", "ABO", "Secretor")], [("ABO", "O"), ("H", "H+"), ("Secretor", "non-secretor")])
+lowd = run(depth=dict(rhd(2), VEL_01N01=2.0))
+check("11 the only Vel null row with 2 reads: not determined", ph(lowd, "Vel"), "not determined")
+lowk = run(depth=dict(rhd(2), KEL_02N03=2.0))
+check("11 one KEL null row with 2 reads: Kell still read, confidence medium",
+      (ph(lowk, "Kell"), cf(lowk, "Kell")), ("K-k+ Kp(a-b+) Js(a-b+)", "medium"))
+multi_null = {x["system"]: x for x in run_inproc([vcf_line("KEL_02N01", "1/1", alt="A")])}
+check("11 a null row with several ALTs counts each (c.223+1G>T, the third)",
+      multi_null["Kell"]["phenotype"], "K-k- Kp(a-b-) Js(a-b-)")
 
 if FAILS:
     print(f"{len(FAILS)} check(s) failed")

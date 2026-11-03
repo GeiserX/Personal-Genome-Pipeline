@@ -7,14 +7,22 @@
 
 reads the sample's genotype at each defining variant of assets/bloodtype_markers.tsv
 and writes one row per blood group system: ABO (with A1 and A2), RhD, RhCE (C/c,
-E/e), Kell (K/k, Kp, Js), Duffy (with the GATA-box variant), Kidd, MNS (M/N, S/s),
-Lutheran, Diego, Dombrock, Colton, the platelet antigens HPA-1 to -6 and -15,
+E/e), Kell (K/k, Kp, Js, and K0 from the KEL null alleles), Duffy (with the
+GATA-box variant), Kidd (with Jk(a-b-) from the SLC14A1 null alleles), MNS (M/N,
+S/s), Lutheran, Diego, Dombrock, Colton, Vel, Langereis (Lan), Junior (Jra), H
+(Bombay and para-Bombay), secretor status, the platelet antigens HPA-1 to -35,
 and the neutrophil antigens HNA-1 (a, b, c), HNA-3, HNA-4 and HNA-5. Columns:
 system, phenotype, genotype, confidence, note. For a platelet or neutrophil
 antigen the genome predicts the person lacks, the note adds the table's
-meaning column: what lacking it means. It is a prediction from the DNA, not a
-serological typing. The evidence file has one row per site and per
-RhD depth region: what the VCF and the reads said.
+meaning column: what lacking it means. The systems where the person lacks a
+high-prevalence antigen (the table's high_prevalence column) come first. It is
+a prediction from the DNA, not a serological typing. The evidence file has one
+row per site and per RhD depth region: what the VCF and the reads said.
+
+A null row (alt_means null) is an allele that makes no antigen. Vel, Langereis,
+Junior, H and secretor are read from their null rows alone: two null copies lack
+the antigen. In Kell and Kidd a null copy silences one chromosome: it is placed
+on a chromosome carrying the antigens of its null_on column, as no phase is read.
 
 --depth is samtools bedcov -Q 20 -j over the table's sites and the RHD row of
 bin/cn_loci.tsv (scripts/41-bloodtype.sh and the BLOODTYPE_DEPTH process make
@@ -33,7 +41,8 @@ and bin/copy_number.py turns their depth into the copy number). It gives:
     read as reference and the confidence says so (medium).
 
 Confidence: high (every site called or covered by reads), medium (a site was
-read as reference with no depth to confirm it), low (a site in a region where
+read as reference with no depth to confirm it, or a null row of the system was
+not determined), low (a site in a region where
 short reads are unreliable, named in the note, or markers that disagree), not
 determined. Phase is not read: two variants of one system are placed on the
 chromosomes the common alleles carry them on, and the note says so.
@@ -84,15 +93,40 @@ PAIRS = {
     "HNA4_230": ("HNA-4", "HNA-4(a{4a}b{4b})"),
     "HNA5_2372": ("HNA-5", "HNA-5(a{5a}b{5b})"),
 }
-# The systems in report order. ABO, RhD and Duffy have rules of their own; the
-# others are their two-allele sites.
+# HPA-7 to -35 (HPA-15 is above): one site each, the a antigen on the reference
+# allele and the low-prevalence b antigen on the alternative one.
+HPA_RARE = ["HPA7_1297", "HPA8_1984", "HPA9_2602", "HPA10_263", "HPA11_1976", "HPA12_119", "HPA13_2483",
+            "HPA14_1909", "HPA16_497", "HPA17_662", "HPA18_2235", "HPA19_487", "HPA20_1949", "HPA21_1960",
+            "HPA22_584", "HPA23_1942", "HPA24_1508", "HPA25_3347", "HPA26_1818", "HPA27_2614", "HPA28_2311",
+            "HPA29_98", "HPA30_2511", "HPA31_368", "HPA32_521", "HPA33_1373", "HPA34_349", "HPA35_1514"]
+for _n in HPA_RARE:
+    _k = _n[3:].split("_")[0]
+    PAIRS[_n] = (f"HPA-{_k}", f"HPA-{_k}(a{{{_k}a}}b{{{_k}b}})")
+# Systems read from their null rows alone: (phenotype with the antigen, without
+# it, allele label of a working copy, of a null copy).
+NULL_SYSTEMS = {
+    "Vel": ("Vel+", "Vel-", "Vel", "null"),
+    "Langereis": ("Lan+", "Lan-", "Lan", "null"),
+    "Junior": ("Jr(a+)", "Jr(a-)", "Jra", "null"),
+    "H": ("H+", "H-", "H", "h"),
+    "Secretor": ("secretor", "non-secretor", "Se", "se"),
+}
+# Systems with two-allele sites whose null rows silence a chromosome.
+NULL_HOSTS = {"Kell", "Kidd"}
+# The systems in report order (the systems that lack a high-prevalence antigen
+# then move to the top). ABO, RhD and Duffy have rules of their own; the others
+# are their two-allele sites, their null rows, or both.
 SYSTEMS = [
     ("ABO", None), ("RhD", None), ("RhCE", ["RHCE_307", "RHCE_676"]),
     ("Kell", ["KEL_578", "KEL_841", "KEL_1790"]), ("Duffy", None), ("Kidd", ["JK_838"]),
     ("MNS", ["GYPA_59", "GYPB_143"]), ("Lutheran", ["LU_230"]), ("Diego", ["DI_2561"]),
     ("Dombrock", ["DO_793"]), ("Colton", ["CO_134"]),
+    ("Vel", None), ("Langereis", None), ("Junior", None), ("H", None), ("Secretor", None),
     ("HPA-1", ["HPA1_176"]), ("HPA-2", ["HPA2_482"]), ("HPA-3", ["HPA3_2621"]),
-    ("HPA-4", ["HPA4_506"]), ("HPA-5", ["HPA5_1600"]), ("HPA-6", ["HPA6_1544"]), ("HPA-15", ["HPA15_2108"]),
+    ("HPA-4", ["HPA4_506"]), ("HPA-5", ["HPA5_1600"]), ("HPA-6", ["HPA6_1544"]),
+    *[(PAIRS[n][0], [n]) for n in HPA_RARE if int(n[3:].split("_")[0]) < 15],
+    ("HPA-15", ["HPA15_2108"]),
+    *[(PAIRS[n][0], [n]) for n in HPA_RARE if int(n[3:].split("_")[0]) > 15],
     ("HNA-1", None), ("HNA-3", ["HNA3_461"]), ("HNA-4", ["HNA4_230"]), ("HNA-5", ["HNA5_2372"]),
 ]
 # HNA-1 (FCGR3B): FCGR3B*01 (HNA-1a) and *02 (HNA-1b) differ at c.108, c.114, c.194,
@@ -139,6 +173,8 @@ def read_markers(path, cn_loci=None):
         r["start"], r["end"] = int(r["start"]), int(r["end"])
         if r["kind"] == "site":
             r["pos"] = r["end"]
+            if r.get("alt_means") == "null" and r["system"] not in NULL_SYSTEMS and r["system"] not in NULL_HOSTS:
+                raise InputError(f"{path}: null row {r['name']} is in {r['system']}, which reads no null rows")
             sites[r["name"]] = r
         else:
             raise InputError(f"{path}: row {r['name']} has kind '{r['kind']}' (site; the RhD depth regions "
@@ -210,8 +246,9 @@ def read_vcf(path, sites):
 
 def genotype_site(site, ref, alts, filt, alleles):
     r = site.row
-    want = r["alt"] if r["ref"] == ref else None
-    idx = str(alts.index(want) + 1) if want in alts else None
+    # A null row may list several ALTs (null alleles at one position): any of them counts.
+    wants = r["alt"].split(",") if r["ref"] == ref else []
+    idx = {str(i + 1) for i, a in enumerate(alts) if a in wants}
     if "." in alleles or len(alleles) != 2:
         site.status, site.note = "no call", f"genotype {'/'.join(alleles)}"
         return
@@ -223,8 +260,8 @@ def genotype_site(site, ref, alts, filt, alleles):
     if filt not in ("PASS", ".") and any(a != "0" for a in alleles):
         site.status, site.note = "no call", f"FILTER {filt}"
         return
-    site.status, site.n, site.note = "called", sum(1 for a in alleles if idx is not None and a == idx), ""
-    others = [a for a in alleles if a not in ("0", idx)]
+    site.status, site.n, site.note = "called", sum(1 for a in alleles if a in idx), ""
+    others = [a for a in alleles if a != "0" and a not in idx]
     if others:
         site.note = f"another allele at this position ({ref}>{','.join(alts)}, genotype {'/'.join(alleles)})"
 
@@ -300,22 +337,81 @@ def sign(present):
     return "+" if present else "-"
 
 
-def pair_part(name, s):
-    """(phenotype part, genotype part) of one two-allele site, or None."""
+def pair_part(name, s, left=None):
+    """(phenotype part, genotype part) of one two-allele site, or None. left is
+    {antigen: copies} after null copies took theirs (default: the site's own)."""
     if s.n is None:
         return None
     r = s.row
+    left = left or {r["alt_means"]: s.n, r["ref_means"]: 2 - s.n}
     tmpl = PAIRS[name][1]
-    pheno = tmpl.replace("{" + r["alt_means"] + "}", sign(s.n > 0)).replace("{" + r["ref_means"] + "}", sign(s.n < 2))
-    alleles = sorted([r["alt_means"]] * s.n + [r["ref_means"]] * (2 - s.n))
+    pheno = (tmpl.replace("{" + r["alt_means"] + "}", sign(left[r["alt_means"]] > 0))
+             .replace("{" + r["ref_means"] + "}", sign(left[r["ref_means"]] > 0)))
+    alleles = sorted([r["alt_means"]] * left[r["alt_means"]] + [r["ref_means"]] * left[r["ref_means"]])
+    alleles += ["null"] * (2 - len(alleles))
     return pheno, "/".join(alleles)
+
+
+def null_rows(system, S):
+    return [s for s in S.values() if s.row["system"] == system and s.row.get("alt_means") == "null"]
+
+
+def null_copies(nulls):
+    """(null copies, the null sites with copies, the null sites not determined,
+    note parts) of a system's null rows."""
+    known = [s for s in nulls if s.n is not None]
+    missing = [s for s in nulls if s.n is None]
+    found = [s for s in known if s.n]
+    n = sum(s.n for s in found)
+    extra = []
+    if found:
+        extra.append("null allele" + ("s" if len(found) > 1 else "") + ": "
+                     + ", ".join(f"{s.row['hgvs']} x{s.n}" for s in found))
+    if n >= 2 and not any(s.n == 2 for s in found):
+        extra.append("two different null alleles, assumed to sit on different chromosomes (phase is not read)")
+    if n > 2:
+        extra.append(f"{n} null copies, more than two chromosomes carry: a rare allele or a misplaced read")
+    if missing:
+        extra.append(f"{len(missing)} null row{'s' if len(missing) > 1 else ''} not determined ("
+                     + "; ".join(f"{s.row['hgvs']}: {s.status}" for s in missing[:3])
+                     + ("; ..." if len(missing) > 3 else "") + ")")
+    return min(n, 2), found, missing, extra
+
+
+def null_confidence(used, found, missing):
+    """level_of the sites used, then medium when a null row was not determined,
+    and low for two different null alleles (no phase) or more than two copies."""
+    conf = level_of(used)
+    copies = sum(s.n for s in found)
+    if copies > 2 or (copies == 2 and len(found) > 1):
+        return "low"
+    if conf == "high" and missing:
+        return "medium"
+    return conf
 
 
 def system_pairs(system, names, S):
     parts, genos, used, missing = [], [], [], []
+    nulls = null_rows(system, S)
+    n_null, found, nmiss, null_extra = null_copies(nulls)
+    # what each null copy silences: one allele at every site, the one of its null_on
+    # column first (the chromosome the ISBT table finds it on), else the other
+    left = {}
     for name in names:
         s = S[name]
-        p = pair_part(name, s)
+        if s.n is not None:
+            left[name] = {s.row["alt_means"]: s.n, s.row["ref_means"]: 2 - s.n}
+    queue = [x for x in found for _ in range(x.n)][:n_null]
+    for x in queue:
+        prefer = (x.row.get("null_on") or "").split()
+        for name, cnt in left.items():
+            r = S[name].row
+            pick = next((a for a in prefer if cnt.get(a, 0) > 0), None)
+            pick = pick or next(a for a in (r["ref_means"], r["alt_means"]) if cnt[a] > 0)
+            cnt[pick] -= 1
+    for name in names:
+        s = S[name]
+        p = pair_part(name, s, left.get(name))
         if p is None:
             parts.append(f"{PAIRS[name][0]} {NOT_DETERMINED}")
             missing.append(s)
@@ -325,11 +421,49 @@ def system_pairs(system, names, S):
         used.append(s)
     if not used:
         return unknown(system, missing)
-    conf = level_of(used) if not missing else "low"
-    extra = [f"{s.row['hgvs']}: {s.status}" + (f" ({s.note})" if s.note else "") for s in missing]
-    lacks = [s.row["ref_means"] if s.n == 2 else s.row["alt_means"] for s in used if s.n in (0, 2)]
-    return {"system": system, "phenotype": " ".join(parts), "genotype": " ".join(genos),
-            "confidence": conf, "note": notes_of(used, extra + meaning(system, lacks, used))}
+    used_all = used + [s for s in nulls if s.n is not None]
+    conf = null_confidence(used_all, found, nmiss) if not missing else "low"
+    extra = [f"{s.row['hgvs']}: {s.status}" + (f" ({s.note})" if s.note else "") for s in missing] + null_extra
+    if found and found[0].row.get("null_on"):
+        extra.append(f"each null copy is placed with {', '.join(found[0].row['null_on'].split())} first, "
+                     "the alleles the ISBT table finds it with (phase is not read)")
+    lacks = [a for name in names if name in left for a, c in left[name].items() if c == 0]
+    if n_null >= 2:
+        lacks.append(found[0].row["ref_means"])
+        extra.insert(0, f"two null copies: no {system} antigen on the red cells ({found[0].row['ref_means']}-)")
+    geno = "null/null" if n_null >= 2 and not missing else " ".join(genos)
+    row = {"system": system, "phenotype": " ".join(parts), "genotype": geno,
+           "confidence": conf, "note": notes_of(used_all, extra + meaning(system, lacks, used))}
+    return with_lacks(row, lacks, used_all)
+
+
+def system_null(system, S):
+    """A system read from its null rows alone (Vel, Langereis, Junior, H, secretor)."""
+    plus, minus, ok, null = NULL_SYSTEMS[system]
+    nulls = null_rows(system, S)
+    n, found, missing, extra = null_copies(nulls)
+    used = [s for s in nulls if s.n is not None]
+    if not used:
+        return unknown(system, missing[:3], f"no null row of {system} was determined")
+    conf = null_confidence(used, found, missing)
+    antigen = nulls[0].row["ref_means"]
+    lacks = [antigen] if n >= 2 else []
+    row = {"system": system, "phenotype": minus if n >= 2 else plus, "genotype": "/".join([ok] * (2 - n) + [null] * n),
+           "confidence": conf, "note": notes_of(used, extra)}
+    return with_lacks(row, lacks, used)
+
+
+def with_lacks(row, lacks, used):
+    """Mark the row with the high-prevalence antigens it lacks (the table's
+    high_prevalence column), which predict() lists first."""
+    hp = {s.row.get("high_prevalence") for s in used if s.row.get("high_prevalence")}
+    gone = [a for a in dict.fromkeys(lacks) if a in hp]
+    if gone:
+        prefix = row["system"].split("-")[0] + "-" if row["system"].startswith(("HPA-", "HNA-")) else ""
+        names = ", ".join(prefix + a for a in gone)
+        row["note"] = "; ".join(x for x in (row["note"], f"lacks {names}, carried by most people (high prevalence)") if x)
+        row["_lacks_high"] = gone
+    return row
 
 
 def meaning(system, lacks, used):
@@ -516,6 +650,25 @@ def rhd_min_flank(cn_loci=None):
     return int(v) if v == int(v) else v
 
 
+def bombay(rows):
+    """H on red cells needs FUT1: without it (two FUT1 null copies) the ABO
+    alleles make no A or B there. Name Bombay or para-Bombay from the secretor
+    row, and say so in the ABO row."""
+    by = {r["system"]: r for r in rows}
+    h, se, abo = by["H"], by["Secretor"], by["ABO"]
+    if h["phenotype"] != NULL_SYSTEMS["H"][1]:
+        return
+    if se["phenotype"] == NULL_SYSTEMS["Secretor"][1]:
+        h["phenotype"] = "H- (Bombay, Oh)"
+    elif se["phenotype"] == NULL_SYSTEMS["Secretor"][0]:
+        h["phenotype"] = "H- (para-Bombay)"
+        h["note"] = "; ".join(x for x in (h["note"], "para-Bombay: a working FUT2 makes H in secretions, "
+                                          "and red cells carry little or none") if x)
+    abo["note"] = "; ".join(x for x in (abo["note"], "no FUT1 (H-): the red cells carry no H (or very little, "
+                                        "para-Bombay), so these ABO alleles make little or no A or B on them "
+                                        "and the cells usually group as O") if x)
+
+
 def predict(S, depth, regions, cn_loci=None):
     rows = []
     for system, names in SYSTEMS:
@@ -527,9 +680,17 @@ def predict(S, depth, regions, cn_loci=None):
             rows.append(system_duffy(S))
         elif system == "HNA-1":
             rows.append(system_hna1(S))
+        elif system in NULL_SYSTEMS:
+            rows.append(system_null(system, S))
         else:
             rows.append(system_pairs(system, names, S))
-    return rows
+    se = next(r for r in rows if r["system"] == "Secretor")
+    if se["phenotype"] != NOT_DETERMINED:
+        se["note"] = "; ".join(x for x in (se["note"], "weak secretor alleles (such as FUT2 c.418A>T, also written "
+                                           "c.385A>T) and a deletion of the whole FUT2 gene are not assessed") if x)
+    bombay(rows)
+    # the systems that lack a high-prevalence antigen first, each list in report order
+    return [r for r in rows if r.get("_lacks_high")] + [r for r in rows if not r.get("_lacks_high")]
 
 
 # --- output ------------------------------------------------------------------
