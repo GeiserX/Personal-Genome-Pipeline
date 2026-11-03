@@ -22,7 +22,8 @@
 #                (under E2E_WORK and the checkout) into this .tar.zst, and
 #                write "E2E_WORK CHECKOUT" to E2E_BASE_OUT.from
 #      E2E_BASE_IN   after the layout, unpack this .tar.zst from E2E_BASE_OUT,
-#                which must have been packed with the same E2E_WORK and checkout
+#                which must have been packed with the same E2E_WORK and
+#                checkout, then delete it to give the cases its disk space
 #      E2E_TRACE=true  after each case, record how long it took and which
 #                earlier case wrote each file it read (atime and ctime, with
 #                the file systems remounted strictatime; needs sudo), in
@@ -302,6 +303,9 @@ if [ -n "${E2E_BASE_IN:-}" ]; then
   fi
   zstd -dc "$E2E_BASE_IN" | sudo tar -P -xpf -
   echo "Unpacked $(zstd -dc "$E2E_BASE_IN" | tar -tf - | wc -l) entries"
+  # The archive is about 4 GB on the disk the cases write to. Shard 1 of run
+  # 41524201317 filled that disk while the archive was still there.
+  rm -f "$E2E_BASE_IN"
 fi
 
 # --- 3. Images ----------------------------------------------------------------

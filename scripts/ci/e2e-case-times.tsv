@@ -65,7 +65,7 @@ clinical-filter-mane-and-quality-2-vep-norm	shard	1	-
 clinical-filter-mane-and-quality-3-modules	shard	7	clinical-filter-mane-and-quality-1-tiers
 clinvar-clip-check-1	shard	6	-
 clinvar-combined-allele-1	shard	20	-
-clinvar-cpsr-quality-1	shard	4	-
+clinvar-cpsr-quality-1	shard	4	clinvar-clip-check-1
 cn-engine-1-parity	shard	20	-
 comphet-phasing-1-reads	shard	13	clinical-filter-mane-and-quality-1-tiers
 consumer-export-1	shard	55	-
