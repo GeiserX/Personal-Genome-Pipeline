@@ -7,7 +7,7 @@
 One chart model for both places a chart is shown. bin/render_report.py puts
 each SVG in its report section, under that section's caveat, and writes every
 spec with its SVG to <sample>_charts.json (--charts-json), which the live
-page's charts plugin reads (bin/pgp_live_charts.py, assets/live/plugins/charts.js).
+page's charts plugin reads (bin/owngenome_live_charts.py, assets/live/plugins/charts.js).
 
 The five charts, each drawn only when its section ran:
   clinvar   ClinVar hits per review star, 4 to 0, and a grey bar for the
