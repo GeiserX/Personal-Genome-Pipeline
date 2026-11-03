@@ -178,7 +178,8 @@ pc_code = lambda r: 9 if r is ar.CLASH else r[2]
 check("pick_call gives the same code in either order",
       all(pc_code(ar.pick_call(x, y)) == pc_code(ar.pick_call(y, x))
           for x, y in [(("A", "G", 1), ("A", None, 9)), (("A", "G", 1), ("A", "T", 0)), (("A", "G", 9), ("A", "G", 2)),
-                       (("A", "G", 0), ("A", "T", 0)), (("A", "G", 1), ("A", "T", 2)), (("A", "G", 9), ("A", "T", 0))]))
+                       (("A", "G", 0), ("A", "T", 0)), (("A", "G", 1), ("A", "T", 2)), (("A", "G", 9), ("A", "T", 0)),
+                       (("A", "G", 1), ("A", "G", 2))]))
 
 # --- 3. report ---------------------------------------------------------------------
 idir = f"{TMP}/ibd"

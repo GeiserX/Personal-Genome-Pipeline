@@ -22,15 +22,9 @@ name: Public evidence
 #                      its containers (the cgroup's memory.peak), the peak
 #                      disk use and the time.
 #
-# A dispatch-only workflow cannot run before it is on main, so a push that
-# changes this file or bin/archaic_report.py runs it too (not on main, where a
-# dispatch reruns it). Public repo: the GitHub-hosted runner is free here.
+# It runs by hand only (workflow_dispatch). Public repo: the GitHub-hosted
+# runner is free here.
 on:
-  push:
-    branches-ignore: [main]
-    paths:
-      - '.github/workflows/public-evidence.yml'
-      - 'bin/archaic_report.py'
   workflow_dispatch:
 
 permissions:
@@ -376,8 +370,9 @@ jobs:
               for id in $(docker ps -q --no-trunc); do
                 for f in "/sys/fs/cgroup/system.slice/docker-${id}.scope" "/sys/fs/cgroup/docker/${id}"; do
                   [ -r "${f}/memory.peak" ] || continue
-                  v=$(cat "${f}/memory.peak"); [ "$v" -le "$mem" ] || { mem=$v; limit=$(cat "${f}/memory.max"); }
-                  v=$(awk '$1 == "anon" {print $2}' "${f}/memory.stat"); [ "${v:-0}" -le "$anon" ] || anon=$v
+                  v=$(cat "${f}/memory.peak" 2>/dev/null || echo 0)
+                  [ "$v" -le "$mem" ] || { mem=$v; limit=$(cat "${f}/memory.max" 2>/dev/null || echo "$limit"); }
+                  v=$(awk '$1 == "anon" {print $2}' "${f}/memory.stat" 2>/dev/null || true); [ "${v:-0}" -le "$anon" ] || anon=$v
                   v=$(cat "${f}/memory.swap.peak" 2>/dev/null || echo 0); [ "$v" -le "$swap" ] || swap=$v
                 done
               done

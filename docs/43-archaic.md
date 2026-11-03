@@ -81,7 +81,7 @@ Measured on public HG002 by the `archaic-hg002` jobs of `public-evidence.yml`, o
 - Install: the archaic files were 150.5 GB in all, from 1.8 GB (chromosome 22) to 13.8 GB (chromosome 2). Downloading them took 2 h 32 min summed over the 22 chromosomes, from 3 to 32 minutes each, at the speed MPI-EVA served that day. Building the table took 3 h 15 min summed, from 2 to 20 minutes per chromosome. The finished table is 0.44 GB with 51,812,908 sites.
 - Step 43, one population: 19 to 88 seconds per chromosome, 18 minutes summed over the 22. IBDmix runs once per chromosome and archaic genome, `THREADS` chromosomes at a time.
 
-The same run gave HG002 a Neanderthal share of 4.13% with the 1000 Genomes ALL frequencies and 4.26% with EUR, over 51,810,955 sites of the 22 autosomes, and a Denisovan share of 0.40% and 0.42%. That is about twice the 2% quoted above, and the two are not the same measure: the published share is of one copy of the genome, while this step counts a stretch when either of your two copies carries it, which for rare stretches is close to the sum of the two copies. Compare your share with other people's shares from this step, not with the 2%.
+The same run gave HG002 a Neanderthal share of 4.13% with the 1000 Genomes ALL frequencies and 4.26% with EUR, over 51,810,955 sites of the 22 autosomes, and a Denisovan share of 0.40% and 0.42%. That is about twice what Chen et al. report with the same method and cutoffs for Europeans (about 51 Mb per person; HG002 got 115.2 Mb here), and the cause is not yet known. Until it is, compare your share with other shares from this step, not with published figures.
 
 ## Notes
 

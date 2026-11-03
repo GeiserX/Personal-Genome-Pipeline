@@ -402,9 +402,9 @@ The release is `ENSEMBL_GFF_RELEASE` in `versions.env`, and the download is chec
 
 Only needed for step 48, the symptom-driven ranking that runs when you give HPO terms. `./scripts/setup.sh --exomiser-data ${GENOME_DIR}` downloads Exomiser's data release `EXOMISER_DATA_VERSION` (hg38 and phenotype archives, 37 GB, each checked against its sha256 in `versions.env`), unpacks it into `${GENOME_DIR}/reference/exomiser-<release>/` (58 GB; about 72 GB free while it runs), deletes the archives and pulls `EXOMISER_IMAGE`. An interrupted download resumes when the command runs again. See [Step 48](48-exomiser.md).
 
-## AADR Ancient Panel (Optional, for Step 44, ~7.1 GB)
+## AADR Ancient Panel (Optional, for Step 44, ~1.05 GB kept, 9.6 GiB at the peak)
 
-Only needed for step 44, the placement among ancient genomes. `./scripts/setup.sh --ancient-panel ${GENOME_DIR}` downloads the AADR release `AADR_VERSION` (1240K, the 7.1 GB `.geno` and three small files, each checked against its md5 in `versions.env`) and UCSC's hg19ToHg38 chain, then builds the panel in `${GENOME_DIR}/reference/ancient/aadr_<release>/` with convertf and two smartpca runs. On a 4-CPU GitHub runner it took 61 minutes, peaked at 9.6 GiB of extra disk and kept 1.05 GiB; its smartpca container gets 12 GB, of which smartpca itself used 7.6 GiB. See [Step 44](44-ancient.md#runtime).
+Only needed for step 44, the placement among ancient genomes. `./scripts/setup.sh --ancient-panel ${GENOME_DIR}` downloads the AADR release `AADR_VERSION` (1240K, the 7.1 GB `.geno` and three small files, each checked against its md5 in `versions.env`) and UCSC's hg19ToHg38 chain, then builds the panel in `${GENOME_DIR}/reference/ancient/aadr_<release>/` with convertf and two smartpca runs. On a 4-CPU GitHub runner it took 61 minutes, peaked at 9.6 GiB of extra disk and kept 1.05 GiB; its smartpca container gets 12 GB, and the setup's containers held 7.6 GiB of anonymous memory at most (any setup container, convertf included). See [Step 44](44-ancient.md#runtime).
 
 ## Docker Images — Pre-Pull All
 

@@ -255,7 +255,8 @@ def pick_call(prev, call):
     """The call to keep when a position comes twice, as in a VCF split with
     bcftools norm -m-: each is (REF, ALT, code), ALT None for an insertion or a
     multi-allelic record. An SNV wins over such a record, in either order. Of
-    one SNV twice, a usable record wins over code 9. Of two different SNVs, the
+    one SNV twice, a usable record wins over code 9, and two different usable
+    codes are CLASH. Of two different SNVs, the
     one that carries its ALT wins over a 0/0 or unusable one (a split 0/1 at
     A>G,T is A>G 0/1 and A>T 0/0); both 0/0 is the reference; both carrying
     their ALT, or neither readable, is CLASH (unknown, 9)."""
@@ -264,7 +265,9 @@ def pick_call(prev, call):
     if prev[1] is None or call[1] is None:
         return call if prev[1] is None and call[1] is not None else prev
     if call[1] == prev[1]:
-        return call if prev[2] == 9 and call[2] != 9 else prev
+        if call[2] == 9 or call[2] == prev[2]:
+            return prev
+        return call if prev[2] == 9 else CLASH
     has_prev, has_call = prev[2] in (1, 2), call[2] in (1, 2)
     if has_prev != has_call:
         return prev if has_prev else call
