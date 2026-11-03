@@ -24,8 +24,8 @@
 # laid out by bin/hba_copy_number.py). A failure there writes an HBA
 # table that says not assessed, and does not stop the step.
 #
-# The gene-dosage rows of the same catalog (HP, LCE3BC, CCL3L1, DEFB4: loci
-# no pinned caller models) are counted the same way, total copies only, one
+# The gene-dosage rows of the same catalog (HP, LCE3BC, CCL3L1: loci no
+# pinned caller models) are counted the same way, total copies only, one
 # line per locus in ${SAMPLE}_cn_dosage.tsv (docs/cn-loci.md).
 #
 # OPT-IN: a default run leaves this step out (run-all.sh runs it with
@@ -213,7 +213,7 @@ rm -rf "$HBA_WORK"
 # PARASCOPY module): per locus samtools bedcov, all MAPQ and MAPQ 1 or more,
 # then copy_number.py call; one line per locus in <sample>_cn_dosage.tsv. A
 # locus whose check fails is not assessed there, and the step goes on.
-DOSAGE_LOCI="HP LCE3BC CCL3L1 DEFB4"
+DOSAGE_LOCI="HP LCE3BC CCL3L1"
 DOSAGE_OUT="${OUTDIR}/${SAMPLE}_cn_dosage.tsv"
 DOSAGE_WORK="${OUTDIR}/cn_dosage.part"
 rm -rf "$DOSAGE_OUT" "$DOSAGE_WORK"

@@ -24,7 +24,7 @@ copy-number locus.
      bedcov options of the catalog row. UGT2B17 has no row: pypgx calls it
      in BAM mode (assets/pgx_genes.tsv), and tests/test_pypgx_genes.sh
      checks that no catalog row names a gene pypgx calls from the BAM;
-  8. the gene-dosage rows (HP, LCE3BC, CCL3L1, DEFB4): made-up depths at 0
+  8. the gene-dosage rows (HP, LCE3BC, CCL3L1): made-up depths at 0
      to 4 copies are each called right; the block of step 35 that counts
      them, cut out and run on tests/fixtures/cn/, writes the known count of
      each, and a row shifted by 1 kb no longer matches its fixture; the
@@ -179,16 +179,10 @@ EXEMPT = {
     # Step 41 runs by default and Parascopy is opt-in, so the RhD deletion stays a
     # depth row; RHCE's model holds RHD as a paralog copy and is its cross-check.
     ("RHD", "RHCE"),
-    # The beta-defensin repeat has two reference copies, 99% alike, and reads that
-    # fit both land on either, so DEFB4 adds up both. The second (DEFB4B) lies in
-    # the paralog copies SPAG11A's model lists; that model calls copy number over
-    # SPAG11A (chr8:7842877-7873867), 21 kb short of DEFB4A, and reports no DEFB4
-    # value. SPAG11A is its cross-check.
-    ("DEFB4", "SPAG11A"),
 }
-DOSAGE = ["HP", "LCE3BC", "CCL3L1", "DEFB4"]
+DOSAGE = ["HP", "LCE3BC", "CCL3L1"]
 # The counts tests/fixtures/cn/<locus>.bedcov.tsv was made for.
-FIXTURE_COPIES = {"HP": 3, "LCE3BC": 1, "CCL3L1": 5, "DEFB4": 6}
+FIXTURE_COPIES = {"HP": 3, "LCE3BC": 1, "CCL3L1": 5}
 # Words a reading of CCL3L1 must not carry: its disease links are disputed.
 DENY = re.compile(r"hiv|aids|infect|disease|risk|suscept|progress|malaria|hepatitis|arthritis|lupus|kawasaki|"
                   r"psoria|diabet|crohn|vaccin", re.I)
@@ -212,7 +206,7 @@ def owner_violations(cat, models):
 def main():
     # 1. the catalog
     cat = cn.load_catalog(CATALOG)
-    check("catalog: the seven loci", list(cat) == ["HBA", "LPA_KIV2", "RHD"] + DOSAGE, list(cat))
+    check("catalog: the six loci", list(cat) == ["HBA", "LPA_KIV2", "RHD"] + DOSAGE, list(cat))
     for loc, r in cat.items():
         check(f"catalog {loc}: owner cn-depth, cross_check named, PMIDs numbers or '.'",
               r["owner"] == "cn-depth" and re.fullmatch(r"none|[a-z]+:[A-Za-z0-9_]+(,[a-z]+:[A-Za-z0-9_]+)*",
@@ -324,12 +318,15 @@ def main():
                                        controls="gy_l:140000000-140010000;gy_r:150000000-150010000"))
     v = owner_violations(planted, models)
     check("owner: naming the model in cross_check does not exempt a row", ("GYPA", "GYPA", "GYPA_T") in v, v)
+    # DEFB4 has no row: the beta-defensin repeat (DEFB4B to DEFB103B) lies in SPAG11A's paralog copies.
+    planted = dict(cat)
+    planted["DEFB4"] = cn.parse_row(row(locus="DEFB4", chrom="chr8", targets="DEFB_UNIT_B:7414854-7430348",
+                                        controls="defb_l:7622000-7662000;defb_r:8250000-8290000"))
+    v = owner_violations(planted, models)
+    check("owner: a planted DEFB4 row on the beta-defensin repeat is caught (SPAG11A's model)",
+          v == [("DEFB4", "SPAG11A", "DEFB_UNIT_B")], v)
     check("owner: RHD overlaps RHCE's model only (a paralog copy), the exempt pair",
           {m for m, _ in overlaps(cat["RHD"], models)} == {"RHCE"}, overlaps(cat["RHD"], models))
-    check("owner: DEFB4 overlaps SPAG11A's paralog copies with its second reference copy only, the exempt pair",
-          overlaps(cat["DEFB4"], models) == [("SPAG11A", "DEFB_UNIT_B")]
-          and not any(w == "main" and c == "chr8" and s < 7896716 and 7881391 < e
-                      for c, s, e, w in models["SPAG11A"]), overlaps(cat["DEFB4"], models))
 
     # 3. parity with the code before the engine
     for (h2, h1, left, right, share), want in GOLD["hba"]:
@@ -539,11 +536,6 @@ def dosage(cat, read):
                   and "{n}" not in b["reading"], b)
         m, q = dosage_depths(r, 2.5)
         check(f"dosage {loc}: 2.5 copies is between counts", cn.assess(r, m, q)["reason"] == "between_counts")
-    r = cat["DEFB4"]
-    m, q = dosage_depths(r, 6, q1_share=1.0)
-    b = cn.assess(r, m, q)
-    check("dosage DEFB4: no MAPQ 0 read over both reference copies (the aligner left them out): not assessed",
-          (b["status"], b["reason"]) == ("not assessed", "low_mapq0_share"), b)
     hp = cat["HP"]
     m, q = dosage_depths(hp, 4)
     m["HP_UNIT1"], m["HP_UNIT2"] = 60.0, 0.0
