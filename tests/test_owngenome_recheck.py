@@ -41,7 +41,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIX = os.path.join(REPO, "tests", "fixtures", "recheck")
 TOOL = os.path.join(REPO, "bin", "owngenome_recheck.py")
 FAILS = 0
-CLINVAR_STEPS = ["06", "13", "20", "23", "24", "30", "31", "39"]
+CLINVAR_STEPS = ["06", "13", "20", "23", "24", "30", "31", "38", "39"]
 # The pins "here" are the run's own: the version rows of the fixture manifest
 # (the image name stays in the fixture, never as a literal in a test).
 with open(os.path.join(FIX, "run_manifest.tsv")) as _f:
