@@ -58,7 +58,7 @@ scan() {
   while IFS= read -r path; do
     echo "OLD FILE NAME: ${path}"
     hits=$((hits + 1))
-  done < <(git -C "$dir" ls-files | grep -E "$CMD_RE" ; git -C "$dir" ls-files | grep -i -E "$NAME_RE" || true)
+  done < <({ git -C "$dir" ls-files | grep -E "$CMD_RE" || true; }; { git -C "$dir" ls-files | grep -i -E "$NAME_RE" || true; })
   return $((hits > 0))
 }
 
@@ -80,12 +80,14 @@ if [ "${1:-}" = "--self-test" ]; then
     mv "$scratch/docs/index.md.orig" "$scratch/docs/index.md"
     git -C "$scratch" add docs/index.md
   done
-  # a file whose name alone is old: empty, so no line inside it can be caught
-  : > "$scratch/bin/pgp_live_example.py"
-  git -C "$scratch" add bin/pgp_live_example.py
-  if scan "$scratch" >/dev/null; then echo "self-test FAIL: not caught: file bin/pgp_live_example.py"; fail=1
-  else echo "self-test ok: caught: file bin/pgp_live_example.py"; fi
-  git -C "$scratch" rm -q --cached bin/pgp_live_example.py
+  # files whose name alone is old: empty, so no line inside them can be caught
+  for plant in bin/pgp_live_example.py docs/personal-genome-pipeline.md; do
+    : > "$scratch/$plant"
+    git -C "$scratch" add "$plant"
+    if scan "$scratch" >/dev/null; then echo "self-test FAIL: not caught: file $plant"; fail=1
+    else echo "self-test ok: caught: file $plant"; fi
+    git -C "$scratch" rm -q --cached "$plant"
+  done
   exit $fail
 fi
 
