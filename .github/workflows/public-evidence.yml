@@ -361,24 +361,29 @@ jobs:
           G="${EV}/genome" M="${EV}/measure"
           export GENOME_DIR="$G"
           mkdir -p "$M"
-          # measure NAME: peak memory.peak and memory.swap.peak of any running
-          # container, and peak growth of the used space of the filesystem that
-          # holds G (df: other writers count, a file made and deleted within
-          # 2 s does not), every 2 s, into
-          # M/NAME.peak, until stopped.
+          # measure NAME: every 2 s, into M/NAME.peak until stopped, the peak of
+          # any running container's memory.peak (its whole cgroup charge, file
+          # cache included, which the kernel drops before it kills a task at
+          # the limit), of the anonymous memory in its memory.stat (what the
+          # tool itself holds, sampled), of memory.swap.peak, and of the
+          # growth of used space on the filesystem that holds G (df: other
+          # writers count, a file made and deleted within 2 s does not); and
+          # the container's memory.max.
           measure() {
-            local out="${M}/$1.peak" mem=0 swap=0 disk=0 base v id f
+            local out="${M}/$1.peak" mem=0 anon=0 swap=0 disk=0 limit=0 base v id f
             base=$(df --output=used -k "$G" | tail -1)
             while :; do
               for id in $(docker ps -q --no-trunc); do
                 for f in "/sys/fs/cgroup/system.slice/docker-${id}.scope" "/sys/fs/cgroup/docker/${id}"; do
                   [ -r "${f}/memory.peak" ] || continue
-                  v=$(cat "${f}/memory.peak"); [ "$v" -le "$mem" ] || mem=$v
+                  v=$(cat "${f}/memory.peak"); [ "$v" -le "$mem" ] || { mem=$v; limit=$(cat "${f}/memory.max"); }
+                  v=$(awk '$1 == "anon" {print $2}' "${f}/memory.stat"); [ "${v:-0}" -le "$anon" ] || anon=$v
                   v=$(cat "${f}/memory.swap.peak" 2>/dev/null || echo 0); [ "$v" -le "$swap" ] || swap=$v
                 done
               done
               v=$(( $(df --output=used -k "$G" | tail -1) - base )); [ "$v" -le "$disk" ] || disk=$v
-              printf 'mem_bytes\t%s\nswap_bytes\t%s\ndisk_kb\t%s\n' "$mem" "$swap" "$disk" > "$out"
+              printf 'mem_bytes\t%s\nanon_bytes\t%s\nswap_bytes\t%s\ndisk_kb\t%s\nlimit\t%s\n' \
+                "$mem" "$anon" "$swap" "$disk" "$limit" > "$out"
               sleep 2
             done
           }
@@ -488,16 +493,17 @@ jobs:
             echo ""
             echo "Runner: $(nproc) CPUs, $(free -g | awk '/^Mem:/ {print $2}') GB RAM, 8 GB swap added. THREADS=4."
             echo ""
-            echo "| run | wall time | peak container memory | peak container swap | peak growth of used disk (df) | setup.sh or step RSS (/usr/bin/time) |"
-            echo "|---|---|---|---|---|---|"
+            echo "| run | wall time | peak cgroup memory (cache included) | that container's limit | peak anonymous memory (sampled) | peak swap | peak growth of used disk (df) | RSS of the host script (/usr/bin/time) |"
+            echo "|---|---|---|---|---|---|---|---|"
             for n in setup step44; do
               kv() { awk -F'\t' -v k="$1" '$1 == k {v = $2} END {print v}' "${M}/${n}.peak"; }
-              rss=$(awk -F': ' '/Maximum resident/ {printf "%.2f GB", $2 / 1048576}' "${M}/${n}.time")
-              echo "| ${n} | $(( $(kv seconds) / 60 )) min | $(awk -v b="$(kv mem_bytes)" 'BEGIN {printf "%.2f GB", b / 1073741824}') | $(awk -v b="$(kv swap_bytes)" 'BEGIN {printf "%.2f GB", b / 1073741824}') | $(awk -v k="$(kv disk_kb)" 'BEGIN {printf "%.1f GB", k / 1048576}') | ${rss} |"
+              rss=$(awk -F': ' '/Maximum resident/ {printf "%.2f GiB", $2 / 1048576}' "${M}/${n}.time")
+              gib() { awk -v b="$1" 'BEGIN {if (b ~ /^[0-9]+$/) printf "%.2f GiB", b / 1073741824; else print b}'; }
+              echo "| ${n} | $(( $(kv seconds) / 60 )) min | $(gib "$(kv mem_bytes)") | $(gib "$(kv limit)") | $(gib "$(kv anon_bytes)") | $(gib "$(kv swap_bytes)") | $(awk -v k="$(kv disk_kb)" 'BEGIN {printf "%.1f GiB", k / 1048576}') | ${rss} |"
             done
             echo ""
             kv() { awk -F'\t' -v k="$1" '$1 == k {print $2}' "${M}/setup.peak"; }
-            echo "Installed panel: $(awk -v b="$(kv panel_bytes)" 'BEGIN {printf "%.2f GB", b / 1e9}'), $(kv panel_sites) GRCh38 sites, $(kv moderns) present-day people, $(kv ancients) ancient people. Step 44 used $(awk -F'\t' '$1 == "sites_used" {print $2}' "${M}/step44.peak") sites of HG002."
+            echo "Installed panel: $(awk -v b="$(kv panel_bytes)" 'BEGIN {printf "%.2f GiB", b / 1073741824}'), $(kv panel_sites) GRCh38 sites, $(kv moderns) present-day people, $(kv ancients) ancient people. Step 44 used $(awk -F'\t' '$1 == "sites_used" {print $2}' "${M}/step44.peak") sites of HG002."
           } >> "$GITHUB_STEP_SUMMARY"
           cat "$GITHUB_STEP_SUMMARY"
 
