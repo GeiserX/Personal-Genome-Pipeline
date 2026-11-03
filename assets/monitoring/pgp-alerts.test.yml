@@ -1,0 +1,155 @@
+# promtool test rules assets/monitoring/pgp-alerts.test.yml (run in .github/workflows/lint.yml).
+# Each rule is tested firing and not firing; the lint job then changes one threshold and
+# requires this file to fail.
+rule_files:
+  - pgp-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'pgp_run_failed{run="OPS-001"}'
+        values: '0 0 1 1'
+      - series: 'pgp_run_failed{run="OPS-002"}'
+        values: '0 0 0 0'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: OwnGenomeRunFailed
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: OwnGenomeRunFailed
+        exp_alerts:
+          - exp_labels: {severity: critical, run: OPS-001}
+            exp_annotations:
+              summary: "Run OPS-001 failed"
+              description: "A step failed, the run ended with a non-zero exit, or Nextflow reported an error. The live page says which."
+
+  - interval: 1m
+    input_series:
+      - series: 'pgp_run_stalled{run="OPS-001"}'
+        values: '1x15'
+      - series: 'pgp_run_stalled{run="OPS-002"}'
+        values: '0x15'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: OwnGenomeRunStalled
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: OwnGenomeRunStalled
+        exp_alerts:
+          - exp_labels: {severity: warning, run: OPS-001}
+            exp_annotations:
+              summary: "Run OPS-001 shows no activity"
+              description: "No message or file change for longer than --stall-minutes, and no running step is still inside its usual time."
+
+  - interval: 1m
+    input_series:
+      - series: 'pgp_run_late_steps{run="OPS-001"}'
+        values: '1x20'
+      - series: 'pgp_run_late_steps{run="OPS-002"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: OwnGenomeRunLate
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: OwnGenomeRunLate
+        exp_alerts:
+          - exp_labels: {severity: warning, run: OPS-001}
+            exp_annotations:
+              summary: "Run OPS-001 is taking longer than usual"
+              description: "1 running step(s) are past the high end of their usual time on this box."
+
+  - interval: 1m
+    input_series:
+      - series: 'pgp_run_memory_retries{run="OPS-001"}'
+        values: '0 1 1'
+      - series: 'pgp_run_memory_retries{run="OPS-002"}'
+        values: '2 2 2'
+      - series: 'pgp_run_running{run="OPS-001"}'
+        values: '1 1 1'
+      - series: 'pgp_run_running{run="OPS-002"}'
+        values: '0 0 0'
+      - series: 'pgp_run_max_memory_above_ram{run="OPS-001"}'
+        values: '1 1 1'
+      - series: 'pgp_run_max_memory_above_ram{run="OPS-002"}'
+        values: '1 1 1'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: OwnGenomeTaskMemoryRetried
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: OwnGenomeTaskMemoryRetried
+        exp_alerts:
+          - exp_labels: {severity: warning, run: OPS-001}
+            exp_annotations:
+              summary: "Run OPS-001: a task was retried after a memory or time kill"
+              description: "1 task attempt(s) ended with an exit code that conf/base.config retries, usually a memory or time kill. A task can run out of memory again on its last attempt."
+      - eval_time: 2m
+        alertname: OwnGenomeMaxMemoryAboveRam
+        exp_alerts:
+          - exp_labels: {severity: warning, run: OPS-001}
+            exp_annotations:
+              summary: "Run OPS-001: max_memory is above this machine's memory"
+              description: "A task can ask for more memory than there is. Lower --max_memory."
+
+  # Two sites scraped by one Prometheus: each disk is compared with its own site's warn ratio.
+  - interval: 1m
+    input_series:
+      - series: 'pgp_disk_warn_ratio{job="owngenome",instance="site-a:8787"}'
+        values: '0.9x10'
+      - series: 'pgp_disk_warn_ratio{job="owngenome",instance="site-b:8787"}'
+        values: '0.97x10'
+      - series: 'pgp_disk_used_ratio{job="owngenome",instance="site-a:8787",run="OPS-001",fs="work and results"}'
+        values: '0.95x10'
+      - series: 'pgp_disk_used_ratio{job="owngenome",instance="site-a:8787",run="OPS-002",fs="work"}'
+        values: '0.85x10'
+      - series: 'pgp_disk_used_ratio{job="owngenome",instance="site-a:8787",run="OPS-002",fs="results"}'
+        values: '0.99x10'
+      - series: 'pgp_disk_used_ratio{job="owngenome",instance="site-b:8787",run="OPS-003",fs="work and results"}'
+        values: '0.95x10'
+      - series: 'pgp_disk_inodes_used_ratio{job="owngenome",instance="site-a:8787",run="OPS-001",fs="work and results"}'
+        values: '0.5x10'
+      - series: 'pgp_disk_inodes_used_ratio{job="owngenome",instance="site-a:8787",run="OPS-002",fs="work"}'
+        values: '0.92x10'
+      - series: 'pgp_disk_inodes_used_ratio{job="owngenome",instance="site-b:8787",run="OPS-003",fs="work and results"}'
+        values: '0.92x10'
+      - series: 'pgp_metrics_errors{job="owngenome",instance="site-a:8787"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: OwnGenomeDiskFilling
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: OwnGenomeDiskFilling
+        exp_alerts:
+          - exp_labels: {severity: warning, job: owngenome, instance: "site-a:8787", run: OPS-001, fs: work and results}
+            exp_annotations:
+              summary: "Run OPS-001: the work and results disk is filling"
+              description: "95% used, at or above --disk-warn-percent."
+          - exp_labels: {severity: warning, job: owngenome, instance: "site-a:8787", run: OPS-002, fs: results}
+            exp_annotations:
+              summary: "Run OPS-002: the results disk is filling"
+              description: "99% used, at or above --disk-warn-percent."
+      - eval_time: 6m
+        alertname: OwnGenomeDiskInodesFilling
+        exp_alerts:
+          - exp_labels: {severity: warning, job: owngenome, instance: "site-a:8787", run: OPS-002, fs: work}
+            exp_annotations:
+              summary: "Run OPS-002: the work disk is running out of inodes"
+              description: "92% of the inodes used, at or above --disk-warn-percent."
+      - eval_time: 2m
+        alertname: OwnGenomeDiskFull
+        exp_alerts:
+          - exp_labels: {severity: critical, job: owngenome, instance: "site-a:8787", run: OPS-002, fs: results}
+            exp_annotations:
+              summary: "Run OPS-002: the results disk is almost full"
+              description: "99% used. A task that writes now can fail."
+      - eval_time: 16m
+        alertname: OwnGenomeMetricsErrors
+        exp_alerts:
+          - exp_labels: {severity: info, job: owngenome, instance: "site-a:8787"}
+            exp_annotations:
+              summary: "The live site could not read 1 run(s)"
+              description: "The site's log names the run and the error."

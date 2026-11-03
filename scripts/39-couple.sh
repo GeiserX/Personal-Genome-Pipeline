@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Step 39: couple carrier screen for two partners (opt-in)
-# Usage: ./scripts/39-couple.sh <family_name> [pedigree.tsv]
+# Usage: ./scripts/39-couple.sh <family_name> [pedigree.tsv | families.tsv]
 # Input: the pedigree of step 38 (assets/pedigree.example.tsv: sample, sex,
 #        father, mother, partner, tab separated; default
-#        $GENOME_DIR/<family_name>/pedigree.tsv) with two samples marked as each
+#        $GENOME_DIR/<family_name>/pedigree.tsv), or a families file
+#        (assets/families.example.tsv) holding the family <family_name>,
+#        with two samples marked as each
 #        other's partner, and for each of them step 06's ClinVar hits
 #        ($GENOME_DIR/<sample>/clinvar/<sample>_clinvar_hits.vcf). Read when
 #        they are there: Delly's calls (step 19, <sample>/delly/<sample>_sv.vcf.gz),
@@ -35,7 +37,7 @@
 #                     filtered and the report says so
 set -euo pipefail
 
-FAMILY=${1:?Usage: $0 <family_name> [pedigree.tsv]}
+FAMILY=${1:?Usage: $0 <family_name> [pedigree.tsv | families.tsv]}
 PEDIGREE=${2:-}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 # No one sample's folder is writable here: run_in mounts only the family folder.
@@ -68,6 +70,31 @@ done
 if [ -d "${OUT}/vcf" ] || [ -d "${OUT}/aligned" ]; then
   echo "ERROR: ${OUT} holds a sample's vcf/ or aligned/ folder; give the family a name of its own." >&2
   exit 2
+fi
+
+# A families file (a family column: assets/families.example.tsv) holds several
+# families: this family's rows become its own ${OUT}/pedigree.tsv, written by
+# bin/family_report.py plan (which checks the whole file first), and the step
+# reads that. A pedigree without the column is read as it is.
+if awk -F'\t' '{ sub(/\r+$/, "") } /^[ \t]*$/ { next }
+     { sub(/^#+/, ""); for (i = 1; i <= NF; i++) { f = tolower($i); gsub(/^[ \t]+|[ \t]+$/, "", f); if (f == "family") found = 1 }; exit }
+     END { exit !found }' "$PEDIGREE"; then
+  if [ -d "${OUT}/vcf" ] || [ -d "${OUT}/aligned" ]; then
+    echo "ERROR: ${OUT} holds a sample's vcf/ or aligned/ folder; give the family a name of its own." >&2
+    exit 2
+  fi
+  NEW_OUT=$([ -d "$OUT" ] || echo yes)
+  mkdir -p "$OUT"
+  [ "$PEDIGREE" -ef "${OUT}/families.tsv" ] || cp -f "$PEDIGREE" "${OUT}/families.tsv"
+  if ! run_in --rw "$OUT" --cpus 1 --memory 1g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
+      python3 /pgp-bin/family_report.py plan --families "${OUT_C}/families.tsv" --family "$FAMILY" --write-pedigree /genome \
+      > /dev/null; then
+    echo "  (families.tsv is the step's copy of ${PEDIGREE})" >&2
+    [ -z "$NEW_OUT" ] || rm -rf "$OUT"
+    exit 2
+  fi
+  echo "Family ${FAMILY} of ${PEDIGREE}: its rows are ${OUT}/pedigree.tsv"
+  PEDIGREE="${OUT}/pedigree.tsv"
 fi
 
 # The samples the pedigree names, read as step 38 reads them (CRLF line ends,

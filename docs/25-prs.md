@@ -21,7 +21,7 @@ pgsc_calc runs its steps in these images, all pinned in `versions.env`: `PGSC_UT
 
 - VCF from DeepVariant (step 3): `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz`
 - gVCF from DeepVariant (step 3), when present: `${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.g.vcf.gz`. The score positions are genotyped from it, so sites where you match the reference count.
-- The scores of [`assets/pgs_scores.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pgs_scores.tsv), downloaded by `setup.sh` into `${GENOME_DIR}/prs_scores/`.
+- The scores of [`assets/pgs_scores.tsv`](https://github.com/GeiserX/OwnGenome/blob/main/assets/pgs_scores.tsv), downloaded by `setup.sh` into `${GENOME_DIR}/prs_scores/`.
 - Optional: the ancestry reference panel, `${GENOME_DIR}/reference/pgsc_calc/pgsc_1000G_v1.tar.zst` with its site list beside it (`scripts/setup.sh --ancestry-panel <genome_dir>`): 7.4 GB, and about 23 GB of disk while pgsc_calc uses it (measured below).
 - Java 17+ and Nextflow on the host, as for `run-all.sh`.
 
@@ -41,7 +41,7 @@ PRS_KEEP_AMBIGUOUS=true ./scripts/25-prs.sh your_name male   # opt-in: keep the 
 
 ## Conditions Scored
 
-The list is [`assets/pgs_scores.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/pgs_scores.tsv). Each label is the `trait_reported` value the [PGS Catalog REST API](https://www.pgscatalog.org/rest/) returns for that score; `scripts/ci/check-pgs-labels.sh` compares the two, so an ID cannot be printed under the wrong disease.
+The list is [`assets/pgs_scores.tsv`](https://github.com/GeiserX/OwnGenome/blob/main/assets/pgs_scores.tsv). Each label is the `trait_reported` value the [PGS Catalog REST API](https://www.pgscatalog.org/rest/) returns for that score; `scripts/ci/check-pgs-labels.sh` compares the two, so an ID cannot be printed under the wrong disease.
 
 | Condition (PGS Catalog trait) | PGS ID | Variants | Publication |
 |---|---|---|---|

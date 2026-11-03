@@ -43,7 +43,7 @@ import urllib.parse
 import urllib.request
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-UA = "Personal-Genome-Pipeline freshness check"
+UA = "OwnGenome freshness check"
 CLINVAR_MAX_AGE_DAYS = 35
 ISSUE_LABEL = "freshness"
 ISSUE_MARKER = "<!-- freshness-report: edited by .github/workflows/freshness.yml -->"

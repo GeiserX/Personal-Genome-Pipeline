@@ -387,6 +387,17 @@ wget -c -O gnomad_v4.1_constraint.tsv \
 
 > **Key metrics:** LOEUF (oe_lof_upper) < 0.35 = constrained for LoF; pLI >= 0.9 = intolerant to LoF; missense Z > 3.09 = constrained for missense.
 
+## Ensembl Gene Annotation (Optional, for Step 49, ~110 MB)
+
+Only needed for step 49, the clonal haematopoiesis (CHIP) screen. It reads each CHIP gene's MANE Select transcript from Ensembl's GRCh38 gene annotation:
+
+```bash
+./scripts/setup.sh --chip-data ${GENOME_DIR}
+# Creates: ${GENOME_DIR}/reference/ensembl/Homo_sapiens.GRCh38.<release>.chr.gff3.gz
+```
+
+The release is `ENSEMBL_GFF_RELEASE` in `versions.env`, and the download is checked against `ENSEMBL_GFF_SHA256`; a file already there with another sha256 is downloaded again. The Nextflow pipeline takes the same file as `--chip_gff`. See [Step 49](49-chip.md).
+
 ## Exomiser Data (Optional, for Step 48, ~37 GB)
 
 Only needed for step 48, the symptom-driven ranking that runs when you give HPO terms. `./scripts/setup.sh --exomiser-data ${GENOME_DIR}` downloads Exomiser's data release `EXOMISER_DATA_VERSION` (hg38 and phenotype archives, 37 GB, each checked against its sha256 in `versions.env`), unpacks it into `${GENOME_DIR}/reference/exomiser-<release>/` (58 GB; about 72 GB free while it runs), deletes the archives and pulls `EXOMISER_IMAGE`. An interrupted download resumes when the command runs again. See [Step 48](48-exomiser.md).

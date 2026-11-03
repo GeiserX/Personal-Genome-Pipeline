@@ -6,7 +6,10 @@
     prepare, the rule scripts/38-family.sh runs too: it stops the run on a
     pedigree problem, or on a gVCF whose sample column is not the
     samplesheet's id, before the joint call starts. It writes members.tsv,
-    somalier's pedigree (family.ped) and WhatsHap's trios (trios.ped).
+    somalier's pedigree (family.ped), WhatsHap's trios (trios.ped), the
+    family's own rows (pedigree.tsv: one family of a families file, picked
+    by --family_name) and family_plan.tsv (which family analyses run, and
+    why: the table run-all.sh writes with family_report.py plan).
 
     GLNEXUS joint-calls the members' DeepVariant gVCFs with GLnexus's
     DeepVariantWGS preset into one BCF, and GLNEXUS_VCF writes it out as
@@ -20,19 +23,22 @@
 process FAMILY_PREPARE {
     label 'process_single'
 
-    publishDir { "${params.outdir}/family" }, mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${params.family_name ?: 'family'}" }, mode: params.publish_dir_mode
 
     input:
-    path(pedigree, stageAs: 'pedigree.tsv')
+    path(families, stageAs: 'families.tsv')
     val(ids)             // the members' samplesheet ids, sorted
     val(sexes)           // each id's samplesheet sex ('' when the row gives none), in the same order
     path(gvcfs, stageAs: 'g?/*')
+    val(clinvar_ids)     // the partners with ClinVar hits this run (for family_plan.tsv)
 
     output:
-    path "members.tsv",  emit: members
-    path "family.ped",   emit: ped
-    path "trios.ped",    emit: trios
-    path "versions.yml", emit: versions
+    path "members.tsv",     emit: members
+    path "family.ped",      emit: ped
+    path "trios.ped",       emit: trios
+    path "pedigree.tsv",    emit: pedigree
+    path "family_plan.tsv", emit: plan
+    path "versions.yml",    emit: versions
 
     when:
     task.ext.when == null || task.ext.when
@@ -41,8 +47,12 @@ process FAMILY_PREPARE {
     def gl = gvcfs instanceof List ? gvcfs : [gvcfs]
     def args = [ids, gl].transpose().collect { p -> "--gvcf ${p[0]}=${p[1]}" }.join(' ') + ' ' +
         [ids, sexes].transpose().findAll { p -> p[1] }.collect { p -> "--declared-sex ${p[0]}=${p[1]}" }.join(' ')
+    def fam = params.family_name ? "--family ${params.family_name}" : ''
+    def cv  = clinvar_ids ? "--have-clinvar ${clinvar_ids.join(' ')}" : ''
+    def ibd = params.ancestry_fine_panel ? 'yes' : 'no'
     """
-    family_report.py prepare --pedigree pedigree.tsv ${args} --out-dir .
+    family_report.py prepare --pedigree families.tsv ${fam} ${args} ${cv} --ibd-panel ${ibd} \\
+        --pedigree-out pedigree.tsv --out-dir .
 
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
@@ -50,6 +60,8 @@ process FAMILY_PREPARE {
     stub:
     """
     printf 'sample\\tsex\\tfather\\tmother\\tpartner\\tin_pedigree\\tsequenced\\n' > members.tsv
+    printf 'sample\\tsex\\tfather\\tmother\\tpartner\\n' > pedigree.tsv
+    printf 'family\\tanalysis\\tmembers\\tdecision\\treason\\n' > family_plan.tsv
     touch family.ped trios.ped
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
@@ -106,7 +118,7 @@ process GLNEXUS {
 process GLNEXUS_VCF {
     label 'process_low'
 
-    publishDir { "${params.outdir}/family" }, mode: params.publish_dir_mode
+    publishDir { "${params.outdir}/${params.family_name ?: 'family'}" }, mode: params.publish_dir_mode
 
     input:
     path(bcf)

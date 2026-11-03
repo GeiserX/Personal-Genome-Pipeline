@@ -3,22 +3,26 @@ hide:
   - navigation
 ---
 
-# Personal Genome Pipeline { .pgp-visually-hidden }
+# OwnGenome { .pgp-visually-hidden }
 
 <p align="center" class="pgp-banner">
-  <img src="images/banner.svg" alt="Personal Genome Pipeline: no cloud, no subscription, just your data" width="100%">
+  <img src="images/banner.svg" alt="OwnGenome: no cloud, no subscription, just your data" width="100%">
 </p>
 
 <p align="center">
-  <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/releases"><img alt="Release" src="https://img.shields.io/github/v/release/GeiserX/Personal-Genome-Pipeline?style=flat-square"></a>
-  <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/actions/workflows/lint.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/GeiserX/Personal-Genome-Pipeline/lint.yml?style=flat-square&label=CI"></a>
-  <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/GeiserX/Personal-Genome-Pipeline?style=flat-square&logo=github"></a>
-  <a href="https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/LICENSE"><img alt="License: GPL-3.0-or-later" src="https://img.shields.io/github/license/GeiserX/Personal-Genome-Pipeline?style=flat-square"></a>
+OwnGenome was called Personal-Genome-Pipeline until November 2026.
+</p>
+
+<p align="center">
+  <a href="https://github.com/GeiserX/OwnGenome/releases"><img alt="Release" src="https://img.shields.io/github/v/release/GeiserX/OwnGenome?style=flat-square"></a>
+  <a href="https://github.com/GeiserX/OwnGenome/actions/workflows/lint.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/GeiserX/OwnGenome/lint.yml?style=flat-square&label=CI"></a>
+  <a href="https://github.com/GeiserX/OwnGenome/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/GeiserX/OwnGenome?style=flat-square&logo=github"></a>
+  <a href="https://github.com/GeiserX/OwnGenome/blob/main/LICENSE"><img alt="License: GPL-3.0-or-later" src="https://img.shields.io/github/license/GeiserX/OwnGenome?style=flat-square"></a>
 </p>
 
 ---
 
-**Personal Genome Pipeline** turns the files a consumer sequencing vendor gives you (FASTQ, BAM, VCF or Illumina ORA) into a full genomic profile on your own computer: small and structural variants, ClinVar and cancer-predisposition screening, pharmacogenomics, repeat expansions, HLA type, telomere content, mitochondrial haplogroup and heteroplasmy, runs of homozygosity, ancestry and polygenic risk scores. A vendor's own report covers a fraction of this and keeps your genome on their servers; a clinical lab charges per panel. Here every step is one Docker container with a hard memory limit, run by a Nextflow pipeline (`scripts/run-all.sh` starts it for one sample) or from one bash script per step, and no script sends your data anywhere. Start with [Getting started](getting-started.md), then run the [quick test](quick-test.md) on public data before your own.
+**OwnGenome** turns the files a consumer sequencing vendor gives you (FASTQ, BAM, VCF or Illumina ORA) into a full genomic profile on your own computer: small and structural variants, ClinVar and cancer-predisposition screening, pharmacogenomics, repeat expansions, HLA type, telomere content, mitochondrial haplogroup and heteroplasmy, runs of homozygosity, ancestry and polygenic risk scores. A vendor's own report covers a fraction of this and keeps your genome on their servers; a clinical lab charges per panel. Here every step is one Docker container with a hard memory limit, run by a Nextflow pipeline (`scripts/run-all.sh` starts it for one sample) or from one bash script per step, and no script sends your data anywhere. Start with [Getting started](getting-started.md), then run the [quick test](quick-test.md) on public data before your own.
 
 <div class="grid cards" markdown>
 
@@ -57,7 +61,7 @@ hide:
 - **Everything else the reads hold:** clonal haematopoiesis (CHIP) in the blood, with the detection limit at your depth (opt-in), HLA type, repeat expansions at STRchive's 82 disease loci (Huntington's, Fragile X, ALS among them), telomere content, sex-chromosome check, coverage statistics, one HTML report and a MultiQC summary.
 
 <figure markdown="span">
-  ![The step 24 HTML report: cards for quality control, mosaic loss of chromosome Y or X, variant calling, ClinVar, the couple carrier screen, pharmacogenomics, CPIC, CYP2D6 across callers, HLA typing, structural variants, cancer predisposition, repeat expansions, runs of homozygosity, the mitochondrial haplogroup, paralog genes, the Y haplogroup, the raw-data export, blood groups, telomere length, mitochondrial variants, the clinical filter and slivar, then the polygenic risk scores table and the fine-grained ancestry tables with the chromosome painting](images/demo-html-report.png){ loading=lazy }
+  ![The step 24 HTML report: a contents list on the left groups the sections into chapters (Quality, Clinical, Carrier, Medicines, Ancestry, Traits and scores); on the right, the report header with the sample, the run and the database dates, the Quality chapter with the quality control and variant calling cards, and the Clinical chapter opening with the ClinVar screen and a bar chart of its hits by review stars, low-confidence calls shown apart](images/demo-html-report.png){ loading=lazy }
   <figcaption markdown>The HTML report from [step 24](24-html-report.md), run on DEMO-001, an invented sample. Every number in it is made up.</figcaption>
 </figure>
 
@@ -125,10 +129,10 @@ graph LR
 
 ## Getting help
 
-- Something broken: the [Troubleshooting guide](troubleshooting.md) first, then an [issue](https://github.com/GeiserX/Personal-Genome-Pipeline/issues) with the step number, the full error text, your platform and your input type.
-- A security problem: follow the [security policy](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/SECURITY.md), never a public issue.
-- What is planned: the [roadmap on GitHub](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/ROADMAP.md). Sending a fix or a new step: [CONTRIBUTING.md](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/CONTRIBUTING.md).
+- Something broken: the [Troubleshooting guide](troubleshooting.md) first, then an [issue](https://github.com/GeiserX/OwnGenome/issues) with the step number, the full error text, your platform and your input type.
+- A security problem: follow the [security policy](https://github.com/GeiserX/OwnGenome/blob/main/SECURITY.md), never a public issue.
+- What is planned: the [roadmap on GitHub](https://github.com/GeiserX/OwnGenome/blob/main/ROADMAP.md). Sending a fix or a new step: [CONTRIBUTING.md](https://github.com/GeiserX/OwnGenome/blob/main/CONTRIBUTING.md).
 
 ## License
 
-Personal Genome Pipeline is released under the [GPL-3.0-or-later](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/LICENSE) license. It is for educational and research use; it is not a medical device.
+OwnGenome is released under the [GPL-3.0-or-later](https://github.com/GeiserX/OwnGenome/blob/main/LICENSE) license. It is for educational and research use; it is not a medical device.

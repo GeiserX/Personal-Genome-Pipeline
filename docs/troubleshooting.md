@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Definitive reference for diagnosing and fixing problems with the Personal Genome Pipeline. Organized by symptom so you can Ctrl+F your error message and find the fix.
+Definitive reference for diagnosing and fixing problems with OwnGenome. Organized by symptom so you can Ctrl+F your error message and find the fix.
 
 **Before troubleshooting:** Run `docker info` to confirm Docker is running, and check `docker stats` for resource usage. Most failures are either Docker resource limits or wrong file paths inside containers.
 
@@ -220,7 +220,7 @@ grep -E '(%%|!!) executor|^~> ' "$GENOME_DIR/<sample>/nextflow/.nextflow.log" | 
 
 **Symptom:** A long run is still going and free space on the disk of the work folder (`<sample>/nextflow/work` with `run-all.sh`) or of `GENOME_DIR` keeps dropping.
 
-**Check:** `bin/run_headroom.py` gives the used share of both disks, and warns at 90% (`--disk-warn-percent` or `PGP_DISK_WARN_PERCENT` to change it):
+**Check:** `bin/run_headroom.py` gives the used share of both disks, and warns at 90% (`--disk-warn-percent` or `OWNGENOME_DISK_WARN_PERCENT` to change it):
 
 ```bash
 python3 bin/run_headroom.py --work-dir "${GENOME_DIR:?Set GENOME_DIR to your data directory}/<sample>/nextflow/work" --outdir "$GENOME_DIR"
@@ -1214,7 +1214,7 @@ If any output is significantly smaller than expected (especially 0 bytes), see [
 
 ### Opening a GitHub issue
 
-File an issue at: **[github.com/GeiserX/Personal-Genome-Pipeline/issues](https://github.com/GeiserX/Personal-Genome-Pipeline/issues)**
+File an issue at: **[github.com/GeiserX/OwnGenome/issues](https://github.com/GeiserX/OwnGenome/issues)**
 
 Include:
 - Which step failed (step number and script name)

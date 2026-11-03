@@ -1,8 +1,8 @@
-site_name: Personal Genome Pipeline
-site_url: https://geiserx.github.io/Personal-Genome-Pipeline/
+site_name: OwnGenome
+site_url: https://geiserx.github.io/OwnGenome/
 site_description: Whole genome sequencing analysis pipeline for consumer hardware. 100% local, Docker-powered, free and open source.
-repo_url: https://github.com/GeiserX/Personal-Genome-Pipeline
-repo_name: GeiserX/Personal-Genome-Pipeline
+repo_url: https://github.com/GeiserX/OwnGenome
+repo_name: GeiserX/OwnGenome
 edit_uri: edit/main/docs/
 
 # A warning is a broken link, a missing page or a page nobody can reach. All of
@@ -50,7 +50,7 @@ theme:
 #   links.not_found     a relative link to a page or file that does not exist;
 #   links.anchors       a link to a heading that does not exist;
 #   links.absolute_links  a link written as /path/ (breaks under the
-#                       /Personal-Genome-Pipeline/ prefix of the site);
+#                       /OwnGenome/ prefix of the site);
 #   links.unrecognized_links  a relative link that leaves docs/ (../README.md).
 #                       Repo files are linked by absolute GitHub URL instead.
 validation:
@@ -110,7 +110,7 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/GeiserX/Personal-Genome-Pipeline
+      link: https://github.com/GeiserX/OwnGenome
 
 extra_css:
   - stylesheets/theme.css
@@ -211,6 +211,7 @@ nav:
           - What Changed Since the Previous Run: delta-report.md
           - Newer Databases Since a Run: recheck.md
           - Where a Run Stands: run-state.md
+          - Run Alerts: alerts.md
           - Look Up a Variant, an rsID or a Gene: lookup.md
           - "Step 28: MultiQC Aggregated QC Report": 28-multiqc.md
           - "Step 33: Sample Identity and Contamination": 33-sample-qc.md
@@ -218,6 +219,7 @@ nav:
   - Guides:
       - Interpreting Your Results: interpreting-results.md
       - "Genome Viewer: See the Reads Behind a Finding": viewer.md
+      - Watch a Run Live: live-site.md
       - Multi-Sample Comparison Guide: multi-sample.md
       - Long-Read Sequencing Guide: long-read-guide.md
       - Whole Exome Sequencing (WES) Guide: wes-guide.md
