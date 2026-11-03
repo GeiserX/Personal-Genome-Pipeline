@@ -212,7 +212,7 @@ def reports(d, name):
     import collect_summary
     import render_report
     s = collect_summary.collect(name, d)
-    return render_report.text_report(s), None
+    return render_report.text_report(s), render_report.html_report(s)
 
 
 def test_confirmed_snv(tmp):
@@ -222,15 +222,32 @@ def test_confirmed_snv(tmp):
     check("m.3243A>G at 12% is in the summary's confirmed list", [v.get("hgvs") for v in conf] == ["m.3243A>G"],
           str(conf))
     check("its level is 0.12", bool(conf) and conf[0].get("af") == "0.12", str(conf))
-    text, _ = reports(d, "S3243")
+    text, html = reports(d, "S3243")
     check("the text report names m.3243A>G with AF 0.12 and MELAS",
           re.search(r"m\.3243A>G \(MT-TL1\)  AF 0\.12 .*MELAS", text) is not None)
+    check("the HTML report counts one confirmed variant and names it",
+          re.search(r'Confirmed disease variants</span><span class="value"><span class="badge badge-yellow">1<', html)
+          is not None and "m.3243A&gt;G (MT-TL1)  AF 0.12" in html)
     d = sample_dir(tmp, "Snone", [(73, "A", "G", "1.00"), (16519, "T", "C", "0.998")])
     data = mito_section(d, "Snone")
     check("control: without m.3243A>G the confirmed list is empty", data.get("confirmed") == [], str(data.get("confirmed")))
     text, _ = reports(d, "Snone")
     check("control: the text report counts no confirmed variant",
           "Confirmed disease variants (assets/mito_confirmed.tsv): 0" in text)
+    import collect_summary
+    saved, collect_summary.ASSETS_DIR = collect_summary.ASSETS_DIR, os.path.join(tmp, "no-assets")
+    collect_summary._ASSETS.clear()
+    try:
+        data = mito_section(d, "Snone")
+        text, html = reports(d, "Snone")
+    finally:
+        collect_summary.ASSETS_DIR = saved
+        collect_summary._ASSETS.clear()
+    check("without the list the summary has no confirmed count, only why",
+          "confirmed" not in data and "mito_confirmed.tsv is not in" in (data.get("confirmed_note") or ""), str(data))
+    check("without the list neither report shows a count of confirmed variants",
+          "Confirmed disease variants (assets" not in text and "Confirmed disease variants</span>" not in html
+          and "Confirmed disease variants: not checked" in text)
 
 
 def idxstats(chrm_reads, auto_reads_per_chrom, chroms=22, length=50_000_000):
@@ -258,9 +275,11 @@ def test_copies(tmp):
     b = collect_summary.mito_copies(idxstats(chrm, per_chrom).replace("chrM", "MT").replace("chr", ""))
     check("contigs named 1..22 and MT work", b["status"] == "called", str(b))
     d = sample_dir(tmp, "Scn", [(73, "A", "G", "1.00")], idxstats=idxstats(chrm, per_chrom))
-    text, _ = reports(d, "Scn")
+    text, html = reports(d, "Scn")
     check("the text report gives the copy number",
           re.search(r"mtDNA copy number: 20[0-9]\.[0-9] per cell", text) is not None)
+    check("the HTML report gives the copy number",
+          re.search(r'mtDNA copies per cell</span><span class="value">20[0-9]\.[0-9]<', html) is not None)
 
 
 def test_deletions(tmp):
@@ -279,7 +298,11 @@ def test_deletions(tmp):
     check("a deletion elsewhere (m.9001-13999) is listed but not named",
           any(r["bkp5"] == 9000 and not r.get("known") for r in listed), str(listed))
     check("a deletion under 1% is counted, not listed", dl.get("total") == 4 and len(listed) == 3, str(dl))
-    text, _ = reports(d, "Sdel")
+    text, html = reports(d, "Sdel")
+    check("the HTML report counts four deletions, two of them named",
+          '>Large deletions (eKLIPse)</span><span class="value">4<' in html
+          and re.search(r'Named in the confirmed list</span><span class="value"><span class="badge badge-yellow">2<', html)
+          is not None)
     check("the text report names the common deletion with its level and ClinVar id",
           re.search(r"m\.8470_13446del \(4977 bp\)  level 10\.2%  The common 4977 bp deletion.*ClinVar 430680", text)
           is not None)
@@ -296,6 +319,14 @@ def test_deletions(tmp):
     except ValueError:
         ok = True
     check("a file that is not eKLIPse's table is refused", ok)
+    wrap = os.path.join(tmp, "wrap.csv")
+    with open(wrap, "w") as f:
+        f.write("\"Title\";\"5' breakpoint\";\"3' breakpoint\";\"Freq\";\"Freq For\";\"Freq Rev\";\"5' Blast\";"
+                "\"3' Blast\";\"5' Depth\";\"3' Depth\";\"Repetition\"\n")
+        f.write('"S";"16000";"500";"2,0";"2,0";"2,0";"3";"3";"100";"100";"none"\n')
+    rows = collect_summary.eklipse_deletions(wrap)
+    check("a deletion across the origin (m.16001 to m.499) gets its length, 1068 bp",
+          rows[0]["length"] == 1068, str(rows[0]))
 
 
 def test_image_pin():

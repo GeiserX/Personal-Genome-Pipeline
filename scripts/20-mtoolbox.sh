@@ -21,7 +21,7 @@
 #
 # Then the mtDNA copy number: chrM reads per base over autosomal reads per base
 # in the BAM index (samtools idxstats), times 2, into mito/<sample>_mtdna_copies.tsv
-# (not assessed on a sliced or targeted BAM). And large deletions: eKLIPse
+# (not assessed under 20 reads per kb of autosome, as on a sliced BAM). And large deletions: eKLIPse
 # (EKLIPSE_IMAGE) on the chrM reads, into mito/<sample>_chrM_deletions.tsv. The
 # report names the variants and deletions of assets/mito_confirmed.tsv among
 # the calls.
@@ -49,6 +49,8 @@ for f in "$BAM" "${BAM}.bai" "$REF" "${REF}.fai"; do
 done
 
 mkdir -p "$OUTPUT_DIR"
+# Tables of an earlier run go first, so a stage that fails now leaves none behind.
+rm -f "${OUTPUT_DIR}/${SAMPLE}_mtdna_copies.tsv" "${OUTPUT_DIR}/${SAMPLE}_chrM_deletions.tsv"
 
 
 echo "[1/8] Extracting chrM reads..."
@@ -160,10 +162,9 @@ run_in --cpus 2 --memory 4g "$EKLIPSE_IMAGE" bash -c '
   python3 "$EK" -in "$1/input.tsv" -ref "$(dirname "$EK")/data/NC_012920.1.gb" -out "$1/out" -tmp "$1/tmp" -thread 2
 ' _ "/genome/${SAMPLE}/mito/eklipse"
 # eKLIPse stops with exit 1 on an error (set -e stops here then). Should it
-# still leave no table, the old one goes and the report says the deletions
-# were not looked for.
+# still leave no table, there is none (the old one went at the start) and the
+# report says the deletions were not looked for.
 CSV=$(find "${EK_DIR}/out" -name eKLIPse_deletions.csv | head -n 1)
-rm -f "${OUTPUT_DIR}/${SAMPLE}_chrM_deletions.tsv"
 if [ -z "$CSV" ]; then
   echo "  WARNING: eKLIPse exited 0 but wrote no eKLIPse_deletions.csv under ${EK_DIR}/out: no deletion table."
 else

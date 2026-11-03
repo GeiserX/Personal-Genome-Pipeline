@@ -183,7 +183,7 @@ process MITO_VARIANTS_ANNOTATE {
     1. samtools idxstats of the whole BAM: chrM reads per base over the
        autosomal reads per base, times 2, is the mtDNA copy number per cell
        (bin/collect_summary.py mito-copies, into <id>_mtdna_copies.tsv;
-       not assessed on a sliced or targeted BAM).
+       not assessed under 20 reads per kb of autosome, as on a sliced BAM).
     2. The chrM reads into their own BAM, and eKLIPse on it against the rCRS
        GenBank file its image ships (data/NC_012920.1.gb beside eKLIPse.py;
        GRCh38's chrM is the rCRS). eKLIPse finds deletions from soft-clipped

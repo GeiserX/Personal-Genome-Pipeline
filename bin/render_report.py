@@ -1870,7 +1870,8 @@ def mito_lines(d):
 MITO_DELETION_NOTE = ("A single large mtDNA deletion is often found in muscle and not in blood (except in Pearson "
                       "syndrome), so a blood sample with none does not rule one out (docs/20-mtoolbox.md).")
 MITO_COPIES_NOTE = ("mtDNA copies per cell: twice the chrM depth over the autosomal depth, from the read counts of "
-                    "the BAM index. It depends on the tissue and the library, so it compares samples of one kind only.")
+                    "the BAM index, for a whole-genome BAM (an exome gives no such number). It depends on the tissue "
+                    "and the library, so it compares samples of one kind only.")
 
 
 def mito_confirmed_text(v):
@@ -1880,8 +1881,8 @@ def mito_confirmed_text(v):
 
 def mito_deletion_text(r):
     k = r.get("known")
-    span = (f"m.{r['bkp5'] + 1}_{r['bkp3'] - 1}del ({r['length']} bp)" if r.get("length")
-            else f"breakpoints m.{r['bkp5']} and m.{r['bkp3']}")
+    span = (f"m.{r['bkp5'] + 1}_{r['bkp3'] - 1}del ({r['length']} bp)" if r["bkp3"] > r["bkp5"]
+            else f"m.{r['bkp5'] + 1} to m.{r['bkp3'] - 1} across the origin ({r.get('length')} bp)")
     out = f"{span}  level {r['level_pct']}%"
     if k:
         out += f"  {k['disease']}; ClinVar {k['clinvar_id']} ({k['hgvs']}); PMID {k['pmids'].replace(';', ', ')}"
@@ -1892,7 +1893,7 @@ def mito_copies_text(c):
     if c.get("status") == "called":
         return (f"mtDNA copy number: {c['mtdna_copies']} per cell (chrM depth {c['depth_ratio']} times the "
                 f"autosomal depth)")
-    reason = {"low_autosomal_depth": "too few autosomal reads: a sliced or targeted BAM, not a genome",
+    reason = {"low_autosomal_depth": "too few autosomal reads: a sliced BAM, a panel or a shallow genome",
               "no_chrM_reads": "no chrM reads in the BAM"}.get(c.get("reason"), c.get("reason") or "unknown")
     return f"mtDNA copy number: not assessed ({reason})"
 

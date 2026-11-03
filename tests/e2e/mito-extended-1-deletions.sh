@@ -14,9 +14,10 @@
 #      deletion within 50 bp of both breakpoints in the first and none in the
 #      second, the report must name it as the common deletion, and the copy
 #      number of a BAM with no autosomal reads must be "not assessed".
-#   4. Nextflow: MITO_DELETIONS, run for real in its image on the first BAM,
-#      writes the same tables as step 20, and HTML_REPORT places them (a name
-#      it has no place for stops the task) and shows the deletion.
+#   4. Nextflow: MITO_DELETIONS, run for real in its image on both BAMs,
+#      writes the same tables as step 20 (none in the control), and
+#      HTML_REPORT places the first BAM's (a name it has no place for stops
+#      the task) and shows the deletion.
 . "$(dirname "$0")/lib.sh"
 
 G="$GENOME_DIR" T="$CASE_TMP"
@@ -127,15 +128,16 @@ if command -v nextflow >/dev/null; then
   NP="${T}/project"
   rm -rf "$NP" "${T}/nf"; mkdir -p "$NP"
   cp -R "${REPO}/bin" "${NP}/bin"
-  BAM="${G}/${DEL}/aligned/${DEL}_sorted.bam"
+  BAM="${G}/${DEL}/aligned/${DEL}_sorted.bam" BAM_WT="${G}/${WT}/aligned/${WT}_sorted.bam"
   VCF="${G}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
   cat > "${NP}/main.nf" <<NF
 include { MITO_DELETIONS } from '${REPO}/modules/local/mito_variants/main'
 include { HTML_REPORT } from '${REPO}/modules/local/html_report/main'
 
 workflow {
-    MITO_DELETIONS(channel.of([[id: '${DEL}', sex: 'female'], file('${BAM}'), file('${BAM}.bai')]))
-    tables = MITO_DELETIONS.out.deletions.join(MITO_DELETIONS.out.copies)
+    MITO_DELETIONS(channel.of([[id: '${DEL}', sex: 'female'], file('${BAM}'), file('${BAM}.bai')],
+                              [[id: '${WT}', sex: 'female'], file('${BAM_WT}'), file('${BAM_WT}.bai')]))
+    tables = MITO_DELETIONS.out.deletions.join(MITO_DELETIONS.out.copies).filter { meta, d, c -> meta.id == '${DEL}' }
     HTML_REPORT(tables.map { meta, d, c -> [meta, file('${VCF}'),
         [d, c, file('${G}/${DEL}/mito/${DEL}_chrM_filtered.vcf.gz'), file('${REPO}/assets/mito_confirmed.tsv')]] })
 }
@@ -153,9 +155,14 @@ NFCONF
   check_eq "the Nextflow run exits 0" "$NF_RC" 0
   [ "$NF_RC" = 0 ] || grep -E 'ERROR|Error executing process|Command error' -A 12 "${T}/nf.log" | head -60
   R="${T}/nf/results/${DEL}"
-  for f in chrM_deletions.tsv mtdna_copies.tsv; do
-    check "MITO_DELETIONS writes the same ${f} as step 20" cmp -s "${R}/mito/${DEL}_${f}" "${G}/${DEL}/mito/${DEL}_${f}"
+  for N in "$DEL" "$WT"; do
+    for f in chrM_deletions.tsv mtdna_copies.tsv; do
+      check "${N}: MITO_DELETIONS writes the same ${f} as step 20" \
+        cmp -s "${T}/nf/results/${N}/mito/${N}_${f}" "${G}/${N}/mito/${N}_${f}"
+    done
   done
+  check_eq "red control: MITO_DELETIONS finds no deletion in the BAM without one" \
+    "$(awk 'NR > 1' "${T}/nf/results/${WT}/mito/${WT}_chrM_deletions.tsv" 2>/dev/null | wc -l | tr -d ' ')" 0
   check "HTML_REPORT names the common deletion" grep -q 'The common 4977 bp deletion' "${R}/${DEL}_report.html"
 else
   fail "nextflow is not on PATH"

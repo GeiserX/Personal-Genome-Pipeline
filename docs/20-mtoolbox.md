@@ -94,7 +94,7 @@ The reports name a deletion of `assets/mito_confirmed.tsv` when both breakpoints
 
 ### mtDNA copy number
 
-Stage 7 reads the read counts of the BAM index (`samtools idxstats`): chrM reads per base over the reads per base of chr1-22, times 2 for the two nuclear copies, is the number of mtDNA copies per cell (`bin/collect_summary.py mito-copies`, `${SAMPLE}_mtdna_copies.tsv`). It is the depth ratio that whole-genome studies use (Ding 2015, PMID 26172475; Longchamps 2020, PMID 32004343). The counts include duplicates and reads of any mapping quality, on chrM and the autosomes alike. Under 20 reads per kb of autosome (about 3x at 150 bp reads) the BAM is a slice or a panel, not a genome, and the number is not assessed. The copy number depends on the tissue, and in blood on the mix of cells, and on the library, so it compares samples of one kind only.
+Stage 7 reads the read counts of the BAM index (`samtools idxstats`): chrM reads per base over the reads per base of chr1-22, times 2 for the two nuclear copies, is the number of mtDNA copies per cell (`bin/collect_summary.py mito-copies`, `${SAMPLE}_mtdna_copies.tsv`). It is the depth ratio that whole-genome studies use (Ding 2015, PMID 26172475; Longchamps 2020, PMID 32004343). The counts include duplicates and reads of any mapping quality, on chrM and the autosomes alike. Under 20 reads per kb of autosome (about 3x at 150 bp reads) the BAM is a slice, a panel or a shallow genome, and the number is not assessed. An exome can pass that floor and is not told apart: the number is meant for whole-genome BAMs. The copy number depends on the tissue, and in blood on the mix of cells, and on the library, so it compares samples of one kind only.
 
 The copy-number catalog (`bin/cn_loci.tsv`, [docs/cn-loci.md](cn-loci.md)) has no row for it yet: its engine reads targets and controls on one contig, and this ratio needs controls on the autosomes.
 
@@ -109,7 +109,7 @@ NuMTs are copies of mitochondrial DNA in the nuclear genome. Their reads can map
 - Each variant includes an `AF` (allele fraction) field indicating heteroplasmy level
 - `${SAMPLE}_chrM_annotated.tsv` — each allele of the filtered VCF with its FILTER, AF, ClinVar record and gnomAD v3.1 frequencies (above)
 - `${SAMPLE}_mtdna_copies.tsv` — the mtDNA copy number per cell, or why it was not assessed (from `${SAMPLE}_idxstats.txt`)
-- `${SAMPLE}_chrM_deletions.tsv` — the large deletions eKLIPse found; `eklipse/out/` holds eKLIPse's own output
+- `${SAMPLE}_chrM_deletions.tsv` — the large deletions eKLIPse found; `eklipse/out/` holds eKLIPse's own output. Should eKLIPse exit 0 without writing its `eKLIPse_deletions.csv`, the step warns and writes no table, and the report says the deletions were not looked for
 
 ## Interpreting Heteroplasmy
 | AF Level | Meaning |

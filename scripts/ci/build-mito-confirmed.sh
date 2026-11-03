@@ -86,11 +86,12 @@ CHROM=$(bcf index -s "$CV" 2>/dev/null | awk '$1 == "MT" || $1 == "chrM" {print 
 ERR=0
 while IFS=$'\t' read -r kind pos ref alt disease pmids note; do
   bcf view -H -r "${CHROM}:${pos}" "$CV" > "${TMP}/rec.vcf"
-  # The record of this allele: an SNV by its bases; a deletion by its anchor and length.
+  # The record of this allele: an SNV by its bases; a deletion by its anchor base, kept as
+# the ALT, and its length (the deleted bases are the REF after the anchor).
   rec=$(awk -F'\t' -v k="$kind" -v p="$pos" -v r="$ref" -v a="$alt" '
     $2 != p {next}
     k == "snv" && $4 == r && $5 == a {print; exit}
-    k == "deletion" && length($5) == 1 && length($4) - 1 == a {print; exit}' "${TMP}/rec.vcf")
+    k == "deletion" && length($5) == 1 && $5 == substr($4, 1, 1) && length($4) - 1 == a {print; exit}' "${TMP}/rec.vcf")
   if [ -z "$rec" ]; then
     echo "ERROR: ClinVar has no record of ${kind} ${pos} ${ref} ${alt}" >&2; ERR=1; continue
   fi

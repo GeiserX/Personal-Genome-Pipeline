@@ -2575,7 +2575,8 @@ def mito_annotate_main(argv):
 # <id>_chrM_deletions.tsv: eKLIPse's eKLIPse_deletions.csv, one row per
 # deletion. bkp5 and bkp3 are its 5' and 3' breakpoints as it writes them: the
 # last rCRS base kept before the deletion and the first one kept after it, so
-# the deleted bases are bkp5+1 to bkp3-1. level is the share of the mtDNA
+# the deleted bases are bkp5+1 to bkp3-1 (across the origin, m.16569 to m.1,
+# when bkp3 is the smaller). level is the share of the mtDNA
 # molecules with the deletion (in %), the mean of the forward and reverse
 # strand estimates.
 MITO_DEL_COLS = ["bkp5", "bkp3", "length", "level_pct", "level_fwd_pct", "level_rev_pct", "blast_5", "blast_3",
@@ -2587,10 +2588,13 @@ MITO_DEL_TOLERANCE = 50
 # The report lists every named deletion and any other at this level or more;
 # the rest are counted.
 MITO_DEL_LIST_PCT = 1.0
+MITO_LENGTH = 16569  # the rCRS, GRCh38's chrM
 # The mtDNA copy number: chrM depth over autosomal depth, from the read counts
 # of the BAM index (samtools idxstats), times 2 for the two nuclear copies.
 # Under this many reads per kb of autosome (about 3x at 150 bp) the BAM is a
-# slice or a panel, not a genome, and the ratio would mean nothing.
+# slice, a panel or a shallow genome, and the ratio would mean nothing. An
+# exome can pass the floor and is not told apart from a genome here: the
+# number is meant for whole-genome BAMs (docs/20-mtoolbox.md).
 MITO_CN_MIN_READS_PER_KB = 20
 MITO_CN_COLS = ["status", "reason", "chrm_reads", "chrm_length", "autosomal_reads", "autosomal_length",
                 "depth_ratio", "mtdna_copies"]
@@ -2615,7 +2619,7 @@ def eklipse_deletions(path):
         if len(r) < 11:
             raise ValueError(f"{path}: a row with {len(r)} fields, want 11: {';'.join(r)}")
         b5, b3 = int(r[1]), int(r[2])
-        out.append({"bkp5": b5, "bkp3": b3, "length": b3 - b5 - 1 if b3 > b5 else None,
+        out.append({"bkp5": b5, "bkp3": b3, "length": b3 - b5 - 1 if b3 > b5 else MITO_LENGTH - b5 + b3 - 1,
                     "level_pct": round(_eklipse_num(r[3]), 3), "level_fwd_pct": round(_eklipse_num(r[4]), 3),
                     "level_rev_pct": round(_eklipse_num(r[5]), 3), "blast_5": int(r[6]), "blast_3": int(r[7]),
                     "depth_5": int(_eklipse_num(r[8])), "depth_3": int(_eklipse_num(r[9])), "repeat": r[10] or "none"})
@@ -2725,10 +2729,10 @@ def mito_extended(d, s, vcf):
     try:
         snv, dels = mito_confirmed()
     except Unreadable as e:
-        snv, dels = {}, []
+        snv, dels = None, []
         out["confirmed_note"] = str(e)
     confirmed = []
-    for r in vcf_records(vcf):
+    for r in vcf_records(vcf) if snv is not None else ():
         if len(r) < 8:
             continue
         fmt = r[8].split(":") if len(r) > 9 else []
@@ -2739,11 +2743,13 @@ def mito_extended(d, s, vcf):
             if k:
                 confirmed.append(_confirmed_fields(k) | {"pos": int(k["pos"]), "filter": r[6],
                                                          "af": afs[i] if i < len(afs) else "."})
-    out["confirmed"] = confirmed
+    if snv is not None:
+        out["confirmed"] = confirmed
     p = first_existing(d, [f"mito/{s}_chrM_deletions.tsv"])
     if not p:
         out["deletions_note"] = ("no deletion table (mito/<id>_chrM_deletions.tsv): step 20 ran before it looked "
-                                 "for large deletions")
+                                 "for large deletions, eKLIPse wrote no table (see the step's log), or the Nextflow "
+                                 "MITO_DELETIONS task failed (see the Nextflow log)")
     else:
         with open(p, errors="replace") as f:
             rows = list(csv.DictReader(f, delimiter="\t"))
