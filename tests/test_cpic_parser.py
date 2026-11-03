@@ -53,7 +53,19 @@ Checks:
      naming no drug of the table is listed as not checked, and a list that
      names no drug leaves the phenotypes table byte for byte as without one.
      Control: the same table with the inhibitor's factor set to 1 must not
-     give a poor metabolizer.
+     give a poor metabolizer. A moderate CYP2C9 inhibitor (the FDA lists no
+     strong one) and a strong CYP3A inhibitor change the
+     Phenoconverted_phenotype column of CYP2C9 and CYP3A5 to a note, and a
+     list without one leaves it '-'.
+  9. disease-variant contraindications (--contraindications with
+     assets/pgx_contraindications.tsv and step 06's --clinvar-hits): every
+     row of the table has the shape the parser reads; a pathogenic POLG hit
+     adds the valproic acid WARNING, marked when valproate is on the
+     medication list; a benign or conflicting POLG hit, or a pathogenic hit
+     in a gene outside the table, adds none; without a hits table the
+     section says the genes were not checked; an unreadable hits table is
+     reported, not fatal. Control: the table without its POLG row gives no
+     valproic acid line for the same hit.
 
 Run: python3 tests/test_cpic_parser.py
 """
@@ -98,7 +110,8 @@ FDA_TABLE = ("https://www.fda.gov/drugs/drug-interactions-labeling/"
              "healthcare-professionals-fdas-examples-drugs-interact-cyp-enzymes-and-transporter-systems")
 
 
-def run_report(work, name, data, pypgx=None, consensus=None, medications=None, inhibitors=INHIBITORS):
+def run_report(work, name, data, pypgx=None, consensus=None, medications=None, inhibitors=INHIBITORS,
+               contraindications=None, hits=None):
     """Run the cpic-report command; returns (exit code, recommendations, phenotypes rows, comparison rows).
     consensus: rows (Gene, Result, Outside_call) of a step 36 table to pass."""
     d = os.path.join(work, name)
@@ -119,6 +132,13 @@ def run_report(work, name, data, pypgx=None, consensus=None, medications=None, i
         with open(mp, "w") as f:
             f.write(medications)
         args += ["--medications", mp, "--inhibitors", inhibitors]
+    if contraindications is not None:
+        args += ["--contraindications", contraindications]
+    if hits is not None:
+        hp = os.path.join(d, "clinvar_hits.tsv")
+        with open(hp, "w") as f:
+            f.write(hits)
+        args += ["--clinvar-hits", hp]
     comp = os.path.join(d, "comparison.tsv")
     if pypgx is not None:
         p = os.path.join(d, "pypgx.tsv")
@@ -158,7 +178,7 @@ def pheno_report(nm_score="2.0"):
 
 def section(rec):
     """The phenoconversion section of the recommendations text."""
-    part = rec.split("Medications and Phenoconversion (CYP2D6, CYP2C19):", 1)
+    part = rec.split("Medications and Phenoconversion (CYP2D6, CYP2C19, CYP2C9, CYP3A4, CYP3A5):", 1)
     return part[1].split("Affected Medications:", 1)[0] if len(part) == 2 else ""
 
 
@@ -170,8 +190,12 @@ def phenoconversion_checks(work):
     check("inhibitors: the header", header == ["Drug", "Gene", "Strength", "Activity_score_factor",
                                                 "Class_source", "Rule_source"], header)
     rows = [line.rstrip("\n").split("\t") for line in lines[1:] if line.strip()]
-    factor = {("CYP2D6", "strong"): "0", ("CYP2D6", "moderate"): "0.5",
-              ("CYP2C19", "strong"): "-", ("CYP2C19", "moderate"): "-"}
+    # The strengths each gene has rows for: the FDA's table lists no strong
+    # CYP2C9 inhibitor, and the CYP3A rows are its strong inhibitors only.
+    strengths = {"CYP2D6": ("strong", "moderate"), "CYP2C19": ("strong", "moderate"),
+                 "CYP2C9": ("moderate",), "CYP3A4": ("strong",), "CYP3A5": ("strong",)}
+    factor = {(g, st): ("0" if st == "strong" else "0.5") if g == "CYP2D6" else "-"
+              for g, sts in strengths.items() for st in sts}
     bad = [r for r in rows if len(r) != 6 or (r[1], r[2]) not in factor or r[3] != factor[(r[1], r[2])]
            or r[0] != r[0].strip().lower() or not r[0] or r[4] != FDA_TABLE
            or r[5] != ("https://cpicpgx.org/guidelines/guideline-for-codeine-and-cyp2d6/"
@@ -179,9 +203,13 @@ def phenoconversion_checks(work):
     check("inhibitors: every row has a gene, a strength, CPIC's factor for it and its sources", not bad, bad)
     keys = [(r[0], r[1]) for r in rows]
     check("inhibitors: no drug twice for one gene", len(keys) == len(set(keys)), keys)
-    for gene in pgx_parse.PHENOCONVERSION_GENES:
-        for st in ("strong", "moderate"):
+    check("inhibitors: the genes of the table are the parser's", set(strengths) == set(pgx_parse.PHENOCONVERSION_GENES),
+          pgx_parse.PHENOCONVERSION_GENES)
+    for gene, sts in strengths.items():
+        for st in sts:
             check(f"inhibitors: {gene} has {st} inhibitors", any(r[1] == gene and r[2] == st for r in rows))
+    check("inhibitors: CYP3A4 and CYP3A5 list the same strong inhibitors",
+          {r[0] for r in rows if r[1] == "CYP3A4"} == {r[0] for r in rows if r[1] == "CYP3A5"})
     check("inhibitors: the parser reads the table", len(pgx_parse.read_inhibitors(INHIBITORS)) == len(rows))
 
     # 8b. a strong CYP2D6 inhibitor, a CYP2C19 inhibitor, a name not in the table
@@ -280,6 +308,128 @@ def phenoconversion_checks(work):
         except SystemExit as e:
             code = e.code
     check("--medications without --inhibitors is refused", code == 2, code)
+
+    # 8g. CYP2C9 and CYP3A5: an inhibitor changes the reported column to a note, its absence leaves '-'
+    rep = pheno_report()
+    rep["genes"]["CYP2C9"] = dip("*1", "*1", "Normal Metabolizer")
+    rep["genes"]["CYP3A5"] = dip("*3", "*3", "Poor Metabolizer")
+    _, rec, rows, _ = run_report(work, "PHENO2C9", rep, medications="fluconazole\nketoconazole\n")
+    got = {r[0]: r for r in rows}
+    check("CYP2C9: a moderate inhibitor (fluconazole) changes the reported column to a note",
+          got["CYP2C9"][4] == "not computed: fluconazole inhibits CYP2C9; "
+          "CPIC gives no rule that converts the CYP2C9 phenotype", got["CYP2C9"])
+    check("CYP2C9: the genotype phenotype is kept", got["CYP2C9"][2:4] == ["Normal Metabolizer", "normal"], got["CYP2C9"])
+    check("CYP2C9: a WARNING line names the inhibitor",
+          "WARNING: CYP2C9 genotype phenotype Normal Metabolizer; on fluconazole (moderate CYP2C9 inhibitor)."
+          in section(rec), section(rec))
+    check("CYP3A5: a strong CYP3A inhibitor (ketoconazole) changes the reported column to a note",
+          got["CYP3A5"][4].startswith("not computed: ketoconazole inhibits CYP3A5"), got["CYP3A5"])
+    _, rec, rows, _ = run_report(work, "PHENO2C9NONE", rep, medications="paroxetine\n")
+    got = {r[0]: r for r in rows}
+    check("CYP2C9 and CYP3A5: without an inhibitor of theirs on the list the column stays '-'",
+          got["CYP2C9"][4] == "-" and got["CYP3A5"][4] == "-", (got["CYP2C9"], got["CYP3A5"]))
+
+
+CONTRA = os.path.join(REPO, "assets", "pgx_contraindications.tsv")
+HITS_HEADER = "chrom\tpos\tref\talt\tgenotype\tclinvar_id\tgeneinfo\tclnsig\tclnrevstat\n"
+
+
+def hit(gene, clnsig, pos="89300000", gt="0/1"):
+    """One synthetic row of step 06's hits table (no one's variant)."""
+    return f"chr15\t{pos}\tC\tT\t{gt}\t9900001\t{gene}:1\t{clnsig}\tcriteria_provided,_single_submitter\n"
+
+
+def contra_section(rec):
+    part = rec.split("Drug Contraindications From Disease Variants (ClinVar hits, step 06):", 1)
+    return part[1].split("Uncallable Genes:", 1)[0] if len(part) == 2 else ""
+
+
+def contraindication_checks(work):
+    # 9a. the table
+    with open(CONTRA) as f:
+        lines = [line for line in f if not line.startswith("#")]
+    header = lines[0].rstrip("\n").split("\t")
+    check("contraindications: the header", header == pgx_parse.CONTRA_COLUMNS, header)
+    rows = [line.rstrip("\n").split("\t") for line in lines[1:] if line.strip()]
+    bad = [r for r in rows if len(r) != 7 or not all(c.strip() for c in r)
+           or r[3] not in ("A", "B", "A/B")
+           or r[5] != f"https://api.cpicpgx.org/v1/pair_view?genesymbol=eq.{r[0]}"
+           or not (r[6] == "-" or r[6].startswith("https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid="))
+           or any(n != n.strip().lower() or not n for n in r[2].split(","))
+           or r[1].split()[0] not in r[2].split(",")]
+    check("contraindications: every row has a gene, a drug, its names, a CPIC level, a note and its sources",
+          not bad, bad)
+    keys = [(r[0], r[1]) for r in rows]
+    check("contraindications: no gene-drug pair twice", len(keys) == len(set(keys)), keys)
+    check("contraindications: POLG with valproic acid, the urea-cycle genes, HPRT1 and SCN1A are there",
+          {("POLG", "valproic acid"), ("ASL", "valproic acid"), ("ASS1", "valproic acid"), ("CPS1", "valproic acid"),
+           ("NAGS", "valproic acid"), ("OTC", "valproic acid"), ("HPRT1", "mycophenolic acid"),
+           ("SCN1A", "carbamazepine"), ("SCN1A", "phenytoin")} <= set(keys), keys)
+    check("contraindications: the parser reads the table", len(pgx_parse.read_contraindications(CONTRA)) == len(rows))
+
+    # 9b. a pathogenic POLG hit adds the valproate line; benign, conflicting or another gene do not
+    rep = pheno_report()
+    rc, rec, _, _ = run_report(work, "CONTRAPLP", rep, contraindications=CONTRA,
+                               hits=HITS_HEADER + hit("POLG", "Pathogenic"))
+    sec = contra_section(rec)
+    check("contraindications: exits 0", rc == 0, rc)
+    check("contraindications: a pathogenic POLG hit adds the valproic acid WARNING",
+          "WARNING: valproic acid -- POLG chr15:89300000 C>T, genotype 0/1, ClinVar Pathogenic." in sec, sec)
+    check("contraindications: the line carries the label's note, the CPIC level and the label",
+          "mitochondrial disorders caused by POLG mutations" in sec and "(CPIC level A/B)" in sec
+          and "dailymed.nlm.nih.gov" in sec, sec)
+    check("contraindications: the section says to review it with a clinician",
+          "Review it with your clinician" in sec, sec)
+    _, rec, _, _ = run_report(work, "CONTRALP", rep, contraindications=CONTRA,
+                              hits=HITS_HEADER + hit("POLG", "Pathogenic/Likely_pathogenic", gt="1/1"))
+    check("contraindications: Pathogenic/Likely_pathogenic counts", "WARNING: valproic acid -- POLG" in contra_section(rec),
+          contra_section(rec))
+    for name, sig in (("CONTRABEN", "Benign"), ("CONTRACONF", "Conflicting_classifications_of_pathogenicity"),
+                      ("CONTRARISK", "risk_factor")):
+        _, rec, _, _ = run_report(work, name, rep, contraindications=CONTRA, hits=HITS_HEADER + hit("POLG", sig))
+        sec = contra_section(rec)
+        check(f"contraindications: a POLG hit classed {sig} adds no drug line",
+              "WARNING" not in sec and "No pathogenic or likely pathogenic ClinVar hit in POLG" in sec, sec)
+    _, rec, _, _ = run_report(work, "CONTRAOTHER", rep, contraindications=CONTRA,
+                              hits=HITS_HEADER + hit("BRCA2", "Pathogenic"))
+    check("contraindications: a pathogenic hit in a gene outside the table adds no drug line",
+          "WARNING" not in contra_section(rec), contra_section(rec))
+    _, rec, _, _ = run_report(work, "CONTRAMED", rep, contraindications=CONTRA, medications="Valproate 500 mg\n",
+                              hits=HITS_HEADER + hit("POLG", "Likely_pathogenic"))
+    check("contraindications: valproate on the medication list is marked",
+          "ClinVar Likely_pathogenic; ON THE MEDICATION LIST." in contra_section(rec), contra_section(rec))
+    _, rec, _, _ = run_report(work, "CONTRANOTON", rep, contraindications=CONTRA, medications="paroxetine\n",
+                              hits=HITS_HEADER + hit("POLG", "Pathogenic"))
+    check("contraindications: a drug not on the list is not marked",
+          "WARNING: valproic acid" in contra_section(rec) and "ON THE MEDICATION LIST" not in rec, contra_section(rec))
+
+    # 9c. no hits table, an unreadable one, no table
+    _, rec, _, _ = run_report(work, "CONTRANOHITS", rep, contraindications=CONTRA)
+    check("contraindications: without a hits table the genes are listed as not checked",
+          "Not checked: no ClinVar hits table" in contra_section(rec) and "POLG" in contra_section(rec),
+          contra_section(rec))
+    rc, rec, _, _ = run_report(work, "CONTRABADHITS", rep, contraindications=CONTRA, hits="nothing\there\n")
+    check("contraindications: an unreadable hits table is reported, the report still written",
+          rc == 0 and "Could not read the ClinVar hits table" in contra_section(rec), (rc, contra_section(rec)))
+    _, rec, _, _ = run_report(work, "CONTRANONE", rep)
+    check("contraindications: without the table there is no section", "Drug Contraindications" not in rec, rec[:600])
+    with contextlib.redirect_stderr(io.StringIO()):
+        try:
+            pgx_parse.main(["cpic-report", "--sample", "X", "--report", "r.json", "--outdir", work,
+                            "--clinvar-hits", "h.tsv"])
+            code = 0
+        except SystemExit as e:
+            code = e.code
+    check("--clinvar-hits without --contraindications is refused", code == 2, code)
+
+    # 9d. control: the same hit with the POLG row taken out of the table gives no valproate line
+    nopolg = os.path.join(work, "contraindications-no-polg.tsv")
+    with open(CONTRA) as f, open(nopolg, "w") as out:
+        out.writelines(line for line in f if not line.startswith("POLG\t"))
+    _, rec, _, _ = run_report(work, "CONTRACTRL", rep, contraindications=nopolg,
+                              hits=HITS_HEADER + hit("POLG", "Pathogenic"))
+    check("control: without the POLG row the same hit gives no valproic acid line",
+          "valproic acid" not in contra_section(rec), contra_section(rec))
 
 
 def main():
@@ -665,6 +815,7 @@ def main():
         check("step36-outside lists nothing for a report whose only outside call is MT-RNR1",
               rc == 0 and out.getvalue() == "", (rc, out.getvalue()))
         phenoconversion_checks(work)
+        contraindication_checks(work)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
