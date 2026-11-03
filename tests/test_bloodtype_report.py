@@ -379,6 +379,39 @@ multi_null = {x["system"]: x for x in run_inproc([vcf_line("KEL_02N01", "1/1", a
 check("11 a null row with several ALTs counts each (c.223+1G>T, the third)",
       multi_null["Kell"]["phenotype"], "K-k- Kp(a-b-) Js(a-b-)")
 
+
+# 12. common variants are not null alleles. FUT2 c.772G>A (rs602662, about half of
+# all chromosomes in gnomAD) and c.335C>T (rs200157007, 0.14 in South Asians) ride on
+# the c.461G>A haplotype, and SLC14A1 c.810G>A (rs17675299, 0.08 in Finns) is far
+# too common for a Jk null. As null rows they turned Se/se carriers into
+# non-secretors and Jk(a+b+) into Jk(a+b-) at confidence high.
+def raw_line(chrom, pos, ref, alt, gt):
+    return "\t".join([chrom, str(pos), ".", ref, alt, "50", "PASS", ".", "GT", gt]) + "\n"
+
+
+for desc, recs, system, want in [
+        ("FUT2 c.461G>A 0/1 with c.772G>A 0/1: secretor",
+         [vcf_line("FUT2_01N02", "0/1"), raw_line("chr19", 48703728, "G", "A", "0/1")], "Secretor", "secretor"),
+        ("FUT2 c.772G>A 1/1 alone: secretor",
+         [raw_line("chr19", 48703728, "G", "A", "1/1")], "Secretor", "secretor"),
+        ("FUT2 c.461G>A 0/1 with c.335C>T 0/1: secretor",
+         [vcf_line("FUT2_01N02", "0/1"), raw_line("chr19", 48703291, "C", "T", "0/1")], "Secretor", "secretor"),
+        ("JK_838 0/1 with SLC14A1 c.810G>A 0/1: Jk(a+b+)",
+         [vcf_line("JK_838", "0/1"), raw_line("chr18", 45739309, "G", "A", "0/1")], "Kidd", "Jk(a+b+)")]:
+    got = {x["system"]: x for x in run_inproc(recs)}
+    check(f"12 {desc}", got[system]["phenotype"], want)
+check("12 those three positions are no null row",
+      sorted(n for n in NULLS if (SITES[n]["chrom"], SITES[n]["pos"]) in
+             {("chr19", 48703728), ("chr19", 48703291), ("chr18", 45739309)}), [])
+
+# 13. another ALT at a null row's position (KEL c.1546C>T's position, G>T) is not that
+# null allele: the antigens stay fully read at confidence high, and the note names it.
+kel = SITES["KEL_02N17"]
+oth = {x["system"]: x for x in run_inproc([raw_line(kel["chrom"], kel["pos"], "G", "T", "0/1")])}
+check("13 another ALT at a KEL null row: K-k+, confidence high, the note names it",
+      (oth["Kell"]["phenotype"], oth["Kell"]["confidence"], "another allele at this position" in oth["Kell"]["note"]),
+      ("K-k+ Kp(a-b+) Js(a-b+)", "high", True))
+
 if FAILS:
     print(f"{len(FAILS)} check(s) failed")
     sys.exit(1)
