@@ -91,19 +91,26 @@ bad = [r["gene"] for r in cat if ("ALT-only" in r["reasons"]) != (r["start"] == 
 check("1. a position on chr1-22, X or Y, or an ALT scaffold with no position for an ALT-only gene", not bad, bad)
 check("1. 273 CMRG genes", sum("CMRG" in r["reasons"] for r in cat) == 273)
 by = {r["gene"]: r for r in cat}
-check("1. GSTT1 is ALT-only and pypgx's; HLA-DRB3 is ALT-only with no owner",
-      by.get("GSTT1", {}).get("reasons") == "ALT-only" and by["GSTT1"]["owner"] == "pypgx"
+# GSTT1 is a bam gene of step 32, but step 32 skips it on the no-ALT reference and refuses a BAM
+# with ALT contigs, so no step calls it: it has no owner.
+check("1. GSTT1 and HLA-DRB3 are ALT-only with no owner",
+      by.get("GSTT1", {}).get("reasons") == "ALT-only" and by["GSTT1"]["owner"] == "."
       and by.get("HLA-DRB3", {}).get("reasons") == "ALT-only" and by["HLA-DRB3"]["owner"] == ".")
 check("1. KCNE1, CBS and CRYAA are in a false duplication of GRCh38",
       all("false_duplication" in by.get(g, {}).get("reasons", "") for g in ("KCNE1", "CBS", "CRYAA")))
 parascopy = {g for r in table_of(os.path.join(REPO, "assets", "paralog_loci.tsv")) for g in r["genes"].split(",")}
-pypgx = {r["gene"] for r in table_of(os.path.join(REPO, "assets", "pgx_genes.tsv")) if r["mode"] == "bam"}
+pypgx = {r["gene"] for r in table_of(os.path.join(REPO, "assets", "pgx_genes.tsv"))
+         if r["mode"] == "bam" and r["callable_without_alt"] != "no"}
 wrong = [r["gene"] for r in cat if (r["gene"] in parascopy and r["owner"] != "parascopy")
          or (r["gene"] not in parascopy and r["gene"] in pypgx and r["owner"] != "pypgx")
          or (r["owner"] not in (".", "parascopy", "pypgx") and not r["owner"].startswith("cn_loci:"))]
-check("1. owners: parascopy for assets/paralog_loci.tsv's genes, then pypgx for the bam genes", not wrong, wrong)
+check("1. owners: parascopy for assets/paralog_loci.tsv's genes, then pypgx for the bam genes step 32 can call",
+      not wrong, wrong)
 check("1. HBA1 and HBA2 belong to the depth engine's HBA row",
       by.get("HBA1", {}).get("owner") == "cn_loci:HBA" and by.get("HBA2", {}).get("owner") == "cn_loci:HBA")
+check("1. a gene that only holds a depth target is not the depth engine's (RSRP1 holds RHD, RHD is)",
+      by.get("RSRP1", {}).get("owner") == "." and by.get("RHD", {}).get("owner") == "cn_loci:RHD",
+      (by.get("RSRP1"), by.get("RHD")))
 
 
 # --- 2 to 4. the reader ----------------------------------------------------------------
@@ -144,9 +151,10 @@ def count_matches(reader, tsv):
 
 MAPQ0 = "KCNE1"   # all its reads MAPQ 0, as the false duplication of GRCh38 makes them
 UNIQUE = "CBS"    # every base at 10x
+OWNED = "HBA1"    # not read, but step 35's HBA count calls it
 with tempfile.TemporaryDirectory() as work:
     tsv = os.path.join(work, "S_callability.bed.gz")
-    write_thresholds(tsv, cat, zero={MAPQ0})
+    write_thresholds(tsv, cat, zero={MAPQ0, OWNED})
     check("2. control: a reader that takes an ALT-only gene as read fails check 2",
           bool(mapq0_and_alt(alt_read_bug, tsv)), "the planted bug passed")
     problems = mapq0_and_alt(collect_summary.callability, tsv)
@@ -156,8 +164,10 @@ with tempfile.TemporaryDirectory() as work:
           not count_matches(alt_read_bug, tsv)[0])
     ok, d = count_matches(collect_summary.callability, tsv)
     check("3. the genes not read with no owner are the catalog query's", ok, d["not_read"][:5])
-    check("3. owned genes not read are listed apart (GSTT1 by pypgx)",
-          any(g["gene"] == "GSTT1" and g["owner"] == "pypgx" for g in d["not_read_owned"]), d["not_read_owned"])
+    check("3. owned genes not read are listed apart (HBA1 by the HBA count), GSTT1 is not one of them",
+          any(g["gene"] == OWNED and g["owner"] == "cn_loci:HBA" for g in d["not_read_owned"])
+          and all(g["gene"] != "GSTT1" for g in d["not_read_owned"])
+          and any(g["gene"] == "GSTT1" for g in d["not_read"]), (d["not_read_owned"], d["not_read"][:5]))
 
     # the section and both reports, from a sample folder (the Nextflow layout)
     sd = os.path.join(work, "S")

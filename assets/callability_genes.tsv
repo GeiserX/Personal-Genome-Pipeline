@@ -3,7 +3,7 @@
 # report lists the ones it could not read. Written by scripts/ci/build-callability.sh, which says how the
 # rows and the owners are chosen; rebuild it there, do not edit it by hand. start is 0-based and end
 # 1-based, as in a BED file; an ALT-only gene has its ALT scaffold as chrom and '.' as start and end.
-# Genes: 1572 (CMRG 273, segdup 1276, false_duplication 22, collapsed 50, ALT-only 19); with an owner: 16.
+# Genes: 1572 (CMRG 273, segdup 1276, false_duplication 22, collapsed 50, ALT-only 19); with an owner: 14.
 gene	hgnc_id	chrom	start	end	reasons	owner
 OR4F5	HGNC:14825	chr1	65418	71585	segdup	.
 OR4F29	HGNC:31275	chr1	450739	451678	segdup	.
@@ -58,7 +58,7 @@ CELA3B	HGNC:15945	chr1	21977021	21998642	segdup	.
 CELA3A	HGNC:15944	chr1	22001656	22012542	segdup	.
 HMGCL	HGNC:5005	chr1	23801876	23838620	CMRG	.
 CNR2	HGNC:2160	chr1	23870514	23913396	CMRG	.
-RSRP1	HGNC:25234	chr1	25242247	25338244	segdup	cn_loci:RHD
+RSRP1	HGNC:25234	chr1	25242247	25338244	segdup	.
 RHD	HGNC:10009	chr1	25272392	25330445	segdup	cn_loci:RHD
 RHCE	HGNC:10008	chr1	25362248	25430192	CMRG,segdup	.
 PIGV	HGNC:26031	chr1	26787053	26800659	CMRG	.
@@ -1559,7 +1559,7 @@ DAZ4	HGNC:15966	chrY	24833842	24907040	segdup	.
 BPY2C	HGNC:18225	chrY	25030900	25062548	segdup	.
 CDY1	HGNC:1809	chrY	25622116	25624902	segdup	.
 C4B_2	HGNC:42398	chr6_GL000256v2_alt	.	.	ALT-only	.
-GSTT1	HGNC:4641	chr22_KI270879v1_alt	.	.	ALT-only	pypgx
+GSTT1	HGNC:4641	chr22_KI270879v1_alt	.	.	ALT-only	.
 GSTTP2	HGNC:33606	chr22_KI270879v1_alt	.	.	ALT-only	.
 GTF2H2C_2	HGNC:35418	chr5_GL339449v2_alt	.	.	ALT-only	.
 HLA-DRB3	HGNC:4951	chr6_GL000250v2_alt	.	.	ALT-only	.

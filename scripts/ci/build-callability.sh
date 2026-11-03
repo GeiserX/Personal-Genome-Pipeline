@@ -37,9 +37,11 @@
 #
 # and the step that calls it with a method of its own (owner): parascopy for
 # the genes of assets/paralog_loci.tsv, pypgx for the bam genes of
-# assets/pgx_genes.tsv, cn_loci:<locus> for a gene under the targets of a gene
-# row of bin/cn_loci.tsv, in that order; '.' for none. A change to one of
-# those three files changes the owners, so rebuild after it.
+# assets/pgx_genes.tsv that step 32 can call on the no-ALT reference,
+# cn_loci:<locus> for a gene a gene row of bin/cn_loci.tsv names (its locus,
+# the locus up to its first '_', or a target name), in that order; '.' for
+# none. A change to one of those three files changes the owners, so rebuild
+# after it.
 #
 # Needs curl, python3 and sha256sum or shasum. The e2e case
 # tests/e2e/callability-1-catalog.sh runs it and fails on any difference with
@@ -207,23 +209,29 @@ def table(path):
 
 
 parascopy = {g for r in table(f"{repo}/assets/paralog_loci.tsv") for g in r["genes"].split(",")}
-pypgx = {r["gene"] for r in table(f"{repo}/assets/pgx_genes.tsv") if r["mode"] == "bam"}
-cn_targets = []
+# A gene step 32 skips on the default no-ALT reference (callable_without_alt no) has no
+# caller there, and step 32 refuses a BAM with ALT contigs, so it is not pypgx's.
+pypgx = {r["gene"] for r in table(f"{repo}/assets/pgx_genes.tsv")
+         if r["mode"] == "bam" and r["callable_without_alt"] != "no"}
+# A cn_loci gene row reports the genes it names (its locus, as RHD, or LPA for LPA_KIV2,
+# or a target, as HBA1 and HBA2), not every gene whose span holds one of its targets.
+cn_names = {}
 for r in table(f"{repo}/bin/cn_loci.tsv"):
     if r["kind"] == "gene":
+        names = {r["locus"], r["locus"].split("_")[0]}
         for part in r["targets"].split(";"):
-            s, e = part.split(":")[1].split("-")
-            cn_targets.append((r["locus"], r["chrom"], int(s), int(e)))
+            names |= {part.split(":")[0], part.split(":")[0].split("_")[0]}
+        for n in names:
+            cn_names.setdefault(n, r["locus"])
 
 
-def owner(sym, chrom, s, e):
+def owner(sym):
     if sym in parascopy:
         return "parascopy"
     if sym in pypgx:
         return "pypgx"
-    for locus, c, a, b in cn_targets:
-        if c == chrom and a < e and s < b:
-            return f"cn_loci:{locus}"
+    if sym in cn_names:
+        return f"cn_loci:{cn_names[sym]}"
     return "."
 
 
@@ -231,10 +239,10 @@ rows = []
 for h, why in reasons.items():
     if h in genes:
         sym, chrom, s, e = genes[h]
-        rows.append((ORDER[chrom], s, sym, h, chrom, s, e, why, owner(sym, chrom, s, e)))
+        rows.append((ORDER[chrom], s, sym, h, chrom, s, e, why, owner(sym)))
     else:
         sym, name = alt_genes[h]
-        rows.append((len(ORDER), 0, sym, h, name, ".", ".", why, owner(sym, name, -1, -1)))
+        rows.append((len(ORDER), 0, sym, h, name, ".", ".", why, owner(sym)))
 rows.sort()
 syms = [r[2] for r in rows]
 dup = sorted({x for x in syms if syms.count(x) > 1})
