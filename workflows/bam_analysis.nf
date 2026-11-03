@@ -83,6 +83,7 @@ workflow BAM_ANALYSIS {
     ch_y_str_csv        = Channel.empty()   // [meta, <id>_y_str.csv]
     ch_mosdepth_depth   = Channel.empty()   // [meta, summary, global_dist] when mosdepth runs
     ch_mosdepth_regions = Channel.empty()   // [meta, regions.bed.gz] when mosdepth runs
+    ch_callability      = Channel.empty()   // [meta, <id>_callability.bed.gz] when mosdepth runs
 
     //
     // MODULE 1: HLA Typing (T1K)
@@ -173,11 +174,13 @@ workflow BAM_ANALYSIS {
     }
 
     //
-    // MODULE 4: mosdepth (coverage statistics)
+    // MODULE 4: mosdepth (coverage statistics, and the callability of the
+    // genes of assets/callability_genes.tsv)
     // Gates on: params.tools contains 'mosdepth'
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('mosdepth')) {
-        MOSDEPTH(ch_bam)
+        MOSDEPTH(ch_bam, Channel.value(file("${projectDir}/assets/callability_genes.tsv", checkIfExists: true)))
+        ch_callability    = MOSDEPTH.out.callability
         ch_coverage       = MOSDEPTH.out.summary
         ch_mosdepth_depth = MOSDEPTH.out.summary.join(MOSDEPTH.out.global_dist)
         ch_mosdepth_regions = MOSDEPTH.out.regions_bed
@@ -356,6 +359,7 @@ workflow BAM_ANALYSIS {
     rfc1_motif       = ch_rfc1_motif      // [meta, <id>_rfc1_motif.tsv]
     telomere_results = ch_telomere_results
     coverage         = ch_coverage
+    callability      = ch_callability     // [meta, <id>_callability.bed.gz]
     mito_vcf         = ch_mito_vcf
     mito_annotated   = ch_mito_annotated  // [meta, <id>_chrM_annotated.tsv]
     kir_genotype     = ch_kir_genotype    // [meta, <id>_kir_genotype.tsv, database_release.txt]

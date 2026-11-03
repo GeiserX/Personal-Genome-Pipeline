@@ -3225,6 +3225,59 @@ def sec_coverage(d, s):
     return p, {"mean_depth": float(mean) if mean not in (None, "") else None}
 
 
+# A gene of assets/callability_genes.tsv counts as read when at least this
+# share of its bases has the depth step 16b counts (its thresholds column,
+# 10x of reads with MAPQ 20 or more).
+CALLABLE_SHARE = 0.9
+
+
+def callability(catalog, table):
+    """The reading of every gene of the catalog rows from step 16b's per-gene
+    table (mosdepth --thresholds over the catalog's genes: chrom, start, end,
+    gene, bases at the threshold), as the section's data."""
+    with open_text(table) as f:
+        lines = [x.rstrip("\n").split("\t") for x in f if x.strip()]
+    if not lines or not lines[0][0].startswith("#") or len(lines[0]) != 5 \
+            or not re.fullmatch(r"[0-9]+X", lines[0][4]):
+        raise Unreadable(f"{os.path.basename(table)} is not mosdepth's thresholds table of one depth")
+    min_depth = int(lines[0][4][:-1])
+    bases = {}
+    for c in lines[1:]:
+        if len(c) != 5:
+            raise Unreadable(f"{os.path.basename(table)}: a row has {len(c)} columns, not 5")
+        bases[c[3]] = (int(c[2]) - int(c[1]), int(c[4]))
+    genes, unowned, owned, not_on_reference = [], [], [], []
+    for r in catalog:
+        g = {"gene": r["gene"], "hgnc_id": r["hgnc_id"], "reasons": r["reasons"].split(","),
+             "owner": None if r["owner"] == "." else r["owner"], "share": None}
+        if r["start"] == ".":
+            g["status"] = "not on this reference"
+            not_on_reference.append(g["gene"])
+        else:
+            if r["gene"] not in bases:
+                raise Unreadable(f"{os.path.basename(table)} has no row for {r['gene']}: it was written from "
+                                 "another assets/callability_genes.tsv; run step 16b again")
+            n, ok = bases[r["gene"]]
+            g["share"] = round(ok / n, 4) if n else 0.0
+            g["status"] = "read" if g["share"] >= CALLABLE_SHARE else "not read"
+        genes.append(g)
+        if g["status"] != "read":
+            (owned if g["owner"] else unowned).append(g)
+    return {"min_depth": min_depth, "min_mapq": 20, "min_share": CALLABLE_SHARE, "catalog_genes": len(genes),
+            "read": sum(1 for g in genes if g["status"] == "read"),
+            "not_read": [{k: g[k] for k in ("gene", "hgnc_id", "reasons", "share", "status")} for g in unowned],
+            "not_read_owned": [{k: g[k] for k in ("gene", "owner", "share", "status")} for g in owned],
+            "not_on_reference": not_on_reference}
+
+
+def sec_callability(d, s):
+    """Step 16b's gene callability (the MOSDEPTH task's in a Nextflow folder)."""
+    p = first_existing(d, [f"mosdepth/{s}_callability.bed.gz", f"coverage/{s}_callability.bed.gz"])
+    if not p:
+        return None, {}
+    return p, callability(asset_rows("callability_genes.tsv"), p)
+
+
 # How far a chrX or chrY copy number may sit from a whole number and still be
 # read as that number. Further off (a mosaic, a mixed sample, a noisy run)
 # names no karyotype.
@@ -3459,6 +3512,7 @@ NOT_A_STEP = {"read_count", "couple", "carrier"}
 SECTIONS = [
     # key, title, step, reader
     ("coverage", "Coverage (mosdepth)", "16b", sec_coverage),
+    ("callability", "Gene callability (mosdepth)", "16b", sec_callability),
     ("sex_check", "Sex check (indexcov)", "16", sec_sex_check),
     ("sample_qc", "Sample identity and contamination (somalier, VerifyBamID2)", "33", sec_sample_qc),
     ("mosaic_sex_loss", "Mosaic loss of chromosome Y or X", "33", sec_mosaic_sex_loss),
