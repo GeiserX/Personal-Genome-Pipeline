@@ -8,7 +8,8 @@
 # the copy number of the pair (agCN) and, where the sequence differences
 # between the copies allow, of each copy (psCN), each with a Phred quality
 # (20 = 99% likely right). It needs a BAM aligned to a reference without ALT
-# contigs, the default, and the homology table and 1000 Genomes models that
+# contigs, the default (a BAM with ALT or HLA contigs stops the step with a
+# REFUSED line), and the homology table and 1000 Genomes models that
 # `setup.sh --parascopy-data` installs.
 #
 # The loci come from assets/paralog_loci.tsv: one row per Parascopy model of
@@ -64,6 +65,26 @@ for f in "$BAM" "${BAM}.bai" "$REF_FASTA" "${REF_FASTA}.fai" "$LOCI"; do
     exit 1
   fi
 done
+# A BAM aligned to a reference with ALT or HLA contigs is refused: Parascopy
+# and the HBA depth count read copy number from depth, and that depth splits
+# between a gene and its ALT copy (bin/copy_number.py check-bam, exit 4).
+# A header that cannot be read leaves the check undone, with a warning.
+mkdir -p "$OUTDIR"
+HDR="${OUTDIR}/bam_header.part"
+if run_in --cpus 1 --memory 1g "${PARASCOPY_IMAGE}" samtools view -H "$(cpath "$BAM")" > "$HDR"; then
+  rc=0
+  run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
+    python3 /pgp-bin/copy_number.py check-bam --header "$(cpath "$HDR")" || rc=$?
+  rm -f "$HDR"
+  if [ "$rc" -eq 4 ]; then
+    exit 1
+  elif [ "$rc" -ne 0 ]; then
+    echo "WARNING: the ALT contig check of the BAM header failed (exit ${rc}); it was not done." >&2
+  fi
+else
+  rm -f "$HDR"
+  echo "WARNING: could not read the BAM header; the ALT contig check was not done." >&2
+fi
 if [ ! -f "$TABLE" ] || [ ! -d "$MODELS" ]; then
   echo "ERROR: Parascopy ${PARASCOPY_DATA_VERSION}'s data is not installed (${TABLE}, ${MODELS}/)." >&2
   echo "  Install it once (~50 MB): ./scripts/setup.sh --parascopy-data ${GENOME_DIR}" >&2

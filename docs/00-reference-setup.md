@@ -45,7 +45,7 @@ Two other references were considered and are not the default:
 - **The no-ALT set plus the hs38d1 decoys** (`GCA_000001405.15_GRCh38_no_alt_plus_hs38d1_analysis_set.fna.gz` in the same NCBI directory, 2,580 sequences). The decoys catch reads from sequence missing in the primary assembly, which removes some false calls for callers less robust than DeepVariant. None of the tools here expects them, and its 2,385 extra contigs are more that CNVpytor and Delly have to be kept away from. It works through `REF_FASTA` (below).
 - **GIAB's GRCh38 file that also masks false duplications.** It is the natural next step if a benchmark run shows a gain.
 
-GSTT1 lies on an ALT contig in GRCh38, so pypgx (step 32) cannot call it on the default reference; the step says so and calls the other genes.
+GSTT1 lies on an ALT contig in GRCh38, so pypgx (step 32) cannot call it on the default reference; the step says so and calls the other genes. It is one of the ALT-only genes of `assets/callability_genes.tsv`, the genes short reads often cannot place, which step 16b measures and the report lists ([gene callability](16b-mosdepth.md#gene-callability)); that table is committed, so it needs no download. The depth-based copy-number steps (32 pypgx and 35 Parascopy with the HBA1/HBA2 count) refuse a BAM aligned to a reference with ALT or HLA contigs, with a `REFUSED` line, even when `ALLOW_ALT_REFERENCE=true` lets the other steps run on it.
 
 Every sample aligned to another reference has to be aligned again. [Realigning after a reference change](realignment.md) says what to redo, what to keep and how to check a BAM.
 

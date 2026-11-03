@@ -14,8 +14,9 @@
 # star allele called, the variants that define it in the VCF, and marks a call
 # 'low-confidence: check the reads' when one of them has a GQ below
 # PYPGX_GQ_FLOOR (default 20). GSTT1, which GRCh38 has only on an ALT contig,
-# is 'not callable on this reference' on a BAM without that contig. The gene
-# list and the mode of each gene are assets/pgx_genes.tsv.
+# is 'not callable on this reference' on a BAM without that contig. A BAM
+# with ALT or HLA contigs stops the step with a REFUSED line. The gene list
+# and the mode of each gene are assets/pgx_genes.tsv.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -57,6 +58,26 @@ rm -f "${OUTPUT_DIR}/${SAMPLE}_pypgx_summary.tsv" "${OUTPUT_DIR}/${SAMPLE}_pypgx
 # confirmed; step 36 writes them again.
 rm -f "${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_outside_calls.tsv" \
   "${GENOME_DIR}/${SAMPLE}/pgx_consensus/${SAMPLE}_pgx_consensus.tsv"
+
+# A BAM aligned to a reference with ALT or HLA contigs is refused: pypgx
+# reads copy number from depth, and that depth splits between a gene and its
+# ALT copy, which reads as a deletion (bin/copy_number.py check-bam, exit 4).
+# A header that cannot be read leaves the check undone, with a warning.
+HDR="${OUTPUT_DIR}/bam_header.part"
+if run_in --cpus 1 --memory 1g "${SAMTOOLS_IMAGE}" samtools view -H "$(cpath "$BAM")" > "$HDR"; then
+  rc=0
+  run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
+    python3 /pgp-bin/copy_number.py check-bam --header "$(cpath "$HDR")" || rc=$?
+  rm -f "$HDR"
+  if [ "$rc" -eq 4 ]; then
+    exit 1
+  elif [ "$rc" -ne 0 ]; then
+    echo "WARNING: the ALT contig check of the BAM header failed (exit ${rc}); it was not done." >&2
+  fi
+else
+  rm -f "$HDR"
+  echo "WARNING: could not read the BAM header; the ALT contig check was not done." >&2
+fi
 
 # Validate pypgx-bundle (required for Beagle phasing panels and CNV models)
 PYPGX_BUNDLE="${GENOME_DIR}/reference/pypgx-bundle"
