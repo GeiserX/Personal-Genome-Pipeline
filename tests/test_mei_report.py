@@ -27,6 +27,13 @@ the script, and checks what it writes:
      element insertions, with them it does not
   6. the real catalog: every row is an SVA, its window is the site -/+ 500,
      and the script reads it
+  7. AnnotSV: --annotsv-input writes the listed calls, and only them, as
+     <INS:ME> records with END=POS, an ID per call and the VCF's contigs;
+     --annotsv joins a table in AnnotSV's columns back by that ID: genes,
+     the location in each gene, the benign insertion frequency and the
+     class; a call AnnotSV did not annotate, and every call without
+     --annotsv, has "." there; a table that is not AnnotSV's stops it; an
+     empty one (AnnotSV had nothing to annotate) leaves every call "."
 
 Run: python3 tests/test_mei_report.py
 """
@@ -145,7 +152,10 @@ check("3 copies, filter, confidence and end are MEGAnE's",
       {k: r[0][2][k] for k in ("copies", "filter", "confidence", "end")},
       {"copies": "1", "filter": "LC", "confidence": "L", "end": "5040486"})
 check("3 the columns", list(r[0][0].keys()),
-      ["chrom", "pos", "end", "element", "subfamily", "copies", "filter", "confidence"])
+      ["chrom", "pos", "end", "element", "subfamily", "copies", "filter", "confidence",
+       "genes", "location", "benign_af", "acmg_class"])
+check("3 without --annotsv the AnnotSV columns are '.'",
+      {r[0][0][k] for k in ("genes", "location", "benign_af", "acmg_class")}, {"."})
 check("3 a VCF with no record: an empty table and every site not seen",
       (run([])[0], [x["status"] for x in run([])[1]]), ([], ["not seen", "not seen"]))
 
@@ -236,6 +246,71 @@ check("6 every window is the site -/+ 500",
       all(int(x["start"]) == int(x["site"]) - 500 and int(x["end"]) == int(x["site"]) + 500 for x in rows), True)
 check("6 the script reads it", [x["status"] for x in run([FKTN_SVA], sites=open(CATALOG).read())[1]],
       ["seen", "not seen", "not callable"])
+
+# 7. AnnotSV
+def annotsv_run(records, table):
+    """(AnnotSV input records, calls) for the records and an AnnotSV table text, or the error text."""
+    with tempfile.TemporaryDirectory() as d:
+        with open(f"{d}/m.vcf", "w") as f:
+            f.write(HEAD.replace("##ALT", "##contig=<ID=chr20,length=64444167>\n##ALT", 1) + "".join(records))
+        p = subprocess.run([sys.executable, SCRIPT, "--sample", "S", "--vcf", f"{d}/m.vcf",
+                            "--annotsv-input", f"{d}/in.vcf"], capture_output=True, text=True)
+        if p.returncode:
+            return p.stderr
+        vcf = open(f"{d}/in.vcf").read()
+        for name, text in (("sites.tsv", SITES), ("depth.tsv", DEPTH_30X), ("a.tsv", table)):
+            with open(f"{d}/{name}", "w") as f:
+                f.write(text)
+        p = subprocess.run([sys.executable, SCRIPT, "--sample", "S", "--vcf", f"{d}/m.vcf", "--sites",
+                            f"{d}/sites.tsv", "--depth", f"{d}/depth.tsv", "--annotsv", f"{d}/a.tsv",
+                            "--out-calls", f"{d}/c.tsv", "--out-sites", f"{d}/s.tsv"], capture_output=True, text=True)
+        if p.returncode:
+            return p.stderr
+        return vcf, list(csv.DictReader(open(f"{d}/c.tsv"), delimiter="\t"))
+
+
+AHEAD = "AnnotSV_ID\tSV_chrom\tSV_start\tSV_end\tSV_type\tID\tAnnotation_mode\tGene_name\tLocation\tB_ins_AFmax\tACMG_class\n"
+TABLE = (AHEAD
+         + "20_5040477_5040478_INS_1\t20\t5040477\t5040478\tINS\tchr20_5040478_Alu\tfull\tFIXG1;FIXG2\t\t0.0312\tNA\n"
+         + "20_5040477_5040478_INS_1\t20\t5040477\t5040478\tINS\tchr20_5040478_Alu\tsplit\tFIXG1\tintron2-intron2\t\tfull=NA\n"
+         + "20_5040477_5040478_INS_1\t20\t5040477\t5040478\tINS\tchr20_5040478_Alu\tsplit\tFIXG2\texon1-exon1\t\tfull=NA\n"
+         + "9_105639659_105639660_INS_1\t9\t105639659\t105639660\tINS\tchr9_105639660_SVA\tfull\t\t\t\tNA\n")
+RECS = [rec("chr20", 5040478, "SINE/Alu", mei="MEI=AluYa5,0/288,+/+"), FKTN_SVA,
+        rec("chr20", 7000000, "LINE/L1", cn="2"), rec("chr20", 8000000, "SINE/Alu", mepred="FAILED"),
+        rec("chr20", 9000000, "DNA/hAT-Charlie")]
+r = annotsv_run(RECS, TABLE)
+body = [x.split("\t") for x in r[0].splitlines() if not x.startswith("#")]
+check("7 the AnnotSV input holds the listed calls only (not MEPRED=FAILED, not a DNA transposon)",
+      [x[2] for x in body], ["chr20_5040478_Alu", "chr9_105639660_SVA", "chr20_7000000_L1"])
+check("7 each is an <INS:ME> with END=POS and its FILTER, one copy 0/1, two 1/1",
+      [(x[4], x[6], x[7], x[9]) for x in body],
+      [("<INS:ME>", "PASS", "SVTYPE=INS;END=5040478", "0/1"), ("<INS:ME>", "PASS", "SVTYPE=INS;END=105639660", "0/1"),
+       ("<INS:ME>", "PASS", "SVTYPE=INS;END=7000000", "1/1")])
+check("7 the input keeps the VCF's contig lines", "##contig=<ID=chr20,length=64444167>" in r[0], True)
+calls = {c["pos"]: c for c in r[1]}
+check("7 the Alu: its genes, the location in each, the benign frequency and the class",
+      {k: calls["5040478"][k] for k in ("genes", "location", "benign_af", "acmg_class")},
+      {"genes": "FIXG1,FIXG2", "location": "FIXG1:intron2-intron2,FIXG2:exon1-exon1", "benign_af": "0.0312",
+       "acmg_class": "NA"})
+check("7 the SVA: annotated, in no gene: class NA, the rest '.'",
+      {k: calls["105639660"][k] for k in ("genes", "location", "benign_af", "acmg_class")},
+      {"genes": ".", "location": ".", "benign_af": ".", "acmg_class": "NA"})
+check("7 the L1 AnnotSV did not annotate: '.'",
+      {calls["7000000"][k] for k in ("genes", "location", "benign_af", "acmg_class")}, {"."})
+check("7 red control: with an ID that matches no call, the Alu is '.'",
+      annotsv_run(RECS, TABLE.replace("chr20_5040478_Alu", "chr20_5040479_Alu"))[1][1]["genes"], ".")
+check("7 an empty AnnotSV table: every call '.'",
+      {c["acmg_class"] for c in annotsv_run(RECS, "")[1]}, {"."})
+err = annotsv_run(RECS, "SV_chrom\tSV_start\n20\t1\n")
+check("7 a table that is not AnnotSV's stops it", isinstance(err, str) and "not AnnotSV's table" in err, True)
+dup = annotsv_run([rec("chr20", 100, "SINE/Alu"), rec("chr20", 100, "SINE/Alu")], AHEAD)
+check("7 two calls at one place get two IDs", [x.split("\t")[2] for x in dup[0].splitlines() if x[0] != "#"],
+      ["chr20_100_Alu", "chr20_100_Alu_2"])
+with tempfile.TemporaryDirectory() as d:
+    with open(f"{d}/m.vcf", "w") as f:
+        f.write(HEAD)
+    p = subprocess.run([sys.executable, SCRIPT, "--sample", "S", "--vcf", f"{d}/m.vcf"], capture_output=True, text=True)
+check("7 without --annotsv-input the report options are required", p.returncode == 2 and "--sites" in p.stderr, True)
 
 if FAILS:
     print(f"{len(FAILS)} check(s) failed")

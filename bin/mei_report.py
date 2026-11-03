@@ -2,7 +2,9 @@
 """mei_report.py: the Alu, L1 and SVA insertions MEGAnE calls, and the known disease insertions.
 
   mei_report.py --sample S --vcf S_megane.vcf --sites assets/mei_sites.tsv
-                --depth S_mei_depth.tsv --out-calls S_mei.tsv --out-sites S_mei_sites.tsv
+                --depth S_mei_depth.tsv [--annotsv S_mei_annotsv.tsv]
+                --out-calls S_mei.tsv --out-sites S_mei_sites.tsv
+  mei_report.py --sample S --vcf S_megane.vcf --annotsv-input S_mei_annotsv_input.vcf
 
 scripts/50-mei.sh and the MEI process run MEGAnE (Kojima et al. 2023, Nat Genet,
 PMID 37169872) on the sample's BAM. Its VCF has one record per insertion it
@@ -17,6 +19,21 @@ subfamily, copies, filter (MEGAnE's FILTER: PASS, or its flags such as LC, low
 confidence), confidence (CN_conf: H or L, how sure the copy number is). Other
 classes (DNA transposons, old LTRs) are left out: none of them is active in
 human genomes, so a call of one is read as an artefact.
+
+With --annotsv (AnnotSV's table of the same calls, which scripts/50-mei.sh
+and the MEI_ANNOTSV process write from --annotsv-input), four more columns:
+genes (the genes the insertion falls in, AnnotSV's Gene_name), location (each
+gene with where in it the insertion falls, AnnotSV's Location: exon3,
+intron2-intron2, ...), benign_af (AnnotSV's B_ins_AFmax, the highest allele
+frequency of a benign insertion at that place in its benign set, gnomAD-SV
+among them) and acmg_class (AnnotSV's ACMG_class). AnnotSV 3.5 scores
+deletions and duplications only, so its class of an insertion is NA. Without
+--annotsv, or for a call AnnotSV did not annotate, the four are ".".
+
+--annotsv-input OUT writes the calls the table lists as the VCF AnnotSV reads
+(ALT <INS:ME>, SVTYPE=INS, END=POS, and an ID, chrom_pos_element, that the
+--annotsv table is joined on) and stops; --sites, --depth and the --out
+options are not needed then.
 
 --out-sites: every row of the catalog (assets/mei_sites.tsv) with three
 columns added:
@@ -44,7 +61,9 @@ import sys
 
 MIN_DEPTH = 10  # mean depth over a catalog window before "not seen" is said
 ELEMENTS = {"SINE/Alu": "Alu", "LINE/L1": "L1", "Retroposon/SVA": "SVA"}
-CALL_HEADER = ["chrom", "pos", "end", "element", "subfamily", "copies", "filter", "confidence"]
+CALL_HEADER = ["chrom", "pos", "end", "element", "subfamily", "copies", "filter", "confidence",
+               "genes", "location", "benign_af", "acmg_class"]
+ANNOTSV_COLUMNS = ("ID", "Annotation_mode", "Gene_name", "ACMG_class")
 SITE_COLUMNS = ["gene", "chrom", "start", "end", "site", "element", "inheritance", "condition", "clinvar", "pmid"]
 
 
@@ -65,11 +84,14 @@ def subfamily(info):
     return "."
 
 
-def read_calls(path):
+def read_calls(path, contigs=None):
+    """The calls the table lists; the ##contig lines go to contigs when it is a list."""
     calls, header = [], False
     with open(path) as f:
         for n, line in enumerate(f, 1):
             if line.startswith("##"):
+                if contigs is not None and line.startswith("##contig="):
+                    contigs.append(line.rstrip("\n"))
                 continue
             if line.startswith("#CHROM"):
                 header = True
@@ -94,7 +116,54 @@ def read_calls(path):
                           "filter": f_[6], "confidence": info.get("CN_conf", ".")})
     if not header:
         die(f"{path}: no #CHROM line: not a VCF")
+    seen = {}
+    for c in calls:
+        key = f"{c['chrom']}_{c['pos']}_{c['element']}"
+        seen[key] = seen.get(key, 0) + 1
+        c["id"] = key if seen[key] == 1 else f"{key}_{seen[key]}"
     return calls
+
+
+def write_annotsv_input(path, sample, calls, contigs):
+    """The calls as the VCF AnnotSV reads: one <INS:ME> record each, END=POS,
+    no length (MEGAnE gives none; AnnotSV then skips its minimum-size check)."""
+    with open(path, "w") as out:
+        out.write("##fileformat=VCFv4.2\n")
+        out.writelines(c + "\n" for c in contigs)
+        out.write('##ALT=<ID=INS:ME,Description="Insertion of mobile element">\n'
+                  '##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">\n'
+                  '##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant">\n'
+                  '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+                  f"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{sample}\n")
+        for c in calls:
+            gt = "0/1" if c["copies"] == "1" else "1/1"
+            out.write(f"{c['chrom']}\t{c['pos']}\t{c['id']}\tN\t<INS:ME>\t.\t{c['filter']}\t"
+                      f"SVTYPE=INS;END={c['pos']}\tGT\t{gt}\n")
+
+
+def read_annotsv(path):
+    """AnnotSV's table of the calls, by ID: genes, location, benign_af and
+    acmg_class from its full row, the location of each gene from its split
+    rows. AnnotSV writes an empty file when it had nothing to annotate."""
+    with open(path) as f:
+        rows = list(csv.DictReader(f, delimiter="\t"))
+        head = rows[0].keys() if rows else []
+    if not rows:
+        return {}
+    if any(c not in head for c in ANNOTSV_COLUMNS):
+        die(f"{path}: not AnnotSV's table (a column of {', '.join(ANNOTSV_COLUMNS)} is missing)")
+    out = {}
+    for r in rows:
+        a = out.setdefault(r["ID"], {"genes": ".", "location": [], "benign_af": ".", "acmg_class": "."})
+        if r["Annotation_mode"] == "full":
+            a["genes"] = ",".join(g for g in r["Gene_name"].split(";") if g) or "."
+            a["benign_af"] = (r.get("B_ins_AFmax") or "").strip() or "."
+            a["acmg_class"] = r["ACMG_class"].strip() or "."
+        elif r["Annotation_mode"] == "split" and r["Gene_name"] and (r.get("Location") or "").strip():
+            a["location"].append(f"{r['Gene_name']}:{r['Location'].strip()}")
+    for a in out.values():
+        a["location"] = ",".join(a["location"]) or "."
+    return out
 
 
 def read_sites(path):
@@ -146,12 +215,25 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--sample", required=True)
     ap.add_argument("--vcf", required=True)
-    ap.add_argument("--sites", required=True)
-    ap.add_argument("--depth", required=True)
-    ap.add_argument("--out-calls", required=True)
-    ap.add_argument("--out-sites", required=True)
+    ap.add_argument("--sites")
+    ap.add_argument("--depth")
+    ap.add_argument("--annotsv", help="AnnotSV's table of the --annotsv-input VCF")
+    ap.add_argument("--out-calls")
+    ap.add_argument("--out-sites")
+    ap.add_argument("--annotsv-input", help="write the calls as AnnotSV's input VCF here, and stop")
     a = ap.parse_args(argv)
-    calls = read_calls(a.vcf)
+    contigs = []
+    calls = read_calls(a.vcf, contigs)
+    if a.annotsv_input:
+        write_annotsv_input(a.annotsv_input, a.sample, calls, contigs)
+        print(f"{a.sample}: {len(calls)} insertions written for AnnotSV")
+        return
+    for opt in ("sites", "depth", "out_calls", "out_sites"):
+        if not getattr(a, opt):
+            ap.error(f"--{opt.replace('_', '-')} is required (or give --annotsv-input)")
+    ann = read_annotsv(a.annotsv) if a.annotsv else {}
+    for c in calls:
+        c.update(ann.get(c["id"], {"genes": ".", "location": ".", "benign_af": ".", "acmg_class": "."}))
     sites = read_sites(a.sites)
     depth = read_depth(a.depth)
     calls.sort(key=lambda c: (chrom_rank(c["chrom"]), c["chrom"], c["pos"]))
@@ -167,6 +249,9 @@ def main(argv=None):
     for c in calls:
         by[c["element"]] = by.get(c["element"], 0) + 1
     print(f"{a.sample}: {len(calls)} insertions ({', '.join(f'{k} {v}' for k, v in sorted(by.items())) or 'none'})")
+    if a.annotsv:
+        print(f"{a.sample}: AnnotSV annotated {sum(c['id'] in ann for c in calls)} of them, "
+              f"{sum(c['genes'] != '.' for c in calls)} inside a gene")
 
 
 if __name__ == "__main__":
