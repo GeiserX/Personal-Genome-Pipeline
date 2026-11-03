@@ -79,7 +79,10 @@ Checks:
      a bgzipped, tabix-indexed VEP file (two BGZF blocks, two contigs), a hit
      above 1% is common, one VEP lacks is unknown, and without VEP output the
      reports say why; both reports print the AF, the call mark and the
-     frequency caveat on every hit;
+     frequency caveat on every hit; 21b. each hit carries the rsIDs of VEP's
+     Existing_variation ('rs123&COSV1' gives ['rs123']; another allele's ids
+     are not taken), [] with no VEP record or no VEP file, and the run delta
+     (bin/run_delta.py) reads the same with or without them;
  22. CPSR beside ClinVar (step 17): the P/LP rows by final or own class, the
      rows where CLINVAR_CLASSIFICATION and CPSR_CLASSIFICATION disagree on
      P/LP with CPSR's ACMG codes, the final P/LP rows CPSR's own rules class
@@ -139,6 +142,16 @@ Checks:
      them, or the 'not typed' line of a BAM with too few KIR reads; bash
      (hla_optitype/, kir_t1k/) and Nextflow (hla_optitype/, kir/) folders
      alike, in both reports; without either file there is no such line.
+ 27. step 25's PGS Catalog evaluations (ppm_id, ancestry and effect of
+     assets/pgs_scores.tsv): the shipped list is read entry by entry, and a
+     list with lists of different lengths, an ancestry outside the five
+     1000 Genomes groups or listed twice, a malformed PPM id or an effect
+     that is not an OR or HR is refused; prs-format copies them beside the
+     scores; prs-table writes Evaluated_In and Effect, the effect only for
+     the group pgsc_calc placed the sample in (EUR: HR 1.53 of PPM000591;
+     EAS, where the score was not evaluated: none), and none without the
+     panel; a list without evaluations keeps the older columns; both reports print the effect for EUR and say there
+     is none for EAS.
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -234,6 +247,135 @@ def bash_folder(d, s="S"):
     put(f"{d}/cpic/{s}_cpic_recommendations.txt", "Pharmacogenomic Drug Recommendations\n")
     put(f"{d}/pypgx/{s}_pypgx_summary.tsv", "Gene\tDiplotype\tPhenotype\tCNV_call\tSource\nCYP2D6\t*4/*1\tIM\t.\tbam\n")
     put(f"{d}/cyrius/{s}_cyp2d6.tsv", "Sample\tGenotype\tFilter\nS\t*1/*4\tPASS\n")
+
+
+def prs_evaluations(work, schema):
+    """Check 27: the PGS Catalog evaluations of each score, from the list to both reports."""
+    assets = os.path.join(REPO, "assets", "pgs_scores.tsv")
+    ev = collect_summary.read_metrics(assets)
+    check("27: the shipped list: PGS000018's three evaluations in order",
+          ev.get("PGS000018") == [("EUR", "HR 1.53", "PPM000591"), ("AFR", "HR 1.27", "PPM000594"),
+                                  ("AMR", "HR 1.53", "PPM000597")], ev.get("PGS000018"))
+    check("27: the shipped list: the eMERGE asthma score in all five groups, height and the lipids with none",
+          [x[0] for x in ev.get("PGS002727", [])] == ["EUR", "AFR", "AMR", "EAS", "SAS"]
+          and "PGS002802" not in ev and "PGS000065" not in ev, ev)
+    head = "pgs_id\ttrait_reported\tapplies_to\tppm_id\tancestry\teffect\n"
+    for why, row in (("lists of different lengths", "PGS000018\tx\t\tPPM000591;PPM000594\tEUR\tHR 1.53"),
+                     ("an ancestry that is not a 1000 Genomes group", "PGS000018\tx\t\tPPM000591\tEuropean\tHR 1.53"),
+                     ("an ancestry listed twice", "PGS000018\tx\t\tPPM000591;PPM000594\tEUR;EUR\tHR 1.53;HR 1.27"),
+                     ("a malformed PPM id", "PGS000018\tx\t\tPGS000018\tEUR\tHR 1.53"),
+                     ("a beta, not an OR or HR", "PGS000018\tx\t\tPPM000591\tEUR\tbeta 1.53"),
+                     ("evaluations but no pgs_id", "\tx\t\tPPM000591\tEUR\tHR 1.53"),
+                     ("one score's evaluations on two rows",
+                      "PGS000018\tx\t\tPPM000591\tEUR\tHR 1.53\nPGS000018\tx\t\tPPM000594\tAFR\tHR 1.27")):
+        put(f"{work}/ev_bad.tsv", head + row + "\n")
+        try:
+            collect_summary.read_metrics(f"{work}/ev_bad.tsv")
+            got = "read"
+        except collect_summary.Unreadable as e:
+            got = str(e)
+        check(f"27: a list with {why} is refused", got != "read", got)
+
+    # prs-format with the shipped list copies the evaluations beside the scores.
+    score = ("#pgs_id=PGS000018\n#HmPOS_build=GRCh38\nhm_chr\thm_pos\teffect_allele\tother_allele\teffect_weight\n"
+             "1\t1100\tA\tG\t0.5\n")
+    put(f"{work}/ev_in/PGS000018.txt.gz", score, gz=True)
+    rc = collect_summary.main(["prs-format", "--scores", f"{work}/ev_in", "--labels", assets,
+                               "--out", f"{work}/ev_pgs", "--alleles", f"{work}/ev_alleles.tsv"])
+    with open(f"{work}/ev_pgs/{collect_summary.EVALS_FILE}") as f:
+        lines = f.read().splitlines()
+    check("27: prs-format writes the score's evaluations beside it",
+          rc == 0 and lines == ["pgs_id\tppm_id\tancestry\teffect",
+                                "PGS000018\tPPM000591;PPM000594;PPM000597\tEUR;AFR;AMR\tHR 1.53;HR 1.27;HR 1.53"],
+          (rc, lines))
+
+    def results(d, group):
+        """A pgsc_calc --outdir that placed the sample in GROUP (no panel when None)."""
+        put(f"{d}/sample/match/sample_summary.csv", "dataset,accession,match_status,count\nsample,PGS000018,matched,1\n")
+        if group is None:
+            put(f"{d}/sample/score/aggregated_scores.txt.gz",
+                "sampleset\tFID\tIID\tPGS\tSUM\tDENOM\nsample\tHG\tHG\tPGS000018\t0.5\t2\n", gz=True)
+            return
+        put(f"{d}/sample/score/sample_pgs.txt.gz", "sampleset\tFID\tIID\tPGS\tSUM\tpercentile_MostSimilarPop\n"
+            "sample\tHG\tHG\tPGS000018\t0.5\t81.2\n", gz=True)
+        put(f"{d}/sample/score/sample_popsimilarity.txt.gz", "sampleset\tFID\tIID\tPC1\tMostSimilarPop\t"
+            f"MostSimilarPop_LowConfidence\tREFERENCE\nsample\tHG\tHG\t0.1\t{group}\tFalse\tFalse\n", gz=True)
+
+    def table(group, pgs=f"{work}/ev_pgs", sex=""):
+        res = f"{work}/ev_res_{group}_{os.path.basename(pgs)}_{sex}"
+        results(res, group)
+        out = f"{res}.tsv"
+        rc = collect_summary.main(["prs-table", "--sample", "S", "--results", res, "--sampleset", "sample",
+                                   "--scores", pgs, "--input-kind", "gvcf", "--out", out]
+                                  + (["--panel", "pgsc_1000G_v1"] if group else []) + (["--sex", sex] if sex else []))
+        with open(out) as f:
+            rows = [line.rstrip("\n").split("\t") for line in f]
+        return rc, rows[0], dict(zip(rows[0], rows[1])), out
+
+    rc, hdr, eur, eur_out = table("EUR")
+    check("27: prs-table: Evaluated_In and Effect before Input",
+          rc == 0 and hdr == collect_summary.PRS_COLUMNS[:-1] + ["Evaluated_In", "Effect", "Input"], hdr)
+    check("27: placed in EUR: the effect of the EUR evaluation, with its PPM id",
+          eur.get("Evaluated_In") == "EUR;AFR;AMR" and eur.get("Effect") == "HR 1.53 (EUR, PPM000591)", eur)
+    rc, _, eas, eas_out = table("EAS")
+    check("27: placed in EAS, where PGS000018 was not evaluated: no effect",
+          rc == 0 and eas.get("Ancestry_Group") == "EAS" and eas.get("Evaluated_In") == "EUR;AFR;AMR"
+          and eas.get("Effect") == "", eas)
+    rc, _, raw, _ = table(None)
+    check("27: no panel, so no group: no effect", rc == 0 and raw.get("Effect") == "" and raw.get("Percentile") == "NA", raw)
+    # Red control: the same run from a list without the evaluations keeps the older columns.
+    put(f"{work}/ev_plain.tsv", "pgs_id\ttrait_reported\nPGS000018\tCoronary artery disease\n")
+    collect_summary.main(["prs-format", "--scores", f"{work}/ev_in", "--labels", f"{work}/ev_plain.tsv",
+                          "--out", f"{work}/ev_pgs_plain", "--alleles", f"{work}/ev_alleles_plain.tsv"])
+    rc, hdr, plain, plain_out = table("EUR", pgs=f"{work}/ev_pgs_plain")
+    check("27: control: a list without evaluations gives the older columns and no effect",
+          rc == 0 and hdr == collect_summary.PRS_COLUMNS and "Effect" not in plain, hdr)
+    # A score for one sex, with a EUR evaluation, run for the other sex in EUR: no effect.
+    put(f"{work}/ev_female.tsv", "pgs_id\ttrait_reported\tapplies_to\tppm_id\tancestry\teffect\n"
+        "PGS000018\tCoronary artery disease\tfemale\tPPM000591\tEUR\tHR 1.53\n")
+    collect_summary.main(["prs-format", "--scores", f"{work}/ev_in", "--labels", f"{work}/ev_female.tsv",
+                          "--out", f"{work}/ev_pgs_female", "--alleles", f"{work}/ev_alleles_female.tsv"])
+    rc, _, man, man_out = table("EUR", pgs=f"{work}/ev_pgs_female", sex="male")
+    check("27: a female-only score for a male sample in EUR: no effect",
+          rc == 0 and man.get("Sex_Check") == collect_summary.SEX_NOT_APPLICABLE and man.get("Evaluated_In") == "EUR"
+          and man.get("Effect") == "", man)
+    rc, _, woman, _ = table("EUR", pgs=f"{work}/ev_pgs_female", sex="female")
+    check("27: control: the same score for a female sample in EUR has its effect",
+          rc == 0 and woman.get("Effect") == "HR 1.53 (EUR, PPM000591)", woman)
+    # A hand-edited row with an effect but a score that does not apply: the reports print none.
+    check("27: the reports print no effect for a score that does not apply to the declared sex",
+          render_report.prs_effect({"effect": "HR 1.53 (EUR, PPM000591)", "evaluated_in": ["EUR"], "percentile": "",
+                                    "group": "EUR", "sex_check": render_report.PRS_NOT_APPLICABLE}) == ""
+          and render_report.prs_effect({"effect": "HR 1.53 (EUR, PPM000591)", "evaluated_in": ["EUR"],
+                                        "percentile": "81.2", "group": "EUR", "sex_check": ""})
+          == "HR 1.53 (EUR, PPM000591)")
+
+    # The reports, one sample placed in EUR and one in EAS.
+    got = {}
+    for tag, src in (("EUR", eur_out), ("EAS", eas_out), ("PLAIN", plain_out)):
+        d = f"{work}/ev_sample_{tag}/S"
+        os.makedirs(f"{d}/prs", exist_ok=True)
+        shutil.copy(src, f"{d}/prs/S_prs_summary.tsv")
+        put(f"{d}/ancestry/S_ancestry.tsv", "key\tvalue\nsample\tS\nreference_panel\tpgsc_1000G_v1\n"
+            f"population\t{'EUR' if tag == 'PLAIN' else tag}\n")
+        summ, txt, html = render(d)
+        got[tag] = (summ, txt, html)
+        check(f"27: {tag} summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+              validate.validate(schema, json.loads(json.dumps(summ))))
+    _, txt, html = got["EUR"]
+    check("27: EUR: both reports print the effect with its PPM id",
+          "effect HR 1.53 (EUR, PPM000591)" in txt and "<td>HR 1.53 (EUR, PPM000591)</td>" in html
+          and "<th>Effect in your group</th>" in html, txt)
+    _, txt, html = got["EAS"]
+    check("27: EAS: no effect in either report, and a line saying the score has none for EAS",
+          "HR 1.53" not in txt and "HR 1.53" not in html
+          and "no published OR or HR for EAS; evaluated in EUR, AFR, AMR" in txt
+          and "<td>no published OR or HR for EAS; evaluated in EUR, AFR, AMR</td>" in html, txt)
+    _, txt, html = got["PLAIN"]
+    check("27: a table without evaluation columns: neither report claims the score has no published effect",
+          "no published OR" not in txt and "no published OR" not in html
+          and "Effect in your group" not in html and "Effect: the odds ratio" not in txt
+          and "percentile 81.2 (EUR)" in txt, txt)
 
 
 def render(d, s="S"):
@@ -362,6 +504,43 @@ def clinvar_quality(work, schema):
     summ_n, txt_n, _ = render(d)
     check("gnomAD AF: without step 13 the text report says the frequency is unknown and why",
           "gnomAD AF: unknown for every hit (no VEP output (step 13) in this folder)" in txt_n, txt_n)
+
+
+CSQ_EV_HEAD = ('##INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence annotations from Ensembl VEP. '
+               'Format: Allele|Consequence|IMPACT|SYMBOL|Existing_variation|gnomADe_AF|gnomADg_AF">\n')
+
+
+def clinvar_rsids(work, schema):
+    """21b. the rsIDs of each ClinVar hit, from VEP's Existing_variation."""
+    import run_delta
+    d = os.path.join(work, "clinvar-rsids", "S")
+    put(f"{d}/clinvar/S_clinvar_hits.vcf", FLOOR_HITS)
+    vep_head = "##fileformat=VCFv4.2\n" + CSQ_EV_HEAD + VCF_HEAD.split("\n", 1)[1]
+    write_tabixed_vcf(f"{d}/vep/S_vep.vcf.gz", vep_head, [
+        ["chr1\t100\t.\tC\tT\t50\tPASS\tCSQ=T|missense_variant|MODERATE|GENEA|rs123&COSV1|0.03|0.02,"
+         "T|intron_variant|MODIFIER|GENEZ|rs123|.|.\tGT\t0/1",
+         "chr1\t40000\t.\tG\tA,C\t50\tPASS\tCSQ=A|stop_gained|HIGH|GENEB|rs77&rs9||,"
+         "C|missense_variant|MODERATE|GENEB|rs555||\tGT\t0/1"],
+        ["chr2\t20000\t.\tCA\tC\t50\tPASS\tCSQ=-|frameshift_variant|HIGH|GENEC|COSV9|0.0001|\tGT\t0/1"]])
+    summ = collect_summary.collect("S", d)
+    by = {h["gene"]: h["rsids"] for h in summ["sections"]["clinvar"]["data"]["hits"]}
+    check("ClinVar rsIDs: Existing_variation's rs ids only, of the hit's own allele; none without a record",
+          by == {"GENEA": ["rs123"], "GENEB": ["rs9", "rs77"], "GENEC": [], "GENED": []}, by)
+    errs = validate.validate(schema, json.loads(json.dumps(summ)))
+    check("ClinVar rsIDs: the summary validates", not errs, errs)
+    bare = json.loads(json.dumps(summ))
+    for h in bare["sections"]["clinvar"]["data"]["hits"]:
+        h.pop("rsids")
+    check("ClinVar rsIDs: the run delta reads the same with or without them",
+          run_delta.compare(bare, {}, summ, {}) == run_delta.compare(summ, {}, summ, {}), "")
+    moved = json.loads(json.dumps(summ))
+    moved["sections"]["clinvar"]["data"]["hits"][0]["significance"] = "Benign"
+    check("ClinVar rsIDs: red control, the run delta does see a reclassified hit",
+          run_delta.compare(bare, {}, moved, {}) != run_delta.compare(summ, {}, summ, {}), "")
+    shutil.rmtree(f"{d}/vep")
+    none = collect_summary.collect("S", d)["sections"]["clinvar"]["data"]["hits"]
+    check("ClinVar rsIDs: without step 13 every hit has [] and the section still reads",
+          [h["rsids"] for h in none] == [[], [], [], []], none)
 
 
 CPSR_COLS = ("VAR_ID\tGENOMIC_CHANGE\tSYMBOL\tCLINVAR_CLASSIFICATION\tCPSR_CLASSIFICATION\tACMG_CODE\t"
@@ -789,6 +968,44 @@ def annotsv_section(work, schema):
     check("annotsv: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
           validate.validate(schema, json.loads(json.dumps(summ))))
 
+    check("annotsv: without a rule table no call is moved to class 3",
+          av.get("downgraded") == [] and "Moved to class 3" not in txt + html_, av.get("downgraded"))
+
+    # Step 05's rules: a rule table that puts SV3 over half inside an IG
+    # locus moves it to class 3. The reports list it apart with the reason,
+    # and the class 4-5 count and rows leave it out.
+    put(f"{work}/annotsv/rules.tsv", "#chrom\tstart\tend\trule\taction\tname\tsource\n"
+        "chr20\t19990000\t20500000\tig_tr_locus\tclass_3\tIGFIX\tfixture\n")
+    annotsv_postfilter.main(["--class45", f"{d}/annotsv/S_sv_class4_5.tsv", "--genes",
+                             f"{work}/annotsv/genes.RefSeq.sorted.bed", "--rules", f"{work}/annotsv/rules.tsv",
+                             "--out", f"{d}/annotsv/S_sv_class4_5_checked.tsv"])
+    summ, txt, html_ = render(d)
+    html_ = htmlmod.unescape(html_)
+    av = summ["sections"]["annotsv"]["data"]
+    moved = av.get("downgraded") or []
+    check("annotsv rules: SV3 is moved out of the class 4-5 rows and the count",
+          av["count"] == 2 and "20:20000000-20450000" not in {x["sv"] for x in av["rows"]}, av)
+    check("annotsv rules: SV3 is listed apart, AnnotSV class 4, now 3, with the rule and its detail",
+          [(x["sv"], x["annotsv_class"], x["acmg_class"], x["rule"]) for x in moved]
+          == [("20:20000000-20450000", "4", "3", "ig_tr_locus")] and "IGFIX" in moved[0]["rule_detail"], moved)
+    check("annotsv rules: the counts leave the moved call out (single caller 1, not 2)",
+          (av["single_caller"], av["exon_edge"], av["common"]) == (1, 1, 1), av)
+    check("annotsv rules: the text report counts 2 and lists SV3 apart with the reason",
+          "Class 4-5 SVs: 2 (single caller: 1; deletions on exon edges: 1; common: 1)" in txt
+          and "Moved to class 3 by step 05's rules, not counted above: 1" in txt
+          and "DEL 20:20000000-20450000  G9  AnnotSV class 4 -> 3  (ig_tr_locus: " in txt
+          and "DEL  20:20000000-20450000  class" not in txt, txt)
+    check("annotsv rules: the HTML card has the moved table with the rule and the reason",
+          "<h3>Moved to class 3 by step 05's rules</h3>" in html_
+          and "<td>DEL 20:20000000-20450000</td><td>4</td><td>3</td><td>G9</td><td>ig_tr_locus</td>" in html_
+          and "inside the IGFIX locus" in html_, html_)
+    check("annotsv rules: the note names the rules", "Step 05's rules" in render_report.ANNOTSV_NOTE
+          and render_report.ANNOTSV_NOTE in txt)
+    check("annotsv rules: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+    annotsv_postfilter.main(["--class45", f"{d}/annotsv/S_sv_class4_5.tsv", "--genes",
+                             f"{work}/annotsv/genes.RefSeq.sorted.bed", "--out", f"{d}/annotsv/S_sv_class4_5_checked.tsv"])
+
     # red control: an empty consensus gives support 1 to every row
     put(f"{d}/sv_merged/S_sv_consensus.vcf.gz", SV_CONSENSUS.split("chr20")[0], gz=True)
     av = render(d)[0]["sections"]["annotsv"]["data"]
@@ -820,6 +1037,102 @@ def annotsv_section(work, schema):
     check("annotsv: without the table the section is missing, listed as not run, with no card",
           summ["sections"]["annotsv"]["state"] == "missing" and any("AnnotSV" in x for x in summ["not_run"])
           and "Class 4 and 5 (AnnotSV)" not in txt + html_, summ["not_run"])
+
+
+def report_followups_sections(work, schema):
+    """26. step 42's genotype rules, step 9b's motif table of the other
+    flagged motif loci and the loci the repeat catalog leaves without
+    thresholds reach both reports."""
+    import html as htmlmod
+    import traits_report
+    # The genotype rules: TAS2R38 homozygous for the taster haplotype PAV
+    # (G, G, C on the plus strand; rs1726866's G is the reference base).
+    t = os.path.join(work, "rules", "S")
+    rows = traits_report.read_table(os.path.join(REPO, "assets", "traits.tsv"))
+    rules = traits_report.read_rules(os.path.join(REPO, "assets", "genotype_rules.tsv"))
+    g = os.path.join(work, "rules_g.tsv")
+    put(g, "chr7\t141972804\tT\tC\tC/C\t40\nchr7\t141972905\tG\t.\tG/G\t40\nchr7\t141973545\tC\tG\tG/G\t40\n"
+           "chr19\t44908684\tT\t.\tT/T\t40\nchr19\t44908822\tC\t.\tC/C\t40\n")
+    recs = traits_report.read_genotypes(g)
+    lines = traits_report.rule_lines(rules, recs)
+    os.makedirs(f"{t}/traits", exist_ok=True)
+    traits_report.write_tsv(f"{t}/traits/S_traits.tsv", traits_report.report(rows, recs, rules, None, lines))
+    summ, txt, html_ = render(t)
+    check("rules: without the rules table the section has no rule lines and the reports none",
+          summ["sections"]["traits"]["data"].get("rules") is None and "Genotype rules (several sites" not in txt + html_,
+          summ["sections"]["traits"]["data"].get("rules"))
+    traits_report.write_tsv(f"{t}/traits/S_genotype_rules.tsv", lines, traits_report.RULE_OUT_COLUMNS)
+    summ, txt, html_ = render(t)
+    html_ = htmlmod.unescape(html_)
+    rl = summ["sections"]["traits"]["data"].get("rules") or []
+    check("rules: the TAS2R38 line is read, PAV/PAV, and APOE (in the traits table) is left out",
+          [(r["rule"], r["result"], r["status"], r["phase"]) for r in rl] == [("TAS2R38", "PAV/PAV", "called", "not_needed")],
+          rl)
+    trait = rules["TAS2R38"]["trait"]
+    check("rules: the text report prints the rule line with its result and sites",
+          f"{trait} (TAS2R38 rs713598, rs1726866, rs10246939): PAV/PAV (no phase needed). " in txt
+          and "traits/S_genotype_rules.tsv" in txt, txt)
+    card = html_.split("<h2>Traits</h2>", 1)[-1].split("<h2>", 1)[0]
+    check("rules: the HTML Traits card has the rules table with the genotypes and the result",
+          "<h3>Genotype rules (several sites read together)</h3>" in card
+          and "<td>G/G, G/G, C/C</td><td>PAV/PAV (no phase needed)</td>" in card, card)
+    check("rules: the APOE lines stay folded away only", "rs429358+rs7412" in card.split("<details>", 1)[-1]
+          and "APOE" not in card.split("<h3>Genotype rules", 1)[-1].split("<details>", 1)[0], card)
+    check("rules: the TAS2R38 rows of the table point at the rule line",
+          all("genotype rule" in r["note"] for r in rows if r["gene"] == "TAS2R38")
+          and not any("is not known here" in r["note"] for r in rows if r["gene"] == "TAS2R38"), [r["note"] for r in rows if r["gene"] == "TAS2R38"])
+    check("rules: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+    put(f"{t}/traits/S_genotype_rules.tsv", "rule\tgene\tresult\nTAS2R38\tTAS2R38\tPAV/PAV\n")
+    check("rules: a rules table without the reading column is unreadable",
+          collect_summary.collect("S", t)["sections"]["traits"]["state"] == "unreadable")
+
+    # The repeats: the catalog step 09 ran on gives MUC1 no thresholds, so
+    # Stranger gives it no status; SAMD12 is flagged and step 9b counted its
+    # motif; NOTINCAT is outside the catalog.
+    x = os.path.join(work, "str-ng", "S")
+    fmt = "GT:REPCN"
+    eh = ("chr1\t155188000\t.\tC\t<STR9>\t.\tPASS\tEND=1;REPID=MUC1;VARID=MUC1\t" + fmt + "\t0/1:20/25\n"
+          "chr8\t118366913\t.\tA\t<STR40>\t.\tPASS\tEND=1;REPID=SAMD12;VARID=SAMD12{st}\t" + fmt + "\t0/1:1/40\n"
+          "chr9\t100\t.\tA\t<STR9>\t.\tPASS\tEND=1;REPID=NOTINCAT;VARID=NOTINCAT\t" + fmt + "\t0/1:5/9\n")
+    put(f"{x}/expansion_hunter/S_eh.vcf", VCF_HEAD + eh.format(st=""), age_days=2)
+    put(f"{x}/expansion_hunter/S_eh_stranger.vcf", VCF_HEAD + eh.format(st=";STR_STATUS=pre_mutation"), age_days=1)
+    why = "the reference repeat is 1200 bases, longer than 300: short reads cannot size it"
+    put(f"{x}/expansion_hunter/S_eh_catalog.json", json.dumps([
+        {"LocusId": "MUC1", "NoThresholds": why}, {"LocusId": "SAMD12", "NormalMax": 1, "PathologicMin": 105}]))
+    motifs = ("locus\tchrom\tstart\tend\trepeat_reads\tdominant_motif\tdominant_class\tdominant_share\tmotif_shares"
+              "\tverdict\tnote\nSAMD12\tchr8\t118366812\t118366918\t5\tTGAAA\tpathogenic\t1.0\tTGAAA=1.0"
+              "\tpathogenic_motif\tmotif TGAAA (pathogenic) in 5 of 5 repeat reads: confirm with repeat-primed PCR\n")
+    put(f"{x}/expansion_hunter/S_str_motifs.tsv", motifs)
+    summ, txt, html_ = render(x)
+    ed = summ["sections"]["expansions"]["data"]
+    by = {l["locus"]: l for l in ed.get("loci", [])}
+    check("not graded: MUC1 is not graded with the catalog's reason, and not counted as outside the catalog",
+          ed.get("not_graded") == {"MUC1": why} and ed.get("no_status") == 1 and by["MUC1"].get("not_graded") == why, ed)
+    muc = [line for line in txt.splitlines() if line.strip().startswith("MUC1 ")]
+    check("not graded: the text report marks MUC1 not graded, with the reason and the note",
+          len(muc) == 1 and "not graded" in muc[0] and why in muc[0]
+          and f"Not graded (no thresholds in the catalog): 1 (MUC1: {why})" in txt
+          and render_report.NOT_GRADED_NOTE in txt, txt)
+    card = htmlmod.unescape(html_).split("<h2>Repeat Expansions</h2>", 1)[-1].split("<h2>", 1)[0]
+    check("not graded: the HTML card counts MUC1 not graded and its row says so",
+          "Not graded (no thresholds in the catalog)" in card and "<td>MUC1</td><td>20/25</td><td>not graded</td>" in card,
+          card)
+    check("motifs: the flagged SAMD12 carries step 9b's motif verdict",
+          [f.get("motif", {}).get("verdict") for f in ed.get("flagged", [])] == ["pathogenic_motif"], ed.get("flagged"))
+    check("motifs: both reports print the SAMD12 motif count",
+          "SAMD12 motif count: pathogenic_motif: motif TGAAA (pathogenic) in 5 of 5 repeat reads" in txt
+          and "SAMD12 motif count: pathogenic_motif" in card, txt)
+    check("not graded and motifs: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+    put(f"{x}/expansion_hunter/S_str_motifs.tsv", motifs, age_days=3)
+    check("motifs: a table older than Stranger's output is not read",
+          not any("motif" in f for f in render(x)[0]["sections"]["expansions"]["data"]["flagged"]))
+    os.remove(f"{x}/expansion_hunter/S_eh_catalog.json")
+    ed = render(x)[0]["sections"]["expansions"]["data"]
+    check("not graded red control: without the catalog MUC1 is a locus without a status, not marked not graded",
+          ed.get("not_graded") == {} and ed.get("no_status") == 2 and "not_graded" not in
+          {k for l in ed["loci"] for k in l}, ed)
 
 
 SMN_COLS = ("chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\t"
@@ -2062,15 +2375,18 @@ def main():
               render(d)[0]["sections"]["couple"]["state"] == "missing"
               and not any("Couple" in x for x in render(d)[0]["not_run"]), render(d)[0]["not_run"])
         clinvar_quality(work, schema)
+        clinvar_rsids(work, schema)
         cpsr_beside_clinvar(work, schema)
         pypgx_section(work, schema)
         clinical_mane_quality(work, schema)
         comphet_phase_section(work, schema)
         annotsv_section(work, schema)
+        report_followups_sections(work, schema)
         parascopy_section(work, schema)
         report_sections_mito_roh_telomere_cnv(work, schema)
         roh_upd_karyotype(work, schema)
         hla_optitype_kir_section(work, schema)
+        prs_evaluations(work, schema)
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

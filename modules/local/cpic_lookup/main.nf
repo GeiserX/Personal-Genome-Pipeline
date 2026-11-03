@@ -16,7 +16,12 @@
     With --medications (opt-in, a list the user gives) and
     assets/pgx_inhibitors.tsv, a strong or moderate CYP2D6 inhibitor on the
     list gives CYP2D6 a phenoconverted phenotype by CPIC's activity-score
-    rule, beside the genotype one; a CYP2C19 inhibitor gets a note.
+    rule, beside the genotype one; an inhibitor of CYP2C19, CYP2C9, CYP3A4
+    or CYP3A5 gets a note.
+    With CLINVAR_SCREEN's hits table and assets/pgx_contraindications.tsv, a
+    pathogenic or likely pathogenic hit in one of its disease genes (POLG
+    and the urea-cycle genes with valproate, HPRT1, SCN1A) adds a WARNING
+    naming the drug; without the hits the report says they were not checked.
     Fails when the report yields no gene.
 
     Equivalent to: scripts/27-cpic-lookup.sh
@@ -34,11 +39,14 @@ process CPIC_LOOKUP {
 
     input:
     // pypgx_summary is [] when pypgx is not in --tools; consensus is [] when
-    // PGX_CONSENSUS did not run for the sample
-    tuple val(meta), path(pharmcat_json), path(pypgx_summary), path(consensus)
-    // medications is [] without --medications; inhibitors is assets/pgx_inhibitors.tsv
+    // PGX_CONSENSUS did not run for the sample; clinvar_hits is [] when
+    // CLINVAR_SCREEN did not run for it
+    tuple val(meta), path(pharmcat_json), path(pypgx_summary), path(consensus), path(clinvar_hits)
+    // medications is [] without --medications; inhibitors is assets/pgx_inhibitors.tsv;
+    // contraindications is assets/pgx_contraindications.tsv
     path(medications)
     path(inhibitors)
+    path(contraindications)
 
     output:
     tuple val(meta), path("${meta.id}_cpic_recommendations.txt"), emit: recommendations
@@ -53,6 +61,8 @@ process CPIC_LOOKUP {
     def pypgx_args = pypgx_summary ? "--pypgx ${pypgx_summary} --comparison ${meta.id}_pharmcat_comparison.tsv" : ''
     def consensus_args = consensus ? "--consensus ${consensus}" : ''
     def medication_args = medications ? "--medications ${medications} --inhibitors ${inhibitors}" : ''
+    def contra_args = contraindications ? "--contraindications ${contraindications}" : ''
+    def hits_args = contraindications && clinvar_hits ? "--clinvar-hits ${clinvar_hits}" : ''
     """
     pgx_parse.py cpic-report \\
         --sample ${meta.id} \\
@@ -60,7 +70,9 @@ process CPIC_LOOKUP {
         --outdir . \\
         ${pypgx_args} \\
         ${consensus_args} \\
-        ${medication_args}
+        ${medication_args} \\
+        ${contra_args} \\
+        ${hits_args}
 
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """

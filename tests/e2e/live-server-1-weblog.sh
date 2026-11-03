@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# The live site (bin/pgp_live.py) on a real Nextflow run: the pinned Nextflow
+# The live site (bin/owngenome_live.py) on a real Nextflow run: the pinned Nextflow
 # loads the nf-weblog plugin from the config run-all.sh writes when
-# PGP_LIVE_URL is set (the same text, the pin read from run-all.sh), posts each
+# OWNGENOME_LIVE_URL is set (the same text, the pin read from run-all.sh), posts each
 # task to the site's ingest port, and the site stores the messages and shows
 # step 11 (ROH) done in state.json. A control reads state.json before the run:
 # step 11 is 'not planned' then, so the state check can fail.
@@ -16,7 +16,7 @@ ROOT="${CASE_TMP}/root" STATE="${CASE_TMP}/state"
 mkdir -p "${ROOT}/${SAMPLE}/nextflow"   # a run folder the site lists (it has nextflow/)
 port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
 WEB=$(port) ING=$(port)
-python3 "${REPO}/bin/pgp_live.py" --root "$ROOT" --state-dir "$STATE" --port "$WEB" --ingest-port "$ING" --quiet \
+python3 "${REPO}/bin/owngenome_live.py" --root "$ROOT" --state-dir "$STATE" --port "$WEB" --ingest-port "$ING" --quiet \
   2> "${CASE_TMP}/site.err" &
 SITE=$!
 trap 'kill "$SITE" 2>/dev/null' EXIT

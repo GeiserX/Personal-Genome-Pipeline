@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """genome_lookup.py: answer "what is my genotype at rsX, at chr:pos, or in gene Y".
 
-scripts/pgp-lookup.sh runs it in two passes (docs/lookup.md):
+scripts/owngenome-lookup.sh runs it in two passes (docs/lookup.md):
 
   genome_lookup.py resolve --query Q [--sites SITES.tsv.gz] [--table TSV ...]
                            [--genes GENES.gtf] [--annotated VCF]
@@ -26,7 +26,7 @@ scripts/pgp-lookup.sh runs it in two passes (docs/lookup.md):
       called there. A gene: every variant called in it, with its consequence,
       ClinVar and gnomAD, and how many of the gene's bases have a call. Both
       end with what the pipeline's reports (summary.json) say about the gene
-      or rsID. The inputs may be whole files or the slices pgp-lookup.sh cuts
+      or rsID. The inputs may be whole files or the slices owngenome-lookup.sh cuts
       with bcftools; records outside the region are skipped either way.
 
 Standard library only: it runs in PYTHON_IMAGE and under
@@ -455,24 +455,47 @@ def symbols(r, fields):
     return {e.get("SYMBOL") for e in r.csq_entries(fields) if e.get("SYMBOL")}
 
 
+RSID_RE = re.compile(r"(?i)^rs\d+$")
+
+
+def names_of(obj):
+    """(genes, rsids) a summary.json dict names itself: the genes of its gene
+    keys (GENE_KEYS; a string is split on , ; & / ( ) and spaces and keeps
+    the words that hold an upper-case letter, so "VDBP (GC)" gives VDBP and
+    GC and the prose of "SMN exon 7-8 deletion" gives SMN only; a list gives
+    its strings, a dict its keys), upper-cased, and the rsIDs of its rsid and
+    rsids keys, lower-cased. '.' and '' are no name. bin/results_index.py builds the
+    search index with this same function, so a lookup and the search find
+    the same mentions."""
+    genes, rsids = set(), set()
+    if not isinstance(obj, dict):
+        return genes, rsids
+    for k in GENE_KEYS:
+        v = obj.get(k)
+        if isinstance(v, str):
+            names = [n for n in re.split(r"[,;&/ ()]+", v) if n != n.lower()]
+        elif isinstance(v, list):
+            names = [x for x in v if isinstance(x, str)]
+        elif isinstance(v, dict):
+            names = list(v)
+        else:
+            continue
+        genes.update(n.upper() for n in names if n and n != ".")
+    for k in ("rsid", "rsids"):
+        v = obj.get(k)
+        for x in ([v] if isinstance(v, str) else v if isinstance(v, list) else []):
+            if isinstance(x, str) and RSID_RE.match(x):
+                rsids.add(x.lower())
+    return genes, rsids
+
+
 def walk_mentions(obj, want_genes, want_rsid, path=()):
-    """Every dict in OBJ that names one of WANT_GENES (by a gene key) or WANT_RSID (by rsid)."""
+    """Every dict in OBJ that names one of WANT_GENES (upper-case, by a gene
+    key) or WANT_RSID (by rsid or rsids): the first dict on each branch that
+    names it, not the dicts inside it."""
     if isinstance(obj, dict):
-        hit = False
-        for k in GENE_KEYS:
-            v = obj.get(k)
-            names = set()
-            if isinstance(v, str):
-                names = {x for x in re.split(r"[,;&/ ]+", v) if x}
-            elif isinstance(v, list):
-                names = {x for x in v if isinstance(x, str)}
-            elif isinstance(v, dict):
-                names = set(v)
-            if {n.upper() for n in names} & want_genes:
-                hit = True
-        if want_rsid and str(obj.get("rsid", "")).lower() == want_rsid:
-            hit = True
-        if hit:
+        genes, rsids = names_of(obj)
+        if genes & want_genes or (want_rsid and want_rsid in rsids):
             yield obj
             return
         for v in obj.values():

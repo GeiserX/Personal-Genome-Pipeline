@@ -34,6 +34,10 @@
     published table from an earlier run is replaced) and does not fail the
     task.
 
+    The gene-dosage rows of the same catalog (HP, LCE3BC, CCL3L1: loci
+    no pinned caller models) go the same way, total copies only, one
+    line per locus in <id>_cn_dosage.tsv (docs/cn-loci.md).
+
     Equivalent to: scripts/35-paralogs.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -68,6 +72,7 @@ process PARASCOPY {
     tuple val(meta), path("${meta.id}_parascopy"),           emit: results
     tuple val(meta), path("${meta.id}_hba_copy_number.tsv"), emit: hba
     tuple val(meta), path("${meta.id}_*_copy_number.tsv"),   emit: tables  // every catalog row's table, and HBA's
+    tuple val(meta), path("${meta.id}_cn_dosage.tsv"),       emit: dosage  // HP, LCE3BC, CCL3L1 from depth
     path "versions.yml",                                     emit: versions
 
     when:
@@ -144,6 +149,26 @@ process PARASCOPY {
     fi
     rm -f hba_regions.bed hba_bedcov.tsv hba_bedcov_q1.tsv
 
+    # Gene-dosage rows of bin/cn_loci.tsv (as scripts/35-paralogs.sh): per locus all MAPQ and MAPQ 1
+    # or more, then the verdict; one line per locus, not assessed when its check fails
+    dosage_loci="HP LCE3BC CCL3L1"
+    printf 'locus\\tstatus\\tcopies\\testimate\\treason\\treading\\n' > cn_dosage.part
+    for loc in \$dosage_loci; do
+        if copy_number.py bed --locus "\$loc" > dosage_regions.bed \\
+            && samtools bedcov dosage_regions.bed ${bam} > dosage_bedcov.tsv \\
+            && samtools bedcov -Q 1 dosage_regions.bed ${bam} > dosage_bedcov_q1.tsv \\
+            && copy_number.py call --locus "\$loc" --bedcov dosage_bedcov.tsv --bedcov-mapq1 dosage_bedcov_q1.tsv \\
+                --table dosage_table.tsv; then
+            awk -F'\\t' -v OFS='\\t' -v l="\$loc" 'NR > 1 {v[\$1] = \$2}
+                END {print l, v["status"], v["copies"], v["estimate"], v["reason"], v["reading"]}' dosage_table.tsv >> cn_dosage.part
+        else
+            echo "WARNING: the \$loc depth check failed; ${meta.id}_cn_dosage.tsv lists it as not assessed." >&2
+            printf '%s\\tnot assessed\\t.\\t.\\tcheck_failed\\tthe depth check failed; see the log of step 35\\n' "\$loc" >> cn_dosage.part
+        fi
+        rm -f dosage_regions.bed dosage_bedcov.tsv dosage_bedcov_q1.tsv dosage_table.tsv
+    done
+    mv cn_dosage.part ${meta.id}_cn_dosage.tsv
+
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         parascopy: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
@@ -161,6 +186,7 @@ process PARASCOPY {
     done
     printf 'metric\\tvalue\\nstatus\\tnot assessed\\nalpha_globin_genes\\t.\\nestimate\\t.\\nhba2_depth\\t0\\nhba1_depth\\t0\\nflank_left_depth\\t0\\nflank_right_depth\\t0\\nmapq0_share\\t0\\nmessage\\tstub\\n' \\
         > ${meta.id}_hba_copy_number.tsv
+    printf 'locus\\tstatus\\tcopies\\testimate\\treason\\treading\\n' > ${meta.id}_cn_dosage.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

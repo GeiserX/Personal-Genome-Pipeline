@@ -23,11 +23,13 @@ Manta, Delly and the other SV callers see an insertion as a break in the alignme
 - MEGAnE v1.0.1.beta (MIT licence), `call_genotype_38 -only_ins`: insertions only, not the reference copies a sample lacks
 - samtools to list the chromosomes the BAM has and to measure the depth over the catalog windows
 - `bin/mei_report.py` (standard library Python) for the calls table and the catalog
+- AnnotSV, when its data is there, for the genes each insertion falls in, where in them, and the benign set's frequency of an insertion at that place
 
 ## Docker Image
 
 - `MEGANE_IMAGE`: MEGAnE's only image (amd64 only, about 6.4 GB to download, 19.5 GB unpacked), its last release, pinned to its digest. It carries its own GRCh38 RepeatMasker annotation and BLAST database.
 - `SAMTOOLS_IMAGE` and `PYTHON_IMAGE`
+- `ANNOTSV_IMAGE`, the image of [step 05](05-annotsv.md): the step runs AnnotSV in it when AnnotSV's data is there, and the Nextflow `MEI_REPORT` process runs in it (it has Python too)
 
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tags. `MEGANE_IMAGE` is an `# optional` line: `setup.sh --megane-kmers` pulls it.
 
@@ -42,6 +44,7 @@ The catalog is `assets/mei_sites.tsv`: one row per insertion, with its GRCh38 si
 - `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai` (`ALIGN_DIR` as for the other BAM steps), paired-end short reads. A VCF alone has no reads, so a sample without a BAM is left out.
 - the k-mer set above
 - the sex (`male` or `female`), optional: MEGAnE uses it to genotype chrX and chrY
+- AnnotSV's data, optional: `annotsv_annotations/` in `GENOME_DIR`, as `setup.sh` installs it for [step 05](05-annotsv.md), with the MANE Select list and gnomAD-SV's common SVs (`setup.sh --annotsv-data`). The step stops when the folder is there without those two files. Without the folder, the calls get no gene or frequency.
 
 ## Command
 
@@ -49,7 +52,7 @@ The catalog is `assets/mei_sites.tsv`: one row per insertion, with its GRCh38 si
 ./scripts/50-mei.sh your_name male
 ```
 
-With `run-all.sh`: `TOOLS=...,mei`; a run lists step 50 only when `TOOLS` names it. In the Nextflow pipeline: `mei` in `--tools` with `--megane_kmers ${GENOME_DIR}/reference/megane/GRCh38_no_alt_analysis_set.mk` (Nextflow reads a relative path from the launch directory; `run-all.sh` passes it for you) (processes `MEI_DEPTH`, `MEI` and `MEI_REPORT`).
+With `run-all.sh`: `TOOLS=...,mei`; a run lists step 50 only when `TOOLS` names it. In the Nextflow pipeline: `mei` in `--tools` with `--megane_kmers ${GENOME_DIR}/reference/megane/GRCh38_no_alt_analysis_set.mk` (Nextflow reads a relative path from the launch directory; `run-all.sh` passes it for you) (processes `MEI_DEPTH`, `MEI` and `MEI_REPORT`). `MEI_REPORT` runs AnnotSV on the calls when `--annotsv_annotations` is set, which `run-all.sh` does when AnnotSV's data is there and `annotsv` is in `TOOLS`.
 
 ## How it works
 
@@ -57,27 +60,31 @@ With `run-all.sh`: `TOOLS=...,mei`; a run lists step 50 only when `TOOLS` names 
 2. MEGAnE runs on the BAM with that chromosome list. MEGAnE's own list holds every GRCh38 contig, ALT contigs included, and it stops on a BAM that lacks one; a BAM aligned to the no-ALT analysis set lacks all of them. On a BAM without chrX the step adds `-no_sex_chr`, or MEGAnE stops. MEGAnE checks that the `.fai` is newer than the FASTA, so it reads the reference through a link with a fresh copy of the `.fai`.
 3. MEGAnE writes `MEI_final_percentile_genotyped.vcf`, the file its log recommends for one sample. When it finds too few insertions to fit its filter thresholds (a BAM of one chromosome), it writes `MEI_final_failed_genotyped.vcf` with fixed thresholds instead; the step then uses that file and prints a warning.
 4. `bin/mei_report.py` keeps the Alu, L1 and SVA insertions that MEGAnE identified (`MEPRED=PASS`) with one or two copies. Other repeat classes in MEGAnE's VCF (DNA transposons, old LTRs) are left out: none is active in human genomes, so a call of one is read as an artefact.
-5. Each catalog row is **seen** when a kept insertion of the same element lies in its window, **not callable** when the BAM has no reads of that contig or the mean depth over the window is under 10, and **not seen** otherwise. The 10x is this pipeline's choice, not a published value.
+5. With AnnotSV's data, `bin/mei_report.py --annotsv-input` writes the kept insertions as the VCF AnnotSV reads, one `<INS:ME>` record each with `END` at its position and an ID the table is joined on, and AnnotSV annotates them as [step 05](05-annotsv.md) does the other SVs (`-annotationMode both`, the MANE Select transcripts). MEGAnE gives no inserted length, so AnnotSV takes each insertion as a point and skips its minimum-size check.
+6. Each catalog row is **seen** when a kept insertion of the same element lies in its window, **not callable** when the BAM has no reads of that contig or the mean depth over the window is under 10, and **not seen** otherwise. The 10x is this pipeline's choice, not a published value.
 
 ## Output
 
 | File | Contents |
 |---|---|
-| `mei/${SAMPLE}_mei.tsv` | one row per insertion: `chrom`, `pos`, `end` (MEGAnE's right breakpoint), `element` (Alu, L1, SVA), `subfamily` (for example AluYa5, L1HS, SVA_F), `copies` (1 or 2), `filter` (MEGAnE's FILTER: `PASS`, or flags such as `LC`, low confidence), `confidence` (`H` or `L`, how sure the copy number is) |
+| `mei/${SAMPLE}_mei.tsv` | one row per insertion: `chrom`, `pos`, `end` (MEGAnE's right breakpoint), `element` (Alu, L1, SVA), `subfamily` (for example AluYa5, L1HS, SVA_F), `copies` (1 or 2), `filter` (MEGAnE's FILTER: `PASS`, or flags such as `LC`, low confidence), `confidence` (`H` or `L`, how sure the copy number is), and from AnnotSV: `genes` (the genes the insertion falls in), `location` (each gene with where in it: `exon3`, `intron2-intron2`, ...), `benign_af` (`B_ins_AFmax`, the highest allele frequency of a benign insertion at that place in AnnotSV's benign set, gnomAD-SV among them) and `acmg_class` (AnnotSV's `ACMG_class`). All four are `.` without AnnotSV's data, and for a call AnnotSV did not annotate |
+| `mei/${SAMPLE}_mei_annotsv.tsv` | AnnotSV's own table of those insertions, with AnnotSV's data only |
 | `mei/${SAMPLE}_mei_sites.tsv` | the catalog with `status` (seen, not seen, not callable), `mean_depth` over the window and `call` (the insertion seen: position, subfamily, copies, filter) |
 | `mei/${SAMPLE}_megane.vcf` | MEGAnE's VCF as it wrote it |
 | `mei/${SAMPLE}_mei_depth.tsv` | `samtools bedcov -c` over the catalog windows |
 | `mei/${SAMPLE}_megane.log` | MEGAnE's log |
 
-Both reports show the count per element and the catalog in their "Mobile element insertions" section. Without step 50, the report lists mobile element insertions under what the run did not assess.
+Both reports show the count per element and the catalog in their "Mobile element insertions" section; the AnnotSV columns are in the calls table only.
+
+AnnotSV classifies deletions and duplications only. In AnnotSV 3.5 the ranking of an insertion is empty (`SVrankingINS` in its `AnnotSV-ranking.tcl` scores nothing), so `acmg_class` is `NA` for every insertion. Read an insertion by its gene and location instead: one inside an exon can break the gene; most in introns or between genes do nothing, though some do (the TAF1 SVA above is intronic). A `benign_af` above a few percent means insertions at that place are common. Without step 50, the report lists mobile element insertions under what the run did not assess.
 
 ## Runtime
 
-On HG002's chr20 at 30x (13 million mapped reads) on a 4-CPU GitHub runner, MEGAnE took 23 minutes with the unmapped reads in the BAM, 21 of them in its search of the unmapped reads against the whole genome, and 2.5 to 3 minutes with them dropped (AMD EPYC 7763 and Intel Xeon Platinum 8573C runners). MEGAnE's authors give about an hour for a 30x genome on 4 threads. The step asks for 16 GB of memory for MEGAnE. Not measured here on a whole genome.
+On HG002's chr20 at 30x (13 million mapped reads) on a 4-CPU GitHub runner, MEGAnE took 23 minutes with the unmapped reads in the BAM, 21 of them in its search of the unmapped reads against the whole genome, and 2.5 to 3 minutes with them dropped (AMD EPYC 7763 and Intel Xeon Platinum 8573C runners). MEGAnE's authors give about an hour for a 30x genome on 4 threads. MEGAnE runs with 16 GB of memory in both entry points: `scripts/50-mei.sh` passes `--memory 16g`, and `conf/base.config` gives the `MEI` process 16 GB (doubled on the one retry after an out-of-memory exit) instead of its `process_high` label's 32 GB. On the chr20 case (unmapped reads dropped, the k-mer set of chr20 alone) the `MEI` process peaked at 2.5 GB of resident memory in 2 minutes 53 seconds on 4 CPUs (Nextflow's `peak_rss`, e2e run of 2026-11-03). That figure does not scale to a whole genome by chr20's share of it (about 2 percent): a whole-genome run loads the k-mer set of the whole reference and has every unmapped read to search, so no whole-genome estimate follows from it, and the 16 GB is the step's allowance, not a measured peak. AnnotSV on the insertions gets 4 CPUs and 8 GB, as in step 05.
 
 ## Validation
 
-The e2e case `tests/e2e/mei-1.sh` runs the step on HG002's chr20: the reads of chr20 in GIAB's 60x novoalign BAM, half the pairs (30x), realigned with minimap2 to chr20 alone, the unmapped reads dropped (so the case fits a runner's time), and the k-mer set of that chromosome. Its Alu calls are scored against the GIAB v5.0q insertions of HG002 on chr20 (RepeatMasker SINE/Alu, interspersed, 250 to 400 bp, inside the benchmark regions): recall must be at least 0.70 and precision at least 0.80, within 100 bp. On 2026-10-27 it found 12 of the 15 insertions (0.80), and 13 of its 15 Alu calls inside the benchmark regions matched a GIAB insertion (0.87); with the unmapped reads kept, the same 12 of 15 and 13 of 15. With every read pair within 1 kb of a GIAB Alu insertion removed, it found 0 of 15 and the recall check failed. `tests/test_mei_report.py` plants an SVA in the FKTN window of a synthetic MEGAnE VCF and checks it is seen, and not seen without it.
+The e2e case `tests/e2e/mei-1.sh` runs the step on HG002's chr20: the reads of chr20 in GIAB's 60x novoalign BAM, half the pairs (30x), realigned with minimap2 to chr20 alone, the unmapped reads dropped (so the case fits a runner's time), and the k-mer set of that chromosome. Its Alu calls are scored against the GIAB v5.0q insertions of HG002 on chr20 (RepeatMasker SINE/Alu, interspersed, 250 to 400 bp, inside the benchmark regions): recall must be at least 0.70 and precision at least 0.80, within 100 bp. On 2026-10-27 it found 12 of the 15 insertions (0.80), and 13 of its 15 Alu calls inside the benchmark regions matched a GIAB insertion (0.87); with the unmapped reads kept, the same 12 of 15 and 13 of 15. With every read pair within 1 kb of a GIAB Alu insertion removed, it found 0 of 15 and the recall check failed. The same case then runs AnnotSV on the calls with made-up AnnotSV data (the bundle of `tests/fixtures/annotsv/class45.sh` plus one made-up gene over all of chr20) and checks that every call comes back inside that gene, with its location there and class `NA`; the same VCF read without AnnotSV's table fails that check. It also runs the Nextflow pipeline with `--tools mei` and `--annotsv_annotations` on the same BAM and checks that its calls table is the bash step's, byte for byte. `tests/test_mei_report.py` plants an SVA in the FKTN window of a synthetic MEGAnE VCF and checks it is seen, and not seen without it, and joins a table in AnnotSV's columns back to the calls.
 
 ## Notes
 

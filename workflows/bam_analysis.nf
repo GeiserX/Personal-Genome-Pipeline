@@ -66,6 +66,8 @@ workflow BAM_ANALYSIS {
     ch_expansion_vcf    = Channel.empty()
     ch_stranger_vcf     = Channel.empty()
     ch_rfc1_motif       = Channel.empty()   // [meta, <id>_rfc1_motif.tsv] when Stranger flags RFC1
+    ch_str_motifs       = Channel.empty()   // [meta, <id>_str_motifs.tsv] when it flags another motif locus
+    ch_eh_catalog       = Channel.empty()   // [meta, <id>_eh_catalog.json], the catalog ExpansionHunter ran on
     ch_telomere_results = Channel.empty()
     ch_coverage         = Channel.empty()
     ch_mito_vcf         = Channel.empty()
@@ -133,6 +135,10 @@ workflow BAM_ANALYSIS {
             ch_reference_fai,
             ch_expansion_catalog        )
         ch_expansion_vcf = EXPANSION_HUNTER.out.vcf
+        // The report reads the loci the catalog gives no thresholds from it.
+        ch_eh_catalog    = EXPANSION_HUNTER.out.json
+            .map { meta, fs -> [meta, (fs instanceof List ? fs : [fs]).find { f -> f.name.endsWith('_eh_catalog.json') }] }
+            .filter { _meta, f -> f != null }
         ch_versions      = ch_versions.mix(EXPANSION_HUNTER.out.versions)
     }
 
@@ -155,6 +161,7 @@ workflow BAM_ANALYSIS {
         )
         ch_stranger_vcf = STRANGER.out.vcf
         ch_rfc1_motif   = STRANGER_RFC1.out.motif
+        ch_str_motifs   = STRANGER_RFC1.out.motifs
         ch_versions     = ch_versions.mix(STRANGER.out.versions, STRANGER_RFC1.out.versions)
     }
 
@@ -357,6 +364,8 @@ workflow BAM_ANALYSIS {
     expansion_vcf    = ch_expansion_vcf
     stranger_vcf     = ch_stranger_vcf
     rfc1_motif       = ch_rfc1_motif      // [meta, <id>_rfc1_motif.tsv]
+    str_motifs       = ch_str_motifs      // [meta, <id>_str_motifs.tsv]
+    eh_catalog       = ch_eh_catalog      // [meta, <id>_eh_catalog.json]
     telomere_results = ch_telomere_results
     coverage         = ch_coverage
     callability      = ch_callability     // [meta, <id>_callability.bed.gz]

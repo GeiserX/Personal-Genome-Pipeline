@@ -1,0 +1,4 @@
+gene	inheritance	lists	condition	result	offspring_risk	partner_a	findings_a	partner_b	findings_b	explanation
+GENE1	AR	ACMG	invented condition one	shared	25%	father_a	invented finding	mother_a	invented finding	invented
+GENE2	XL	ACOG	invented condition two	x_linked	50% of sons	father_a	.	mother_a	invented finding	invented
+GENE3	AR	Orphanet	invented condition three	one_partner	0	father_a	invented finding	mother_a	.	invented

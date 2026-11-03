@@ -1,4 +1,4 @@
-// live.js: the live page of one run (assets/live/index.html, served by bin/pgp_live.py).
+// live.js: the live page of one run (assets/live/index.html, served by bin/owngenome_live.py).
 // One data source feeds the page: in live mode state.json plus the run's event stream; with
 // <html data-mode="replay"> a frames.json of recorded states played on a timer. No outside
 // request, no inline script, no eval. Plugins call window.PGP.register({name, onState, onEvent, panel}).

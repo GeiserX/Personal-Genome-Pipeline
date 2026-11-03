@@ -1,0 +1,130 @@
+name: Repeat a test
+
+# Runs one test many times, each run in a fresh job on its own runner, to
+# tell a flaky test from a broken one: a flake fails a few runs out of many,
+# a broken test fails them all. Start it from the Actions tab with the test's
+# path and the number of runs. It also runs on a pull request that changes
+# this file, with the defaults, so a change to it is seen working.
+#
+# One extra run, "control", runs a test that always fails. The summary
+# counts the failed runs and fails when any did, or when the control did
+# not fail, so a count of zero failures is never a count that could not
+# see one.
+on:
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Test to repeat (a tests/test_*.sh or tests/test_*.py)"
+        default: tests/test_annotsv_benign_mane.sh
+      runs:
+        description: "How many runs (1 to 60)"
+        default: "30"
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/repeat-test.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TEST: ${{ inputs.test || 'tests/test_annotsv_benign_mane.sh' }}
+  RUNS: ${{ inputs.runs || '30' }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      runs: ${{ steps.plan.outputs.runs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the inputs and list the runs
+        id: plan
+        run: |
+          case "$TEST" in
+            tests/test_*.sh|tests/test_*.py) ;;
+            *) echo "ERROR: '${TEST}' is not a tests/test_*.sh or tests/test_*.py"; exit 1 ;;
+          esac
+          [ -f "$TEST" ] || { echo "ERROR: ${TEST} does not exist"; exit 1; }
+          case "$RUNS" in ''|*[!0-9]*) echo "ERROR: runs must be a whole number, got '${RUNS}'"; exit 1 ;; esac
+          n=$((10#$RUNS))
+          [ "$n" -ge 1 ] && [ "$n" -le 60 ] || { echo "ERROR: runs must be 1 to 60, got ${n}"; exit 1; }
+          echo "runs=$( (seq 1 "$n"; echo control) | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+          echo "${TEST}: ${n} runs and the control"
+
+  run:
+    needs: plan
+    name: run ${{ matrix.run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      # GitHub runs at most 20 jobs at once on this account; leave room for
+      # the other workflows.
+      max-parallel: 6
+      matrix:
+        run: ${{ fromJSON(needs.plan.outputs.runs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The step records the test's exit code in the name of a small
+      # artifact and passes, so a failed test leaves the job green and the
+      # summary below is the one place that counts.
+      - name: Run the test
+        env:
+          RUN: ${{ matrix.run }}
+        run: |
+          t=$TEST
+          if [ "$RUN" = control ]; then
+            t="${RUNNER_TEMP}/test_planted.sh"
+            echo 'echo "planted failure"; exit 1' > "$t"
+          fi
+          rc=0
+          case "$t" in
+            *.py) python3 "$t" || rc=$? ;;
+            *) bash "$t" || rc=$? ;;
+          esac
+          echo "run ${RUN}: exit ${rc}"
+          echo "$rc" > "${RUNNER_TEMP}/rc"
+          echo "RC=${rc}" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: result-${{ matrix.run }}-exit-${{ env.RC }}
+          path: ${{ runner.temp }}/rc
+          # A rerun of a job may write the same name again.
+          overwrite: true
+          retention-days: 1
+
+  summary:
+    needs: [plan, run]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: Count the failed runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+            -q '.artifacts[] | select(.name | startswith("result-")) | "\(.created_at)\t\(.id)\t\(.name)"' \
+            | sort -t$'\t' -k1,1 -k2,2n \
+            | sed -n 's/^.*\tresult-\(.*\)-exit-\([0-9]*\)$/\1\t\2/p' \
+            | awk -F'\t' '{ last[$1] = $2 } END { for (s in last) print s "\t" last[s] }' > results.tsv
+          # A rerun leaves the old attempt's artifact beside the new one;
+          # the newest result of each run counts.
+          sort -V results.tsv
+          ctl=$(awk -F'\t' '$1 == "control" {print $2}' results.tsv)
+          [ -n "$ctl" ] && [ "$ctl" -ne 0 ] || { echo "FAIL: the control run should fail, its exit is '${ctl:-missing}'"; exit 1; }
+          n=$(awk -F'\t' '$1 != "control"' results.tsv | wc -l)
+          bad=$(awk -F'\t' '$1 != "control" && $2 != 0' results.tsv | wc -l)
+          echo "${TEST}: ${bad} of ${n} runs failed (the control failed, as it should)." | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$n" -eq "$((10#$RUNS))" ] || { echo "FAIL: ${n} results found, ${RUNS} runs planned"; exit 1; }
+          [ "$bad" -eq 0 ] || { echo "FAIL: runs that failed: $(awk -F'\t' '$1 != "control" && $2 != 0 {print $1}' results.tsv | paste -sd' ' -)"; exit 1; }

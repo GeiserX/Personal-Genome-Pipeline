@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # live_post (scripts/lib/common.sh) sends run-all.sh's step messages to the
-# live site (bin/pgp_live.py). This test starts the site on loopback and checks
-# that a message reaches events.jsonl, that without PGP_LIVE_URL nothing is
+# live site (bin/owngenome_live.py). This test starts the site on loopback and checks
+# that a message reaches events.jsonl, that without OWNGENOME_LIVE_URL nothing is
 # sent, and that with the site down it warns once and returns 0 every time, so
 # a run never stops for it. It first proves the store check can fail: a
 # message to another run must not show up in this run's file.
-# It also checks that scripts/pgp-live.sh hash-password exits non-zero, with no
+# It also checks that scripts/owngenome-live.sh hash-password exits non-zero, with no
 # success line, when it cannot write the hash file; the control is the old
 # one-line `a && b && c` form, under which set -e let the script go on.
 #
@@ -28,20 +28,20 @@ command -v curl >/dev/null || fail "curl is needed"
 free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
 WEB=$(free_port) ING=$(free_port)
 mkdir -p "${WORK}/genome"
-python3 "${REPO}/bin/pgp_live.py" --root "${WORK}/genome" --state-dir "${WORK}/state" --port "$WEB" \
+python3 "${REPO}/bin/owngenome_live.py" --root "${WORK}/genome" --state-dir "${WORK}/state" --port "$WEB" \
   --ingest-port "$ING" --quiet 2> "${WORK}/server.err" &
 PID=$!
 for _ in $(seq 50); do curl -s -o /dev/null "http://127.0.0.1:${ING}/" && break; sleep 0.1; done
 EV="${WORK}/state/runs/demo1/events.jsonl"
 MSG='{"event":"pgp_step","step":"14","state":"started"}'
 
-# Without PGP_LIVE_URL nothing is sent
-unset PGP_LIVE_URL PGP_LIVE_WARNED
-live_post demo1 "$MSG" || fail "live_post without PGP_LIVE_URL returned non-zero"
-[ ! -e "$EV" ] || fail "a message was stored without PGP_LIVE_URL"
+# Without OWNGENOME_LIVE_URL nothing is sent
+unset OWNGENOME_LIVE_URL OWNGENOME_LIVE_WARNED
+live_post demo1 "$MSG" || fail "live_post without OWNGENOME_LIVE_URL returned non-zero"
+[ ! -e "$EV" ] || fail "a message was stored without OWNGENOME_LIVE_URL"
 
 # Control: a message to another run is not in this run's file
-export PGP_LIVE_URL="http://127.0.0.1:${ING}/"
+export OWNGENOME_LIVE_URL="http://127.0.0.1:${ING}/"
 live_post other1 "$MSG"
 if [ -e "$EV" ] && grep -q '"step":"14"' "$EV"; then fail "control: another run's message is in demo1's file"; fi
 [ -s "${WORK}/state/runs/other1/events.jsonl" ] || fail "control: the other run's message was not stored"
@@ -54,7 +54,7 @@ echo "PASS: live_post stores the message"
 
 # The site down: one warning, exit 0 each time
 kill "$PID"; wait "$PID" 2>/dev/null || true; PID=""
-unset PGP_LIVE_WARNED
+unset OWNGENOME_LIVE_WARNED
 rc=0; { live_post demo1 "$MSG"; live_post demo1 "$MSG"; } 2> "${WORK}/warn.txt" || rc=$?
 [ "$rc" -eq 0 ] || fail "live_post returned ${rc} with the site down"
 [ "$(grep -c 'WARNING: the live site' "${WORK}/warn.txt")" -eq 1 ] || fail "expected one warning: $(cat "${WORK}/warn.txt")"
@@ -69,7 +69,7 @@ echo "Control: a live_post that returns the failure is caught."
 # hash-password: a hash file it cannot write is an error, never "Password hash written"
 hash_into() {  # SCRIPT DIR: run hash-password into DIR/password; prints the exit code, output in WORK/hash.out
   local rc=0
-  printf 'synthetic test password 7\n' | GENOME_DIR="${WORK}/genome" PGP_LIVE_PASSWORD_FILE="$2/password" \
+  printf 'synthetic test password 7\n' | GENOME_DIR="${WORK}/genome" OWNGENOME_LIVE_PASSWORD_FILE="$2/password" \
     "$1" hash-password > "${WORK}/hash.out" 2>&1 || rc=$?
   echo "$rc"
 }
@@ -77,10 +77,10 @@ if [ "$(id -u)" -eq 0 ]; then
   echo "SKIP: hash-password write failure (root writes into a read-only folder)"
 else
   mkdir -p "${WORK}/ok" "${WORK}/ro" && chmod 555 "${WORK}/ro"
-  rc=$(hash_into "${REPO}/scripts/pgp-live.sh" "${WORK}/ok")
+  rc=$(hash_into "${REPO}/scripts/owngenome-live.sh" "${WORK}/ok")
   [ "$rc" -eq 0 ] && [ "$(stat -c %a "${WORK}/ok/password" 2>/dev/null || stat -f %Lp "${WORK}/ok/password")" = 600 ] \
     || fail "hash-password into a writable folder: exit ${rc}, $(cat "${WORK}/hash.out")"
-  rc=$(hash_into "${REPO}/scripts/pgp-live.sh" "${WORK}/ro")
+  rc=$(hash_into "${REPO}/scripts/owngenome-live.sh" "${WORK}/ro")
   { [ "$rc" -ne 0 ] && ! grep -q 'Password hash written' "${WORK}/hash.out"; } \
     || fail "hash-password into a read-only folder: exit ${rc}, $(cat "${WORK}/hash.out")"
   echo "PASS: hash-password fails, with no success line, when it cannot write the hash"
@@ -88,7 +88,7 @@ else
   mkdir -p "${WORK}/tree/scripts"
   for f in "${REPO}"/* "${REPO}"/.[!.]*; do [ "$(basename "$f")" = scripts ] || ln -s "$f" "${WORK}/tree/"; done
   ln -s "${REPO}/scripts/lib" "${WORK}/tree/scripts/lib"
-  python3 - "${REPO}/scripts/pgp-live.sh" "${WORK}/tree/scripts/pgp-live.sh" <<'PY'
+  python3 - "${REPO}/scripts/owngenome-live.sh" "${WORK}/tree/scripts/owngenome-live.sh" <<'PY'
 import sys
 s = open(sys.argv[1]).read()
 fixed = ("  (umask 077; printf '%s\\n' \"$h\" > \"${PWF}.tmp\")\n  chmod 600 \"${PWF}.tmp\"\n"
@@ -96,9 +96,9 @@ fixed = ("  (umask 077; printf '%s\\n' \"$h\" > \"${PWF}.tmp\")\n  chmod 600 \"$
 old = "  (umask 077 && printf '%s\\n' \"$h\" > \"${PWF}.tmp\") && chmod 600 \"${PWF}.tmp\" && mv \"${PWF}.tmp\" \"$PWF\"\n"
 open(sys.argv[2], "w").write(s.replace(fixed, old) if fixed in s else s)
 PY
-  chmod +x "${WORK}/tree/scripts/pgp-live.sh"
-  grep -q 'umask 077 && printf' "${WORK}/tree/scripts/pgp-live.sh" || fail "control: the planted copy was not made"
-  rc=$(hash_into "${WORK}/tree/scripts/pgp-live.sh" "${WORK}/ro")
+  chmod +x "${WORK}/tree/scripts/owngenome-live.sh"
+  grep -q 'umask 077 && printf' "${WORK}/tree/scripts/owngenome-live.sh" || fail "control: the planted copy was not made"
+  rc=$(hash_into "${WORK}/tree/scripts/owngenome-live.sh" "${WORK}/ro")
   { [ "$rc" -ne 0 ] && ! grep -q 'Password hash written' "${WORK}/hash.out"; } \
     && fail "control: the && chain also failed (exit ${rc}), so the check cannot tell them apart"
   echo "Control: the old && chain exits ${rc} with a success line; the check catches it."

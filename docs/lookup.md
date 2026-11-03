@@ -6,7 +6,8 @@ Answers "what is my genotype at rs4988235?", "what do I have at chr2:135851076?"
 
 - **A site** (an rsID or a GRCh38 position): your genotype from the gVCF of [step 3](03-variant-calling.md), its read depth and genotype quality, and, when you carry a variant there, its gene, consequence, ClinVar significance and gnomAD frequency from the annotated VCF of [step 13](13-vep-annotation.md).
 - **A gene**: every variant called in it with the same details, and how many of the gene's bases have a call at all.
-- Both end with what the reports already say about the gene or the rsID: PharmCAT and CPIC, the ClinVar screen, the couple carrier screen, the traits panel and every other section of `summary.json` that names it.
+- Both end with what the reports already say about the gene or the rsID: PharmCAT and CPIC, the ClinVar screen, the couple carrier screen, the traits panel and every other section of `summary.json` that names it. A ClinVar hit names its rsIDs when step 13 ran (VEP's `Existing_variation`), so an rsID query finds the hit too.
+- To find which sections name a gene or rsID without reading the genome, use the list the HTML report closes with, or the search box on the live site. Both come from `<sample>_search_index.json` ([HTML report](24-html-report.md)), built with the same rule as the "in the reports" part here, so the two find the same sections. The index also holds the genes of steps 23 and 31 from their tables, which `summary.json` only counts.
 
 ## Why
 
@@ -38,14 +39,14 @@ How an rsID is found, in this order: the consumer site table, then `assets/trait
 ## Command
 
 ```bash
-GENOME_DIR=/path/to/data ./scripts/pgp-lookup.sh your_name rs4988235
-GENOME_DIR=/path/to/data ./scripts/pgp-lookup.sh your_name chr2:135851076 CFTR   # several queries at once
+GENOME_DIR=/path/to/data ./scripts/owngenome-lookup.sh your_name rs4988235
+GENOME_DIR=/path/to/data ./scripts/owngenome-lookup.sh your_name chr2:135851076 CFTR   # several queries at once
 ```
 
 On Nextflow output, which keeps the same per-sample folders, use the output directory as `GENOME_DIR`. When the reference folder is not inside it, point `REF_DIR` at it:
 
 ```bash
-GENOME_DIR=./results REF_DIR=/path/to/data/reference ./scripts/pgp-lookup.sh your_name CFTR
+GENOME_DIR=./results REF_DIR=/path/to/data/reference ./scripts/owngenome-lookup.sh your_name CFTR
 ```
 
 A position is `chr7:117559590`, `7:117559590` or `chr7:117,559,590`; `chrM` and `chrMT` are the same. A gene is its HGNC symbol as GENCODE names it (`CFTR`).

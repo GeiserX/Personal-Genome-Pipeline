@@ -115,7 +115,7 @@ unresolved() {
 probe() {
   local url=$1 code retry=${LINKS_RETRY:-2} tries=${LINKS_5XX_TRIES:-3} delay=${LINKS_5XX_DELAY:-10} i=1
   local common=(-s -o /dev/null -w '%{http_code}' -L --connect-timeout 15 --max-time 60
-    --retry "$retry" --retry-delay 5 -A 'Personal-Genome-Pipeline link check (curl)')
+    --retry "$retry" --retry-delay 5 -A 'OwnGenome link check (curl)')
   while :; do
     code=$(curl "${common[@]}" -I "$url" 2>/dev/null) || true
     if [ "$code" != 200 ]; then
@@ -240,16 +240,16 @@ self_test() {
   local rc out fail=0
   d=$(mktemp -d)
   trap 'rm -rf "$d"' EXIT
-  local good=https://github.com/GeiserX/Personal-Genome-Pipeline
-  local bad=https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/no-such-file-link-check-control
+  local good=https://github.com/GeiserX/OwnGenome
+  local bad=https://github.com/GeiserX/OwnGenome/blob/main/no-such-file-link-check-control
   mkdir -p "${d}/scripts/ci" "${d}/docs"
-  echo 'TESTREPO="Personal-Genome-Pipeline"' > "${d}/versions.env"
+  echo 'TESTREPO="OwnGenome"' > "${d}/versions.env"
   cat > "${d}/scripts/a.sh" <<EOF
 #!/usr/bin/env bash
 # ${bad}/in-a-comment
 fetch "https://github.com/GeiserX/\${TESTREPO}" out
 wget -O x "${bad}"
-URL=\${URL:-https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/README.md}
+URL=\${URL:-https://github.com/GeiserX/OwnGenome/blob/main/README.md}
 echo "https://ftp.example.invalid/x/\${UNKNOWN_VAR}.tgz"
 EOF
   echo "wget ${bad}/in-scripts-ci" > "${d}/scripts/ci/tool.sh"
