@@ -2056,6 +2056,8 @@ def mito_extended_lines(d):
         lines.append(mito_copies_text(d["copies"]))
         if d["copies"].get("status") == "called":
             lines.append(MITO_COPIES_NOTE)
+    elif d.get("copies_note"):
+        lines.append(f"mtDNA copy number: not counted ({d['copies_note']})")
     return lines
 
 
@@ -2529,6 +2531,8 @@ def html_report(s, index=None):
         mito_body.append(small_note(mito_copies_text(mc)))
         if mc.get("status") == "called":
             mito_body.append(small_note(MITO_COPIES_NOTE))
+    elif mi.get("copies_note"):
+        mito_body.append(small_note(f"mtDNA copy number: not counted ({mi['copies_note']})"))
     mito_body.append(small_note(MITO_NOTE))
     a("mito", card(S["mito"], "Mitochondrial Analysis", mito_body, full=bool(ma.get("variants"))))
 

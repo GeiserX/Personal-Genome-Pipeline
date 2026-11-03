@@ -126,7 +126,7 @@ Length variants in the D-loop poly-C tracts (m.303-315 and m.16184-16193), one C
 ## Runtime
 1 to 2 minutes per sample through the pipeline, measured in three 30-40x WGS runs ([runtime](hardware-requirements.md#runtime-per-step)), before eKLIPse was added; its run on a whole genome's chrM reads has not been timed yet.
 
-In the Nextflow pipeline `MITO_DELETIONS` runs stages 7 and 8 on the same BAM, beside `MITO_VARIANTS`, whenever `mito_variants` is in `--tools`.
+In the Nextflow pipeline `MITO_DELETIONS` runs stages 7 and 8 on the same BAM, beside `MITO_VARIANTS`, whenever `mito_variants` is in `--tools`. As in the script, an eKLIPse error or a run with no CSV leaves no deletion table and keeps the copy number; the report then says the deletions were not looked for.
 
 ## Notes
 - `--mitochondria-mode` disables several filters inappropriate for mtDNA: no germline filtering, adjusted LOD thresholds, handles high copy number.

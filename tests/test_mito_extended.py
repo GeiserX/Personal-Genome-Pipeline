@@ -11,7 +11,7 @@ Checks:
      summary and in both reports; the same VCF without it reports none.
   3. the copy number: idxstats with chrM at 100 times the autosomal depth
      gives 200 copies per cell (+-5%); a sliced BAM and a BAM with no chrM
-     reads are not assessed.
+     reads are not assessed; with no copy-number table both reports say why.
   4. eKLIPse's deletions CSV (decimal commas, quoted fields) is read; the
      common deletion is named within 50 bp of its breakpoints, a deletion
      elsewhere is not, one under 1% is counted but not listed, and a table
@@ -274,6 +274,13 @@ def test_copies(tmp):
     check("a BAM with no chrM reads is not assessed", b["reason"] == "no_chrM_reads", str(b))
     b = collect_summary.mito_copies(idxstats(chrm, per_chrom).replace("chrM", "MT").replace("chr", ""))
     check("contigs named 1..22 and MT work", b["status"] == "called", str(b))
+    d = sample_dir(tmp, "Snocn", [(73, "A", "G", "1.00")])
+    data = mito_section(d, "Snocn")
+    text, html = reports(d, "Snocn")
+    check("without a copy-number table the summary says why",
+          "copies" not in data and "mtdna_copies.tsv" in (data.get("copies_note") or ""), str(data))
+    check("without a copy-number table both reports say it was not counted",
+          "mtDNA copy number: not counted (" in text and "mtDNA copy number: not counted (" in html)
     d = sample_dir(tmp, "Scn", [(73, "A", "G", "1.00")], idxstats=idxstats(chrm, per_chrom))
     text, html = reports(d, "Scn")
     check("the text report gives the copy number",

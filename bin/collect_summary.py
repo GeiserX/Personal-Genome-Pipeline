@@ -2932,6 +2932,9 @@ def mito_extended(d, s, vcf):
     if p:
         m = dict(read_tsv_pairs(p))
         out["copies"] = {k: (None if m.get(k) in (None, ".") else m[k]) for k in MITO_CN_COLS}
+    else:
+        out["copies_note"] = ("no copy-number table (mito/<id>_mtdna_copies.tsv): step 20 ran before it counted "
+                              "mtDNA copies, or the Nextflow MITO_DELETIONS task failed (see the Nextflow log)")
     return out
 
 

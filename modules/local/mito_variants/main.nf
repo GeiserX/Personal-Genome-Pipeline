@@ -204,7 +204,7 @@ process MITO_DELETIONS {
     tuple val(meta), path(bam), path(bai)
 
     output:
-    tuple val(meta), path("${meta.id}_chrM_deletions.tsv"), emit: deletions
+    tuple val(meta), path("${meta.id}_chrM_deletions.tsv"), emit: deletions, optional: true
     tuple val(meta), path("${meta.id}_mtdna_copies.tsv"),   emit: copies
     path "versions.yml",                                     emit: versions
 
@@ -222,14 +222,19 @@ process MITO_DELETIONS {
     printf '%s\\t%s\\n' "\$PWD/${id}_chrM.bam" "${id}" > eklipse_input.tsv
     mkdir -p eklipse_out eklipse_tmp
     EK=\$(command -v eKLIPse.py)
-    python3 "\$EK" -in eklipse_input.tsv -ref "\$(dirname "\$EK")/data/NC_012920.1.gb" \\
-        -out eklipse_out -tmp eklipse_tmp -thread ${task.cpus}
+    # An eKLIPse error, or a run with no CSV, leaves no deletion table but
+    # keeps the copy number, as stage 8 of scripts/20-mtoolbox.sh does; the
+    # report then says the deletions were not looked for.
+    if ! python3 "\$EK" -in eklipse_input.tsv -ref "\$(dirname "\$EK")/data/NC_012920.1.gb" \\
+        -out eklipse_out -tmp eklipse_tmp -thread ${task.cpus}; then
+        echo "WARNING: eKLIPse failed: no deletion table" >&2
+    fi
     CSV=\$(find eklipse_out -name eKLIPse_deletions.csv | head -n 1)
     if [ -z "\$CSV" ]; then
-        echo "ERROR: eKLIPse wrote no eKLIPse_deletions.csv" >&2
-        exit 1
+        echo "WARNING: eKLIPse wrote no eKLIPse_deletions.csv: no deletion table" >&2
+    else
+        collect_summary.py mito-deletions --eklipse "\$CSV" --out ${id}_chrM_deletions.tsv
     fi
-    collect_summary.py mito-deletions --eklipse "\$CSV" --out ${id}_chrM_deletions.tsv
 
     printf '"%s":\\n    eklipse: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
