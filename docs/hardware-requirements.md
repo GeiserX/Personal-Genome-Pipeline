@@ -68,6 +68,7 @@ While a VEP cache installs, the tarball and the unpacked tree are on disk togeth
 | CNVpytor GC/mask files | ~0.09 GB | step 18 |
 | pypgx bundle | ~0.4 GB | step 32 |
 | Somatic resources (gnomAD AF-only VCF, panel of normals) | ~3 GB | step 29 |
+| AADR ancient panel, 1240K (7.1 GB `.geno`; 1.05 GiB kept, 9.6 GiB of extra disk at the peak while it builds) | ~7.1 GB | step 44, `setup.sh --ancient-panel` |
 
 ### Annotation Databases (Optional, for Steps 30-31)
 
@@ -125,8 +126,10 @@ Every step runs in a Docker container with a hard `--memory` limit. The two entr
 | 25 (PRS): scoring files written as pgsc_calc reads them | no limit | `PRS_PREPARE` 1 / 16 GB |
 | 25 (PRS): score positions genotyped from the gVCF | 2 / 8 GB | `PRS_SCORE_SITES` 2 / 4 GB |
 | 25 (PRS): pgsc_calc, each of its tasks | `PGSC_MAX_MEMORY` (three quarters of the RAM) | `PRS` 4 / 24 GB, given to pgsc_calc as `--max_memory` |
+| 44 (ancient populations): smartpca | `THREADS` (8) / 8 GB | `ANCIENT_PCA` 4 / 8 GB |
+| `setup.sh --ancient-panel`: smartpca over the whole AADR release | `THREADS` (8) / 12 GB | not a pipeline task |
 
-These are limits, not measured peaks. The peaks measured for each task in the end test are in the [runtime table](#runtime-per-step): on 30-40x genomes the alignment task (minimap2 and samtools together) peaked at 18.3-18.4 GB and DeepVariant at 15.9-16.5 GB. For step 25, on the nine scores measured before the four small lipid and blood-pressure scores joined the list, `PRS_PREPARE` peaked at 11.5 GB and pgsc_calc's first task, run on one thread, needed about 14 to 18 GB on a GitHub runner without a genome, and 12.7 to 13.5 GiB on the three end-test genomes ([step 25, Memory](25-prs.md#memory)). Your own run records pgsc_calc's task peaks in `prs/pgsc_calc/pipeline_info/execution_trace.txt`; the `PRS` row of the pipeline's trace is only the launcher.
+These are limits, not measured peaks. The two step 44 rows were measured on a 4-CPU GitHub runner on public HG002 ([step 44, Runtime](44-ancient.md#runtime)): the panel's smartpca held 7.6 GiB of its own memory, and its container's whole charge, file cache included, reached 11.6 of its 12 GiB; step 44's smartpca used 1.2 GiB. The peaks measured for each task in the end test are in the [runtime table](#runtime-per-step): on 30-40x genomes the alignment task (minimap2 and samtools together) peaked at 18.3-18.4 GB and DeepVariant at 15.9-16.5 GB. For step 25, on the nine scores measured before the four small lipid and blood-pressure scores joined the list, `PRS_PREPARE` peaked at 11.5 GB and pgsc_calc's first task, run on one thread, needed about 14 to 18 GB on a GitHub runner without a genome, and 12.7 to 13.5 GiB on the three end-test genomes ([step 25, Memory](25-prs.md#memory)). Your own run records pgsc_calc's task peaks in `prs/pgsc_calc/pipeline_info/execution_trace.txt`; the `PRS` row of the pipeline's trace is only the launcher.
 
 **Minimum system RAM:** 16 GB. `run-all.sh` passes the machine's RAM as `--max_memory`, so on a 16 GB machine the 32 GB tasks run capped at about 15 GB. A task that needs more is killed (exit 137); its one retry asks for double, and the cap cuts that back to the same 15 GB. With the step scripts, lower DeepVariant's shards and memory with `THREADS` and `DV_MEM`, for example `THREADS=4 DV_MEM=12g ./scripts/03-deepvariant.sh <sample> [male|female]`. The other scripts set a fixed `--memory`; edit it in the script to change it. Step 25's pgsc_calc is the exception that does not fit: its first task needs about 14 to 18 GB on the default scores and was killed under a 14.1 GB limit when the host has no swap, so a 16 GB machine needs swap for it ([step 25, Memory](25-prs.md#memory)).
 **Recommended:** 32 GB or more, so minimap2 and DeepVariant get close to the 32 GB they ask for.

@@ -66,6 +66,8 @@ nextflow run main.nf \
 #                                                (docs/49-chip.md)
 #    --tools '...,archaic'                     + --archaic_data (setup.sh --archaic), --archaic_pop, --hla_genes for the
 #                                                genes of each segment (docs/43-archaic.md)
+#    --tools '...,ancient'                     + --ancient_panel (setup.sh --ancient-panel); reads the gVCF, so a sample
+#                                                without one is skipped with a warning (docs/44-ancient.md)
 #    --hpo HP:0001250,HP:0001263               + --exomiser_data (setup.sh --exomiser-data): Exomiser ranks the
 #                                                variants against these symptoms; --exomiser_proband names
 #                                                the sample when there are several (docs/48-exomiser.md)
@@ -216,6 +218,7 @@ results/
 │   ├── chip/               # <sample>_chip.tsv, <sample>_chip_depth.tsv and Mutect2's filtered calls: clonal
 │   │                       #   haematopoiesis in 13 genes (opt-in: chip)
 │   ├── archaic/            # Neanderthal and Denisovan share and segments (IBDmix, opt-in: archaic)
+│   ├── ancient/            # The nearest ancient groups (table and text), their info and the PCA plot (AADR, opt-in: ancient)
 │   ├── hla/                # HLA typing
 │   ├── expansion_hunter/   # Repeat expansion calls, Stranger's annotation and, when Stranger flags RFC1, its motif count
 │   ├── telomere/           # Telomere length estimation
@@ -325,6 +328,7 @@ The pipeline and the scripts run the same commands at the same tool releases, so
 | y_haplogroup | Yleaf's prediction table; on the same hardening run |
 | traits | `<sample>_traits.tsv` and `<sample>_traits_genotypes.tsv`, byte for byte; in case `traits-panel-1`, which runs step 42 and `--tools traits,html_report` on the same VCF and gVCF. `<sample>_genotype_rules.tsv` with WhatsHap's phase from a BAM, byte for byte, in case `genotype-rules-1-phase` |
 | archaic | `<sample>_archaic.tsv`, `<sample>_archaic_segments.tsv` and `<sample>_archaic.txt`, byte for byte; in case `archaic-ancestry-1`, which runs step 43 and `--tools archaic` on the same VCF and table |
+| ancient | the ranked groups of `<sample>_ancient.tsv` (`rank`, `group`, `n`) and `sites_used`; in case `ancient-similarity-1`, which runs step 44 and `--tools ancient,html_report` on the same gVCF and panel |
 
 A difference fails the check unless the script lists it with its reason; none is listed today. Output file names and folders differ (the scripts write under `$GENOME_DIR/<sample>/`, the pipeline under `<outdir>/<sample>/`, mapped in the script).
 
