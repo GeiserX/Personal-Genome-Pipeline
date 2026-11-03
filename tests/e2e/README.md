@@ -13,7 +13,10 @@ parallel jobs by `scripts/ci/e2e-shards.sh`, and each case runs exactly once.
   (stage `base`: the numbered files and `bash-step-08-hla`) run first, in
   their own job, and every shard starts from what they wrote. A case that reads what another, non-base case wrote must
   name that case in its `needs` column, so both run in the same shard, in
-  name order. A new case with no row runs in some shard and needs nothing.
+  name order. A new case with no row runs in some shard, counts as 300
+  seconds and needs nothing. A case that runs well over 300 seconds also
+  needs a row with its measured seconds, or the split balances it as a
+  300-second case.
 - `lib.sh` holds the shared checks (`check`, `check_eq`, `check_ge`, `has`,
   `lacks`, `vcf_count`, ...). Every check is a count, a column or a content
   match, never an exit code alone.
