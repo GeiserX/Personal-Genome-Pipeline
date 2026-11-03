@@ -39,7 +39,7 @@ if [ ! -f "${SAMPLE_DIR}/run_manifest.tsv" ]; then
 fi
 
 echo "Reading pipeline outputs and writing the report..."
-rm -f "$OUTPUT" "${SAMPLE_DIR}/${SAMPLE}_search_index.json"
+rm -f "$OUTPUT" "${SAMPLE_DIR}/${SAMPLE}_search_index.json" "${SAMPLE_DIR}/${SAMPLE}_charts.json"
 # assets/: the ACMG SF rules (acmg_sf.tsv) and the carrier list (carrier_genes.tsv).
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro" "${PYTHON_IMAGE}" \
   python3 /pgp-bin/render_report.py \
@@ -48,7 +48,8 @@ run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro" "
     --sample-dir "/genome/${SAMPLE}" \
     --json "/genome/${SAMPLE}/summary.json" \
     -o "/genome/${SAMPLE}/${SAMPLE}_report.html" \
-    --search-index "/genome/${SAMPLE}/${SAMPLE}_search_index.json"
+    --search-index "/genome/${SAMPLE}/${SAMPLE}_search_index.json" \
+    --charts-json "/genome/${SAMPLE}/${SAMPLE}_charts.json"
 
 if [ ! -f "$OUTPUT" ]; then
   echo "ERROR: the report was not written: ${OUTPUT}" >&2
@@ -61,6 +62,7 @@ echo "============================================"
 echo "  HTML report generated: ${OUTPUT}"
 echo "  Summary: ${SAMPLE_DIR}/summary.json"
 echo "  Search index: ${SAMPLE_DIR}/${SAMPLE}_search_index.json"
+echo "  Charts:  ${SAMPLE_DIR}/${SAMPLE}_charts.json"
 echo "  Size: ${REPORT_KB} KB"
 echo "============================================"
 echo ""

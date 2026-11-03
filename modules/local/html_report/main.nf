@@ -20,7 +20,8 @@
     and assets/carrier_genes.tsv (the carrier list) come in the same list
     and go to assets/, which --assets names. Every gene and rsID the
     results mention also goes to ${id}_search_index.json beside it
-    (bin/results_index.py), for the live site's search (docs/24-html-report.md).
+    (bin/results_index.py), for the live site's search, and the report's
+    charts to ${id}_charts.json, for the live page (docs/24-html-report.md).
 
     Equivalent to: scripts/24-html-report.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -39,6 +40,7 @@ process HTML_REPORT {
     tuple val(meta), path("${meta.id}_report.html"), emit: html_report
     tuple val(meta), path("summary.json"),             emit: summary
     tuple val(meta), path("${meta.id}_search_index.json"), emit: search_index
+    tuple val(meta), path("${meta.id}_charts.json"),   emit: charts
     path "versions.yml",                              emit: versions
 
     when:
@@ -112,14 +114,15 @@ process HTML_REPORT {
         --json summary.json \\
         --declared-sex "${meta.sex ?: ''}" \\
         -o ${id}_report.html \\
-        --search-index ${id}_search_index.json
+        --search-index ${id}_search_index.json \\
+        --charts-json ${id}_charts.json
 
     printf '"%s":\\n    python: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
     """
 
     stub:
     """
-    touch ${meta.id}_report.html summary.json ${meta.id}_search_index.json
+    touch ${meta.id}_report.html summary.json ${meta.id}_search_index.json ${meta.id}_charts.json
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
