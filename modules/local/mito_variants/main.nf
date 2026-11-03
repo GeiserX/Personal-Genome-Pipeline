@@ -175,3 +175,73 @@ process MITO_VARIANTS_ANNOTATE {
     END_VERSIONS
     """
 }
+
+
+/*
+    MITO_DELETIONS: large mtDNA deletions and the mtDNA copy number of one
+    BAM, in the eKLIPse image (it holds samtools and Python too).
+    1. samtools idxstats of the whole BAM: chrM reads per base over the
+       autosomal reads per base, times 2, is the mtDNA copy number per cell
+       (bin/collect_summary.py mito-copies, into <id>_mtdna_copies.tsv;
+       not assessed on a sliced or targeted BAM).
+    2. The chrM reads into their own BAM, and eKLIPse on it against the rCRS
+       GenBank file its image ships (data/NC_012920.1.gb beside eKLIPse.py;
+       GRCh38's chrM is the rCRS). eKLIPse finds deletions from soft-clipped
+       reads whose clipped part maps across the deletion
+       (bin/collect_summary.py mito-deletions turns its CSV into
+       <id>_chrM_deletions.tsv). The report names the deletions of
+       assets/mito_confirmed.tsv among them.
+
+    Equivalent to: stages 7 and 8 of scripts/20-mtoolbox.sh
+*/
+process MITO_DELETIONS {
+    tag "$meta.id"
+    label 'process_low'
+
+    publishDir { "${params.outdir}/${meta.id}/mito" }, mode: params.publish_dir_mode
+
+    input:
+    tuple val(meta), path(bam), path(bai)
+
+    output:
+    tuple val(meta), path("${meta.id}_chrM_deletions.tsv"), emit: deletions
+    tuple val(meta), path("${meta.id}_mtdna_copies.tsv"),   emit: copies
+    path "versions.yml",                                     emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    def id = meta.id
+    """
+    samtools idxstats ${bam} > ${id}.idxstats
+    collect_summary.py mito-copies --idxstats ${id}.idxstats --out ${id}_mtdna_copies.tsv
+
+    samtools view -b -o ${id}_chrM.bam ${bam} chrM
+    samtools index ${id}_chrM.bam
+    printf '%s\\t%s\\n' "\$PWD/${id}_chrM.bam" "${id}" > eklipse_input.tsv
+    mkdir -p eklipse_out eklipse_tmp
+    EK=\$(command -v eKLIPse.py)
+    python3 "\$EK" -in eklipse_input.tsv -ref "\$(dirname "\$EK")/data/NC_012920.1.gb" \\
+        -out eklipse_out -tmp eklipse_tmp -thread ${task.cpus}
+    CSV=\$(find eklipse_out -name eKLIPse_deletions.csv | head -n 1)
+    if [ -z "\$CSV" ]; then
+        echo "ERROR: eKLIPse wrote no eKLIPse_deletions.csv" >&2
+        exit 1
+    fi
+    collect_summary.py mito-deletions --eklipse "\$CSV" --out ${id}_chrM_deletions.tsv
+
+    printf '"%s":\\n    eklipse: %s\\n' "${task.process}" "${task.container.replaceFirst(/^[^:@]+[:@]/, '')}" > versions.yml
+    """
+
+    stub:
+    """
+    printf 'bkp5\\tbkp3\\tlength\\tlevel_pct\\tlevel_fwd_pct\\tlevel_rev_pct\\tblast_5\\tblast_3\\tdepth_5\\tdepth_3\\trepeat\\n' > ${meta.id}_chrM_deletions.tsv
+    printf 'metric\\tvalue\\nstatus\\tnot assessed\\n' > ${meta.id}_mtdna_copies.tsv
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        eklipse: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}

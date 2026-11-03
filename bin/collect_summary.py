@@ -45,6 +45,13 @@ positions can be genotyped from the gVCF; prs-table reads pgsc_calc's match
 summary and scores into <sample>_prs_summary.tsv, with the ancestry-adjusted
 percentile and the reference group when pgsc_calc ran with an ancestry panel,
 and then writes the principal components and population of step 26.
+
+  collect_summary.py mito-deletions --eklipse eKLIPse_deletions.csv --out S_chrM_deletions.tsv
+  collect_summary.py mito-copies --idxstats S_idxstats.txt --out S_mtdna_copies.tsv
+
+are step 20's large mtDNA deletions (eKLIPse's CSV as a table) and its mtDNA
+copy number (chrM against autosomal reads per base, from samtools idxstats),
+for scripts/20-mtoolbox.sh and the Nextflow MITO_DELETIONS process.
 """
 import argparse
 import base64
@@ -2563,6 +2570,206 @@ def mito_annotate_main(argv):
     return 0
 
 
+# --- step 20: large mtDNA deletions (eKLIPse) and the mtDNA copy number ----------
+
+# <id>_chrM_deletions.tsv: eKLIPse's eKLIPse_deletions.csv, one row per
+# deletion. bkp5 and bkp3 are its 5' and 3' breakpoints as it writes them: the
+# last rCRS base kept before the deletion and the first one kept after it, so
+# the deleted bases are bkp5+1 to bkp3-1. level is the share of the mtDNA
+# molecules with the deletion (in %), the mean of the forward and reverse
+# strand estimates.
+MITO_DEL_COLS = ["bkp5", "bkp3", "length", "level_pct", "level_fwd_pct", "level_rev_pct", "blast_5", "blast_3",
+                 "depth_5", "depth_3", "repeat"]
+# A deletion of assets/mito_confirmed.tsv is named when both breakpoints lie
+# within this many bases of its own: a deletion between two direct repeats
+# can be written anywhere along them (the common one's repeats are 13 bp).
+MITO_DEL_TOLERANCE = 50
+# The report lists every named deletion and any other at this level or more;
+# the rest are counted.
+MITO_DEL_LIST_PCT = 1.0
+# The mtDNA copy number: chrM depth over autosomal depth, from the read counts
+# of the BAM index (samtools idxstats), times 2 for the two nuclear copies.
+# Under this many reads per kb of autosome (about 3x at 150 bp) the BAM is a
+# slice or a panel, not a genome, and the ratio would mean nothing.
+MITO_CN_MIN_READS_PER_KB = 20
+MITO_CN_COLS = ["status", "reason", "chrm_reads", "chrm_length", "autosomal_reads", "autosomal_length",
+                "depth_ratio", "mtdna_copies"]
+
+
+def _eklipse_num(x):
+    v = float(x.replace(",", "."))
+    if not math.isfinite(v):
+        raise ValueError(f"{x!r} is not a number")
+    return v
+
+
+def eklipse_deletions(path):
+    """The rows of eKLIPse's eKLIPse_deletions.csv (';' between fields, each
+    quoted, a comma for the decimal point), as MITO_DEL_COLS dicts."""
+    with open(path, errors="replace", newline="") as f:
+        rows = [r for r in csv.reader(f, delimiter=";", quotechar='"') if r]
+    if not rows or rows[0][:3] != ["Title", "5' breakpoint", "3' breakpoint"]:
+        raise ValueError(f"{path}: not eKLIPse's deletions table (header {rows[0][:3] if rows else 'missing'})")
+    out = []
+    for r in rows[1:]:
+        if len(r) < 11:
+            raise ValueError(f"{path}: a row with {len(r)} fields, want 11: {';'.join(r)}")
+        b5, b3 = int(r[1]), int(r[2])
+        out.append({"bkp5": b5, "bkp3": b3, "length": b3 - b5 - 1 if b3 > b5 else None,
+                    "level_pct": round(_eklipse_num(r[3]), 3), "level_fwd_pct": round(_eklipse_num(r[4]), 3),
+                    "level_rev_pct": round(_eklipse_num(r[5]), 3), "blast_5": int(r[6]), "blast_3": int(r[7]),
+                    "depth_5": int(_eklipse_num(r[8])), "depth_3": int(_eklipse_num(r[9])), "repeat": r[10] or "none"})
+    return out
+
+
+def mito_deletions_main(argv):
+    ap = argparse.ArgumentParser(prog="collect_summary.py mito-deletions",
+                                 description="Write step 20's large-deletion table from eKLIPse's deletions CSV.")
+    ap.add_argument("--eklipse", required=True, help="eKLIPse's eKLIPse_deletions.csv")
+    ap.add_argument("--out", required=True, help="<sample>_chrM_deletions.tsv")
+    a = ap.parse_args(argv)
+    try:
+        rows = eklipse_deletions(a.eklipse)
+    except (OSError, ValueError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    tmp = a.out + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\t".join(MITO_DEL_COLS) + "\n")
+        for r in rows:
+            f.write("\t".join("." if r[c] is None else str(r[c]) for c in MITO_DEL_COLS) + "\n")
+    os.replace(tmp, a.out)
+    print(f"  {len(rows)} large deletions (eKLIPse)")
+    return 0
+
+
+def mito_copies(idxstats):
+    """The mtDNA copy number block from `samtools idxstats` text: chrM reads
+    per base over autosomal reads per base, times 2."""
+    chrm = None
+    auto_reads = auto_len = 0
+    for line in idxstats.splitlines():
+        c = line.split("\t")
+        if len(c) < 3 or c[0] == "*":
+            continue
+        name, length, mapped = c[0], int(c[1]), int(c[2])
+        if name in ("chrM", "MT"):
+            chrm = (mapped, length)
+        elif re.fullmatch(r"(chr)?([1-9]|1[0-9]|2[0-2])", name):
+            auto_reads += mapped
+            auto_len += length
+    b = dict.fromkeys(MITO_CN_COLS)
+    b.update(status="not assessed", autosomal_reads=auto_reads, autosomal_length=auto_len)
+    if chrm:
+        b.update(chrm_reads=chrm[0], chrm_length=chrm[1])
+    if not chrm or not chrm[0] or not chrm[1]:
+        b["reason"] = "no_chrM_reads"
+    elif not auto_len or auto_reads / auto_len * 1000 < MITO_CN_MIN_READS_PER_KB:
+        b["reason"] = "low_autosomal_depth"
+    else:
+        ratio = (chrm[0] / chrm[1]) / (auto_reads / auto_len)
+        b.update(status="called", depth_ratio=round(ratio, 3), mtdna_copies=round(2 * ratio, 1))
+    return b
+
+
+def mito_copies_main(argv):
+    ap = argparse.ArgumentParser(prog="collect_summary.py mito-copies",
+                                 description="Write step 20's mtDNA copy number from samtools idxstats.")
+    ap.add_argument("--idxstats", required=True, help="samtools idxstats of the whole BAM")
+    ap.add_argument("--out", required=True, help="<sample>_mtdna_copies.tsv")
+    a = ap.parse_args(argv)
+    try:
+        with open(a.idxstats, errors="replace") as f:
+            b = mito_copies(f.read())
+    except (OSError, ValueError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    tmp = a.out + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("metric\tvalue\n")
+        f.write("".join(f"{k}\t{'.' if b[k] is None else b[k]}\n" for k in MITO_CN_COLS))
+    os.replace(tmp, a.out)
+    print(f"  mtDNA copy number: {b['mtdna_copies'] if b['status'] == 'called' else 'not assessed (' + b['reason'] + ')'}")
+    return 0
+
+
+def mito_confirmed():
+    """(SNVs {(pos, ref, alt): row}, deletions [row]) of assets/mito_confirmed.tsv."""
+    snv, dels = {}, []
+    for r in asset_rows("mito_confirmed.tsv"):
+        if r["kind"] == "snv":
+            snv[(int(r["pos"]), r["ref"], r["alt"])] = r
+        elif r["kind"] == "deletion":
+            dels.append(r)
+    return snv, dels
+
+
+def known_deletion(row, dels):
+    """The deletion of assets/mito_confirmed.tsv a called deletion is, or None."""
+    for k in dels:
+        if abs(row["bkp5"] + 1 - int(k["pos"])) <= MITO_DEL_TOLERANCE \
+                and abs(row["bkp3"] - 1 - int(k["end"])) <= MITO_DEL_TOLERANCE:
+            return k
+    return None
+
+
+def _confirmed_fields(k):
+    return {"hgvs": k["hgvs"], "gene": k["gene"], "disease": k["disease"], "clinvar_id": k["clinvar_id"],
+            "pmids": k["pmids"], "note": k["heteroplasmy_note"]}
+
+
+def mito_extended(d, s, vcf):
+    """Step 20's confirmed variants (assets/mito_confirmed.tsv) among the chrM
+    calls, its large deletions and the mtDNA copy number."""
+    out = {}
+    try:
+        snv, dels = mito_confirmed()
+    except Unreadable as e:
+        snv, dels = {}, []
+        out["confirmed_note"] = str(e)
+    confirmed = []
+    for r in vcf_records(vcf):
+        if len(r) < 8:
+            continue
+        fmt = r[8].split(":") if len(r) > 9 else []
+        val = r[9].split(":") if len(r) > 9 else []
+        afs = val[fmt.index("AF")].split(",") if "AF" in fmt and fmt.index("AF") < len(val) else []
+        for i, alt in enumerate(r[4].split(",")):
+            k = snv.get(min_allele(int(r[1]), r[3], alt))
+            if k:
+                confirmed.append(_confirmed_fields(k) | {"pos": int(k["pos"]), "filter": r[6],
+                                                         "af": afs[i] if i < len(afs) else "."})
+    out["confirmed"] = confirmed
+    p = first_existing(d, [f"mito/{s}_chrM_deletions.tsv"])
+    if not p:
+        out["deletions_note"] = ("no deletion table (mito/<id>_chrM_deletions.tsv): step 20 ran before it looked "
+                                 "for large deletions")
+    else:
+        with open(p, errors="replace") as f:
+            rows = list(csv.DictReader(f, delimiter="\t"))
+        listed = []
+        for r in rows:
+            row = {"bkp5": int(r["bkp5"]), "bkp3": int(r["bkp3"]),
+                   "length": None if r["length"] == "." else int(r["length"]), "level_pct": float(r["level_pct"])}
+            k = known_deletion(row, dels)
+            if k or row["level_pct"] >= MITO_DEL_LIST_PCT:
+                listed.append(row | ({"known": _confirmed_fields(k)} if k else {}))
+        out["deletions"] = {"source": os.path.relpath(p, d), "total": len(rows), "listed": listed,
+                            "list_floor_pct": MITO_DEL_LIST_PCT}
+    p = first_existing(d, [f"mito/{s}_mtdna_copies.tsv"])
+    if p:
+        m = dict(read_tsv_pairs(p))
+        out["copies"] = {k: (None if m.get(k) in (None, ".") else m[k]) for k in MITO_CN_COLS}
+    return out
+
+
+def read_tsv_pairs(path):
+    """[(metric, value)] of a two-column table with a header line."""
+    with open(path, errors="replace") as f:
+        lines = [ln.rstrip("\n").split("\t") for ln in f if ln.strip()]
+    return [(c[0], c[1]) for c in lines[1:] if len(c) >= 2]
+
+
 def mito_annotation(d, s, vcf):
     """Step 20's annotation table, as the report lists it, or a note on why
     there is none."""
@@ -2631,7 +2838,7 @@ def sec_mito(d, s):
                           | {"polyc": in_polyc(int(r["pos"]), r["ref"], r["alt"])})
     if "source" in ann:
         ann.update(variants=listed, clinvar_plp=plp)
-    return p, {"pass": passed, "heteroplasmic": het, "heteroplasmic_sites": sites, "heteroplasmy_floor": 0.05,
+    return p, {**mito_extended(d, s, p), "pass": passed, "heteroplasmic": het, "heteroplasmic_sites": sites, "heteroplasmy_floor": 0.05,
                "polyc_heteroplasmic": polyc,
                "polyc_tracts": [f"m.{a}-{b}" for a, b in POLYC_TRACTS], "annotation": ann}
 
@@ -3730,6 +3937,10 @@ def main(argv=None):
         return prs_table_main(argv[1:])
     if argv[:1] == ["mito-annotate"]:
         return mito_annotate_main(argv[1:])
+    if argv[:1] == ["mito-deletions"]:
+        return mito_deletions_main(argv[1:])
+    if argv[:1] == ["mito-copies"]:
+        return mito_copies_main(argv[1:])
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--sample", required=True)
     ap.add_argument("--sample-dir", required=True)
