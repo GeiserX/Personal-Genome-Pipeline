@@ -124,6 +124,12 @@ check("1 every system read from null rows has some",
       sorted(s for s in bt.NULL_SYSTEMS if not any(SITES[n]["system"] == s for n in NULLS)), [])
 check("1 a null row of Kell or Kidd names the alleles it sits with",
       sorted(n for n in NULLS if SITES[n]["system"] in bt.NULL_HOSTS and not SITES[n]["null_on"]), [])
+LABELS = {}
+for r in SITES.values():
+    if r["alt_means"] != "null":
+        LABELS.setdefault(r["system"], set()).update((r["ref_means"], r["alt_means"]))
+check("1 every null_on allele is an antigen of the row's own system",
+      sorted(n for n in NULLS if set(SITES[n]["null_on"].split()) - LABELS.get(SITES[n]["system"], set())), [])
 check("1 the high_prevalence antigen is one the row gives",
       sorted(n for n, r in SITES.items() if r["high_prevalence"] and r["high_prevalence"] not in (r["ref_means"], r["alt_means"])), [])
 
@@ -255,7 +261,13 @@ def oriented(gene, ref, alt, change):
     if m:
         n = len(m.group(4)) or span(m.group(1), m.group(2))
         d = len(ref) - len(alt) if m.group(3) == "del" else len(alt) - len(ref)
-        return d == n and ref[0] == alt[0]
+        if d != n or ref[0] != alt[0]:
+            return False
+        # Bases given: the VCF's deleted or added bases on the gene's strand are
+        # those bases, or a rotation of them (VCF left-aligns in a repeat, HGVS
+        # shifts 3').
+        moved = flip((ref if m.group(3) == "del" else alt)[1:])
+        return not m.group(4) or (len(moved) == n and moved in m.group(4) * 2)
     m = re.fullmatch(r"c\.[0-9]+_[0-9]+ins([ACGT]+)", change)
     if m:
         return len(alt) - len(ref) == len(m.group(1)) and ref[0] == alt[0]
@@ -281,6 +293,8 @@ for n in NEW:
 check("8 control: a swapped REF and ALT fails the orientation", oriented("KEL", "A", "G", "c.578C>T"), False)
 check("8 control: the right one passes", oriented("KEL", "G", "A", "c.578C>T"), True)
 check("8 control: a deletion one base short fails", oriented("FUT2", "CG", "C", "c.719_720delGT"), False)
+check("8 control: a deletion of the right length but other bases fails", oriented("FUT2", "CAC", "C", "c.719_720delGT"), False)
+check("8 control: a left-aligned deletion in a repeat passes", oriented("FUT2", "CTG", "C", "c.719_720delGT"), True)
 
 
 # 9. every new row, positive and negative: a reference genome carries the antigen
@@ -403,6 +417,20 @@ for desc, recs, system, want in [
 check("12 those three positions are no null row",
       sorted(n for n in NULLS if (SITES[n]["chrom"], SITES[n]["pos"]) in
              {("chr19", 48703728), ("chr19", 48703291), ("chr18", 45739309)}), [])
+
+# 14. two null copies need no pair site: with c.838 a no call, SLC14A1 c.342-1G>A
+# 1/1 is still Jk(a-b-). Two Kidd nulls placed on different alleles name each.
+nc = {x["system"]: x for x in run_inproc([vcf_line("JK_01N06", "1/1"), vcf_line("JK_838", "./.")])}
+check("14 Jk null 1/1 with c.838 a no call: Jk(a-b-), null/null",
+      (nc["Kidd"]["phenotype"], nc["Kidd"]["genotype"]), ("Jk(a-b-)", "null/null"))
+kn = {x["system"]: x for x in run_inproc([vcf_line("KEL_02N03", "1/1"), vcf_line("KEL_578", "./.")])}
+check("14 KEL null 1/1 with c.578 a no call: K-k- Kp(a-b-) Js(a-b-), null/null",
+      (kn["Kell"]["phenotype"], kn["Kell"]["genotype"]), ("K-k- Kp(a-b-) Js(a-b-)", "null/null"))
+two = {x["system"]: x for x in run_inproc([vcf_line("JK_838", "0/1"), vcf_line("JK_02N21", "0/1"),
+                                           vcf_line("JK_01N32", "0/1")])}
+check("14 two Kidd nulls with different null_on: the note names each allele's placement",
+      ("SLC14A1 c.118G>A: Jkb" in two["Kidd"]["note"], "SLC14A1 c.151+1G>C: Jka" in two["Kidd"]["note"]),
+      (True, True))
 
 # 13. another ALT at a null row's position (KEL c.1546C>T's position, G>T) is not that
 # null allele: the antigens stay fully read at confidence high, and the note names it.

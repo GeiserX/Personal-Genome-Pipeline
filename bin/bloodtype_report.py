@@ -343,7 +343,7 @@ def sign(present):
 def pair_part(name, s, left=None):
     """(phenotype part, genotype part) of one two-allele site, or None. left is
     {antigen: copies} after null copies took theirs (default: the site's own)."""
-    if s.n is None:
+    if s.n is None and left is None:
         return None
     r = s.row
     left = left or {r["alt_means"]: s.n, r["ref_means"]: 2 - s.n}
@@ -412,6 +412,12 @@ def system_pairs(system, names, S):
             pick = next((a for a in prefer if cnt.get(a, 0) > 0), None)
             pick = pick or next(a for a in (r["ref_means"], r["alt_means"]) if cnt[a] > 0)
             cnt[pick] -= 1
+    # Two null copies silence both chromosomes: a pair site with no call still lacks
+    # both antigens.
+    if n_null >= 2:
+        for name in names:
+            r = S[name].row
+            left.setdefault(name, {r["alt_means"]: 0, r["ref_means"]: 0})
     for name in names:
         s = S[name]
         p = pair_part(name, s, left.get(name))
@@ -427,9 +433,14 @@ def system_pairs(system, names, S):
     used_all = used + [s for s in nulls if s.n is not None]
     conf = null_confidence(used_all, found, nmiss) if not missing else "low"
     extra = [f"{s.row['hgvs']}: {s.status}" + (f" ({s.note})" if s.note else "") for s in missing] + null_extra
-    if found and found[0].row.get("null_on"):
-        extra.append(f"each null copy is placed with {', '.join(found[0].row['null_on'].split())} first, "
+    placed = [s for s in found if s.row.get("null_on")]
+    if len(placed) == 1:
+        extra.append(f"each null copy is placed with {', '.join(placed[0].row['null_on'].split())} first, "
                      "the alleles the ISBT table finds it with (phase is not read)")
+    elif placed:
+        extra.append("each null copy is placed with the alleles the ISBT table finds it with first ("
+                     + "; ".join(f"{s.row['hgvs']}: {', '.join(s.row['null_on'].split())}" for s in placed)
+                     + "; phase is not read)")
     lacks = [a for name in names if name in left for a, c in left[name].items() if c == 0]
     if n_null >= 2:
         lacks.append(found[0].row["ref_means"])

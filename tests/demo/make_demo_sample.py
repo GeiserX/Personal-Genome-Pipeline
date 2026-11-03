@@ -832,8 +832,8 @@ BLOODTYPE = [
     ("Langereis", "Lan+", "Lan/Lan", "high", ""),
     ("Junior", "Jr(a+)", "Jra/Jra", "high", ""),
     ("H", "H+", "H/H", "high", ""),
-    ("Secretor", "non-secretor", "se/se", "high",
-     "null allele: FUT2 c.461G>A x2; weak secretor alleles (such as FUT2 c.418A>T, also written c.385A>T) "
+    ("Secretor", "secretor", "Se/se", "high",
+     "null allele: FUT2 c.461G>A x1; weak secretor alleles (such as FUT2 c.418A>T, also written c.385A>T) "
      "and a deletion of the whole FUT2 gene are not assessed"),
     ("HPA-1", "HPA-1(a+b-)", "1a/1a", "high", ""),
     ("HPA-2", "HPA-2(a+b-)", "2a/2a", "high", ""),
