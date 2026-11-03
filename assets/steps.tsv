@@ -40,7 +40,7 @@ step	label	tool	recorded	processes	sections	upstream	hours	hours_from	hours_low	
 17	CPSR	cpsr	yes	CPSR	cpsr	03	0.6	measured	0.2833	PCGR_DATA_BUNDLE,cpsr_clinvar_release
 18	CNVpytor	cnvpytor	yes	CNVPYTOR,CNVPYTOR_VCF	cnvpytor	02	0.33	measured	0.2333	
 19	Delly	delly	yes	DELLY,DELLY_BCF2VCF	delly	02	3.32	measured	0.35	
-20	Mito variants (Mutect2)	mito_variants	yes	MITO_VARIANTS,MITO_VARIANTS_ANNOTATE	mito	02	0.03	measured	0.0166	clinvar_file_date@self
+20	Mito variants (Mutect2)	mito_variants	yes	MITO_VARIANTS,MITO_VARIANTS_ANNOTATE,MITO_DELETIONS	mito	02	0.03	measured	0.0166	clinvar_file_date@self
 21	Cyrius CYP2D6	cyrius	yes	CYRIUS	cyrius	02	0.25	estimate		
 22	SV consensus merge	survivor_merge	yes	SURVIVOR_PREP,SURVIVOR_MERGE,SURVIVOR_SORT	sv_consensus	04,19,18	0.01	measured	0.0005	
 23	Clinical filter	clinical_filter	yes	CLINICAL_FILTER	clinical	13	0.11	measured	0.0416	
