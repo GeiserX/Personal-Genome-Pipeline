@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-mode="{{mode}}" data-run="{{run}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{run}}: live run</title>
+<link rel="stylesheet" href="{{assets}}/live.css">
+<script src="{{assets}}/live.js" defer></script>
+{{plugins}}
+</head>
+<body>
+<header>
+  <h1><span id="run-name">{{run}}</span> <span id="run-state" class="badge">loading</span></h1>
+  <nav><a href="report.html" id="report-link">Report</a> <a href="/">All runs</a></nav>
+</header>
+<div id="replay" class="replay" hidden>
+  <button type="button" id="replay-play">Play</button>
+  <input type="range" id="replay-slider" min="0" max="0" value="0" aria-label="Moment of the run">
+  <span id="replay-time"></span>
+</div>
+<main>
+  <section class="map-wrap" aria-label="Steps">
+    <div id="legend" class="legend"></div>
+    <div id="map"></div>
+  </section>
+  <aside>
+    <section id="detail" class="card" aria-live="polite"><h2>Step</h2><p class="muted">Click a step to see its tasks.</p></section>
+    <section class="card"><h2>Found so far</h2><ul id="found" class="found"><li class="muted">Nothing finished yet.</li></ul></section>
+    <div id="plugin-panels"></div>
+  </aside>
+</main>
+</body>
+</html>

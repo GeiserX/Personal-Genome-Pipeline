@@ -106,8 +106,8 @@ IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 # 03, which run-all reuses on purpose) is never marked stale.
 RUN_ALL_STEPS = {"03a", "03b", "03c", "03d", "04", "04b", "05", "06", "07", "08", "09", "09b", "10", "11",
                  "12", "13", "14", "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26",
-                 "26b", "27", "28", "29", "30", "31", "32", "33", "35", "35b", "37", "40", "41", "42", "43",
-                 "44", "45", "46", "47", "48", "49", "50", "51", "52"}
+                 "26b", "27", "28", "29", "30", "31", "32", "33", "35", "35b", "37", "38", "39", "40", "41",
+                 "42", "43", "44", "45", "46", "47", "48", "49", "50", "51", "52"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -2592,7 +2592,7 @@ def sec_mito(d, s):
     if not p:
         return None, {}
     passed = het = 0
-    polyc = []
+    polyc, sites = [], []
     for r in vcf_records(p):
         if len(r) < 10 or r[6] != "PASS":
             continue
@@ -2614,6 +2614,8 @@ def sec_mito(d, s):
             polyc.append({"variant": f"{r[0]}:{r[1]} {r[3]}>{r[4]}", "af": round(af, 3)})
         else:
             het += 1
+            # Each counted site, for the report's chart (bin/report_charts.py).
+            sites.append({"pos": int(r[1]), "ref": r[3], "alt": r[4], "af": round(af, 3)})
     ann = mito_annotation(d, s, p)
     listed, plp = [], 0
     for r in ann.pop("rows", []):
@@ -2629,7 +2631,8 @@ def sec_mito(d, s):
                           | {"polyc": in_polyc(int(r["pos"]), r["ref"], r["alt"])})
     if "source" in ann:
         ann.update(variants=listed, clinvar_plp=plp)
-    return p, {"pass": passed, "heteroplasmic": het, "heteroplasmy_floor": 0.05, "polyc_heteroplasmic": polyc,
+    return p, {"pass": passed, "heteroplasmic": het, "heteroplasmic_sites": sites, "heteroplasmy_floor": 0.05,
+               "polyc_heteroplasmic": polyc,
                "polyc_tracts": [f"m.{a}-{b}" for a, b in POLYC_TRACTS], "annotation": ann}
 
 

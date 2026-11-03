@@ -30,7 +30,7 @@
 | Docker | 20.10+ | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
 | bash | 4.4+ | Pre-installed on Linux; macOS ships 3.2, install a newer one with `brew install bash` |
 | Java *(for a full run)* | 17+ | Any OpenJDK build, e.g. `apt install openjdk-17-jre-headless` or [Adoptium Temurin](https://adoptium.net/) |
-| Nextflow *(for a full run)* | `NEXTFLOW_VERSION` in `versions.env` | `curl -s https://get.nextflow.io \| NXF_VER=26.10.2 bash`, see [Full run](#full-run) |
+| Nextflow *(for a full run)* | `NEXTFLOW_VERSION` in `versions.env` | `curl -s https://get.nextflow.io \| NXF_VER=26.10.5 bash`, see [Full run](#full-run) |
 | wget or curl | Any | For downloading references |
 | python3 *(optional)* | 3.6+ | Used by long-read alignment (02b) for symlink resolution. Falls back to `readlink -f` on GNU/Linux if absent |
 
@@ -102,7 +102,7 @@ One command runs every step of a default run for one sample. `run-all.sh` checks
 It needs Docker, bash 4.4 or later, Java 17 or later and the Nextflow release CI validates, `NEXTFLOW_VERSION` in `versions.env`. Pin the version when you install, because the plain installer fetches the newest release:
 
 ```bash
-curl -s https://get.nextflow.io | NXF_VER=26.10.2 bash
+curl -s https://get.nextflow.io | NXF_VER=26.10.5 bash
 sudo mv nextflow /usr/local/bin/
 ```
 
@@ -176,6 +176,8 @@ Without `THREADS` or `--max_cpus`, `run-all.sh` passes the machine's CPU count a
 | 10 TelomereHunter, 19 Delly | `reference/cytoBand.hg38.txt`, `reference/delly_human.hg38.excl.tsv` (optional) | `--cytoband`, `--delly_exclude` |
 
 **Where things land.** Results go to `${GENOME_DIR}/<sample>/`, in the folders of the pipeline's [output structure](nextflow.md#output-structure). Most match the single scripts' folders; the pipeline writes PharmCAT to `pharmcat/`, ROH to `roh/`, depth to `coverage/` and HLA types to `hla/`, where the scripts use `vcf/`, `vcf/`, `mosdepth/` and `hla_t1k/`. The reports read both. At the end `run-all.sh` renders the full HTML report (`<sample>_report.html`, step 24), the text report (`<sample>_report.txt`) and the `summary.json` both are made from.
+
+**Families.** When several of your samples are related, say once who is related to whom in a families file ([`assets/families.example.tsv`](https://github.com/GeiserX/Personal-Genome-Pipeline/blob/main/assets/families.example.tsv): family, sample, sex, father, mother, partner) and pass it with each run: `FAMILIES=families.tsv ./scripts/run-all.sh your_name male`. Each run still processes its own sample only. The file must give the same sex (exit 2 before the pipeline otherwise). Before the reports, `run-all.sh` writes `${GENOME_DIR}/<family>/family_plan.tsv` and runs the family analysis (step 38) and the couple carrier screen (step 39) once the members they need have been processed; until then it records the step as `skipped (waiting: ...)` and names who is missing. [Family analysis](multi-sample.md#family-analysis-step-38-opt-in) has the details.
 
 | Log | Where |
 |---|---|
