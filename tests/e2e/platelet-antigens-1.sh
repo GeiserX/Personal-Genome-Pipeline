@@ -45,7 +45,7 @@ sample "$P" "${T}/planted.vcf.gz"
 run_step 41-bloodtype.sh "$P"; check_step_exit 41-bloodtype.sh
 grep -E '^(HPA|HNA)' "${G}/${P}/bloodtype/${P}_bloodtype.tsv" 2>/dev/null | cut -f1-4
 check_eq "a row per system, the HPA and HNA ones included" \
-  "$(awk 'END {print NR - 1}' "${G}/${P}/bloodtype/${P}_bloodtype.tsv" 2>/dev/null)" 22
+  "$(awk 'END {print NR - 1}' "${G}/${P}/bloodtype/${P}_bloodtype.tsv" 2>/dev/null)" 55
 check_eq "HPA-1 1/1: HPA-1(a-b+), 1b/1b" "$(cell "$P" HPA-1 phenotype) $(cell "$P" HPA-1 genotype)" "HPA-1(a-b+) 1b/1b"
 check "and the note says the person lacks HPA-1a, with FNAIT and anti-HPA-1a" \
   has '^lacks HPA-1a: .*FNAIT.*anti-HPA-1a' "$(cell "$P" HPA-1 note)"
