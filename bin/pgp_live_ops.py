@@ -150,9 +150,9 @@ def run_ops(run_dir, state, events, cfg, now=None, steps=None, physical=None):
     ranges = run_eta.step_ranges(history, steps, cores, exclude)
     rem = run_eta.remaining(state, ranges, now, cores) if running else None
 
-    # Headroom: run_headroom's snapshot on the folders found here. The weblog metadata is taken
-    # out of the events first, so snapshot() cannot fall back to a relative outdir, which would be
-    # read against this server's own folder.
+    # Headroom: run_headroom's snapshot on the folders found here. folders() already measures a
+    # relative outdir from the weblog's launchDir. The weblog metadata is taken out of the events
+    # first, so snapshot() cannot fall back to a weblog path that folders() left out.
     work, results = folders(run_dir, cur)
     _, _, cap = run_headroom.metadata(cur)
     plain = [{k: v for k, v in ev.items() if k != "metadata"} for ev in cur]
@@ -326,6 +326,8 @@ def register(app):
             return run_ops(run_dir, state, events, app.config)
         except ValueError as e:  # a warn percent outside 1 to 100: say so on the page, keep the page
             return {"error": str(e)[:200]}
+        except Exception as e:  # anything else: the card says so, the rest of the run's state stays
+            return {"error": f"run health could not be read ({type(e).__name__})"}
 
     def metrics(req, _m):
         # The file is read at each scrape that needs it, so a new token works without a restart.

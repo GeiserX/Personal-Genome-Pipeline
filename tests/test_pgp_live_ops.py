@@ -275,6 +275,32 @@ def write_check(mod):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def hook_check(mod):
+    """The state hook turns any error into an error field, so the rest of state.json stays."""
+    hooks = {}
+    app = types.SimpleNamespace(add_argument=lambda *a, **k: None, state_hook=lambda n, fn: hooks.__setitem__(n, fn),
+                                route=lambda *a, **k: None, log=lambda *a, **k: None, config=None)
+    mod.register(app)
+    tmp = tempfile.mkdtemp(prefix="pgp-ops-")
+    try:
+        root, run_dir, events, _, _ = make_tree(tmp)
+        app.config = cfg_for(root)
+        hist = os.path.join(root, "pipeline_info", "step_history", "opsbox.tsv")
+        with open(hist, "w") as f:  # a history with no trace_file column
+            f.write("step\tseconds\nROH\t60\n")
+        steps = run_state.read_steps()
+        st = run_state.build(SAMPLE, steps, run_state.read_run_status(os.path.join(run_dir, "logs", "run_status.tsv")),
+                             None, [], run_state.event_tasks(events, SAMPLE), events, None, T0 + 330)
+        try:
+            o, raised = hooks["ops"](run_dir, st, events), None
+        except Exception as e:
+            o, raised = None, type(e).__name__
+        check("15. a state hook error becomes the card's error field, never an exception",
+              raised is None and isinstance(o, dict) and "could not be read" in str(o.get("error")), (raised, o))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def free_port():
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
@@ -365,6 +391,7 @@ def main():
     auth_checks(mod)
     doc_and_rule_checks(mod)
     write_check(mod)
+    hook_check(mod)
     server_check()
     mutant_checks()
     print(f"\n{'FAILED: ' + str(FAILS) + ' check(s)' if FAILS else 'All checks passed.'}")

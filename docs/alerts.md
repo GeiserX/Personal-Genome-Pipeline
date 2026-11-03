@@ -35,7 +35,7 @@ The plugin adds these flags to `bin/pgp_live.py`. Each also works as a `KEY=VALU
 | `--eta-box NAME` | `PGP_BOX` or the short host name | The step history to read |
 | `--eta-cores N` | this machine's cores | The cores of the box that runs the pipeline |
 
-The paths it measures are the run's folder, its `nextflow/work` folder, and for a run started with a bare `nextflow run` the absolute `workDir` and `outdir` from its weblog messages. They are measured as this machine sees them, so run the site on the machine that runs the pipeline. A relative `outdir` is not measured.
+The paths it measures are the run's folder, its `nextflow/work` folder, and for a run started with a bare `nextflow run` the absolute `workDir` and `outdir` from its weblog messages. They are measured as this machine sees them, so run the site on the machine that runs the pipeline. A relative `outdir` is measured from the run's `launchDir` in the weblog.
 
 ## Scrape it with Prometheus
 
