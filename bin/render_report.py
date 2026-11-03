@@ -2000,6 +2000,64 @@ def mito_lines(d):
             lines += [f"  {mito_variant_text(v)}" for v in a["variants"]]
     elif a.get("note"):
         lines.append(f"ClinVar and gnomAD: not annotated ({a['note']})")
+    return lines + mito_extended_lines(d)
+
+
+MITO_DELETION_NOTE = ("A single large mtDNA deletion is often found in muscle and not in blood (except in Pearson "
+                      "syndrome), so a blood sample with none does not rule one out (docs/20-mtoolbox.md).")
+MITO_COPIES_NOTE = ("mtDNA copies per cell: twice the chrM depth over the autosomal depth, from the read counts of "
+                    "the BAM index, for a whole-genome BAM (an exome gives no such number). It depends on the tissue "
+                    "and the library, so it compares samples of one kind only.")
+
+
+def mito_confirmed_text(v):
+    return (f"{v['hgvs']} ({v['gene']})  AF {v.get('af') or '.'}  filter {v.get('filter') or '.'}  {v['disease']}; "
+            f"ClinVar {v['clinvar_id']}; PMID {v['pmids'].replace(';', ', ')}. {v['note']}")
+
+
+def mito_deletion_text(r):
+    k = r.get("known")
+    span = (f"m.{r['bkp5'] + 1}_{r['bkp3'] - 1}del ({r['length']} bp)" if r["bkp3"] > r["bkp5"]
+            else f"m.{r['bkp5'] + 1} to m.{r['bkp3'] - 1} across the origin ({r.get('length')} bp)")
+    out = f"{span}  level {r['level_pct']}%"
+    if k:
+        out += f"  {k['disease']}; ClinVar {k['clinvar_id']} ({k['hgvs']}); PMID {k['pmids'].replace(';', ', ')}"
+    return out
+
+
+def mito_copies_text(c):
+    if c.get("status") == "called":
+        return (f"mtDNA copy number: {c['mtdna_copies']} per cell (chrM depth {c['depth_ratio']} times the "
+                f"autosomal depth)")
+    reason = {"low_autosomal_depth": "too few autosomal reads: a sliced BAM, a panel or a shallow genome",
+              "no_chrM_reads": "no chrM reads in the BAM"}.get(c.get("reason"), c.get("reason") or "unknown")
+    return f"mtDNA copy number: not assessed ({reason})"
+
+
+def mito_extended_lines(d):
+    """Step 20's confirmed variants, large deletions and copy number, the same in both reports."""
+    lines = []
+    if "confirmed" in d:
+        conf = d["confirmed"]
+        lines.append(f"Confirmed disease variants (assets/mito_confirmed.tsv): {len(conf)}")
+        lines += [f"  {mito_confirmed_text(v)}" for v in conf]
+    if d.get("confirmed_note"):
+        lines.append(f"Confirmed disease variants: not checked ({d['confirmed_note']})")
+    dl = d.get("deletions")
+    if dl:
+        named = sum(1 for r in dl["listed"] if r.get("known"))
+        lines.append(f"Large deletions (eKLIPse): {dl['total']}, of them {named} named in assets/mito_confirmed.tsv; "
+                     f"listed: named ones and any at {dl['list_floor_pct']}% or more")
+        lines += [f"  {mito_deletion_text(r)}" for r in dl["listed"]]
+        lines.append(MITO_DELETION_NOTE)
+    elif d.get("deletions_note"):
+        lines.append(f"Large deletions: not looked for ({d['deletions_note']})")
+    if d.get("copies"):
+        lines.append(mito_copies_text(d["copies"]))
+        if d["copies"].get("status") == "called":
+            lines.append(MITO_COPIES_NOTE)
+    elif d.get("copies_note"):
+        lines.append(f"mtDNA copy number: not counted ({d['copies_note']})")
     return lines
 
 
@@ -2452,6 +2510,29 @@ def html_report(s, index=None):
         mito_body.append(small_note(f"ClinVar {ma.get('clinvar') or 'unknown'}; gnomAD {ma.get('gnomad') or 'unknown'}"))
     elif ma.get("note"):
         mito_body.append(small_note(f"ClinVar and gnomAD: not annotated ({ma['note']})"))
+    if "confirmed" in mi:
+        n = len(mi["confirmed"])
+        mito_body.append(stat("Confirmed disease variants", badge(n, "yellow" if n else "gray")))
+        mito_body += [small_note(mito_confirmed_text(v)) for v in mi["confirmed"]]
+    dl = mi.get("deletions")
+    if dl:
+        named = sum(1 for r in dl["listed"] if r.get("known"))
+        mito_body.append(stat("Large deletions (eKLIPse)", dl["total"]))
+        mito_body.append(stat("Named in the confirmed list", badge(named, "yellow" if named else "gray")))
+        mito_body += [small_note(mito_deletion_text(r)) for r in dl["listed"]]
+        mito_body.append(small_note(MITO_DELETION_NOTE))
+    elif mi.get("deletions_note"):
+        mito_body.append(small_note(f"Large deletions: not looked for ({mi['deletions_note']})"))
+    if mi.get("copies"):
+        # mc, not c: c holds the ClinVar data the hits table below reads.
+        mc = mi["copies"]
+        mito_body.append(stat("mtDNA copies per cell", E(str(mc["mtdna_copies"])) if mc.get("status") == "called"
+                              else "not assessed"))
+        mito_body.append(small_note(mito_copies_text(mc)))
+        if mc.get("status") == "called":
+            mito_body.append(small_note(MITO_COPIES_NOTE))
+    elif mi.get("copies_note"):
+        mito_body.append(small_note(f"mtDNA copy number: not counted ({mi['copies_note']})"))
     mito_body.append(small_note(MITO_NOTE))
     a("mito", card(S["mito"], "Mitochondrial Analysis", mito_body, full=bool(ma.get("variants"))))
 

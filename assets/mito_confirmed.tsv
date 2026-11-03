@@ -1,0 +1,11 @@
+# assets/mito_confirmed.tsv: confirmed mtDNA disease variants, named in step 20's report section.
+# Written by scripts/ci/build-mito-confirmed.sh from ClinVar (variation id, gene, HGVS) and the primary
+# papers (disease, pmids, note): edit the script's CURATED table, then rerun it; never edit this file.
+# pos, end: rCRS (chrM) positions of the changed bases; a deletion's are its first and last deleted base.
+kind	pos	end	ref	alt	hgvs	gene	disease	clinvar_id	pmids	heteroplasmy_note
+snv	3243	3243	A	G	m.3243A>G	MT-TL1	MELAS (mitochondrial encephalomyopathy, lactic acidosis and stroke-like episodes); maternally inherited diabetes and deafness	9589	2102678	Usually heteroplasmic; the level differs between tissues and is often lower in blood than in muscle or urine.
+snv	8344	8344	A	G	m.8344A>G	MT-TK	MERRF (myoclonic epilepsy with ragged-red fibres)	9579	2112427	Usually heteroplasmic; the level differs between tissues.
+snv	11778	11778	G	A	m.11778G>A	MT-ND4	Leber hereditary optic neuropathy (LHON)	9708	3201231	Usually homoplasmic; not everyone who carries it loses vision.
+snv	3460	3460	G	A	m.3460G>A	MT-ND1	Leber hereditary optic neuropathy (LHON)	9722	1928099	Usually homoplasmic; not everyone who carries it loses vision.
+snv	14484	14484	T	C	m.14484T>C	MT-ND6	Leber hereditary optic neuropathy (LHON)	9688	1417830	Usually homoplasmic; not everyone who carries it loses vision.
+deletion	8470	13446	.	.	m.8483_13459del	MT-ATP6,MT-ATP8,MT-CO3,MT-ND3,MT-ND4,MT-ND4L,MT-ND5,MT-TG,MT-TH,MT-TL2	The common 4977 bp deletion, between two 13 bp direct repeats: Kearns-Sayre syndrome, chronic progressive external ophthalmoplegia (CPEO), Pearson syndrome	430680	2711184;2541333;20301382	A single large deletion is heteroplasmic and usually arises new rather than inherited; in Kearns-Sayre syndrome and CPEO it is often found in muscle and not in blood, in Pearson syndrome in blood.
