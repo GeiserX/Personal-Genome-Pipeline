@@ -827,13 +827,22 @@ BLOODTYPE = [
     ("Diego", "Di(a-b+)", "Dib/Dib", "high", ""),
     ("Dombrock", "Do(a+b+)", "Doa/Dob", "medium", ""),
     ("Colton", "Co(a+b-)", "Coa/Coa", "high", ""),
+    ("Vel", "Vel+", "Vel/Vel", "high", ""),
+    ("Langereis", "Lan+", "Lan/Lan", "high", ""),
+    ("Junior", "Jr(a+)", "Jra/Jra", "high", ""),
+    ("H", "H+", "H/H", "high", ""),
+    ("Secretor", "non-secretor", "se/se", "high",
+     "null allele: FUT2 c.461G>A x2; weak secretor alleles (such as FUT2 c.418A>T, also written c.385A>T) "
+     "and a deletion of the whole FUT2 gene are not assessed"),
     ("HPA-1", "HPA-1(a+b-)", "1a/1a", "high", ""),
     ("HPA-2", "HPA-2(a+b-)", "2a/2a", "high", ""),
     ("HPA-3", "HPA-3(a+b+)", "3a/3b", "high", ""),
     ("HPA-4", "HPA-4(a+b-)", "4a/4a", "high", ""),
     ("HPA-5", "HPA-5(a+b-)", "5a/5a", "high", ""),
     ("HPA-6", "HPA-6(a+b-)", "6a/6a", "high", ""),
+    *[(f"HPA-{n}", f"HPA-{n}(a+b-)", f"{n}a/{n}a", "high", "") for n in range(7, 15)],
     ("HPA-15", "HPA-15(a+b+)", "15a/15b", "high", ""),
+    *[(f"HPA-{n}", f"HPA-{n}(a+b-)", f"{n}a/{n}a", "high", "") for n in range(16, 36)],
     ("HNA-1", "HNA-1(a+b+c-)", "FCGR3B*01/FCGR3B*02", "low",
      "FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): "
      "short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) "
