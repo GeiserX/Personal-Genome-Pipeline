@@ -290,9 +290,20 @@ def cmd_genotypes(a):
                 pending = next(vcf, None)
             continue
         # The sample's calls on this chromosome, merged with the table by position.
-        calls = {}
+        # A position can come twice, as in a VCF split with bcftools norm -m-:
+        # an SNV beside an insertion or a multi-allelic record keeps the SNV,
+        # whichever comes first, and two different SNVs make it unknown (9).
+        calls, clash = {}, set()
         while pending is not None and pending[0] == chrom:
-            calls[pending[1]] = pending[2:]
+            pos, call = pending[1], pending[2:]
+            prev = calls.get(pos)
+            if pos in clash:
+                pass
+            elif prev is None or (prev[1] is None and call[1] is not None):
+                calls[pos] = call
+            elif call[1] is not None and call[1] != prev[1]:
+                calls[pos] = (prev[0], None, 9)
+                clash.add(pos)
             pending = next(vcf, None)
         n = first = last = dropped = carried = 0
         num = chrom[3:]

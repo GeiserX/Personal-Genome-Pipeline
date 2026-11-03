@@ -11,7 +11,9 @@ Checks:
   2. genotypes: the stand-in columns carry the population's ALT count; your
      column is your ALT count, 0 where your VCF has no record, 9 for a
      non-PASS record; a site where your VCF has another ALT is left out; a
-     chromosome your VCF has no record on is not analysed;
+     chromosome your VCF has no record on is not analysed; in a split VCF an
+     SNV keeps its call beside an insertion or a multi-allelic record at the
+     same position, and two different SNVs there are unknown (9);
   3. report: Altai and Vindija segments merge into Neanderthal ones, a
      Denisova segment that overlaps one is not counted as Denisovan, segments
      under 50 kb or LOD 4 are dropped, the share is of the analysed span, and
@@ -133,6 +135,26 @@ check("samples.txt: SAMPLE and the stand-ins", samples[0] == "SAMPLE" and len(sa
 write(f"{TMP}/two.vcf", "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tA\tB\n")
 r = run("genotypes", "--table-dir", tdir, "--vcf", f"{TMP}/two.vcf", "--out-dir", f"{TMP}/gt2")
 check("a two-sample VCF stops the step", r.returncode != 0 and "one-sample" in r.stderr, r.stderr)
+# One position twice, as bcftools norm -m- writes it: the SNV is kept beside an
+# insertion or a multi-allelic record, in either order; two SNVs are unknown.
+write(f"{TMP}/split.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n"
+      "chr22\t1000\t.\tA\tAT\t50\tPASS\t.\tGT\t0/1\n"
+      "chr22\t1000\t.\tA\tG\t50\tPASS\t.\tGT\t0/1\n"
+      "chr22\t2000\t.\tC\tT\t50\tPASS\t.\tGT\t1/1\n"
+      "chr22\t2000\t.\tC\tCA\t50\tPASS\t.\tGT\t0/1\n"
+      "chr22\t3000\t.\tG\tA,GT\t50\tPASS\t.\tGT\t1/2\n"
+      "chr22\t3000\t.\tG\tA\t50\tPASS\t.\tGT\t0/1\n"
+      "chr22\t4000\t.\tT\tC\t50\tPASS\t.\tGT\t0/1\n"
+      "chr22\t4000\t.\tT\tG\t50\tPASS\t.\tGT\t0/1\n"
+      "chr22\t4000\t.\tT\tC\t50\tPASS\t.\tGT\t0/1\n")
+r = run("genotypes", "--table-dir", tdir, "--vcf", f"{TMP}/split.vcf", "--pseudo", "10", "--out-dir", f"{TMP}/gt3")
+check("genotypes on a split VCF exits 0", r.returncode == 0, r.stderr)
+g3 = {int(l.split("\t")[1]): l.split("\t") for l in gzip.open(f"{TMP}/gt3/chr22.gt.gz", "rt").read().splitlines()[1:]}
+check("an insertion before the SNV at one position keeps the SNV call", g3.get(1000, [""] * 8)[7] == "1", g3.get(1000))
+check("an insertion after the SNV at one position keeps the SNV call", g3.get(2000, [""] * 8)[7] == "2", g3.get(2000))
+check("a multi-allelic record beside the SNV keeps the SNV call", g3.get(3000, [""] * 8)[7] == "1", g3.get(3000))
+check("two different SNVs at one position are unknown (9), also when a third record follows",
+      g3.get(4000, [""] * 8)[7] == "9", g3.get(4000))
 
 # --- 3. report ---------------------------------------------------------------------
 idir = f"{TMP}/ibd"
