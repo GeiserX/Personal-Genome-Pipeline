@@ -818,6 +818,9 @@ def main():
         app.routes = [(m, rx, fn, True) for m, rx, fn, _ in app.routes]
         adir = os.path.join(work, "assets")
         shutil.copytree(ASSETS, adir)
+        # start from no plugins, so the plugins this repo ships do not change the count
+        for f in os.listdir(os.path.join(adir, "plugins")):
+            os.remove(os.path.join(adir, "plugins", f))
         for f in ("a.js", "b.js", "notes.txt"):
             open(os.path.join(adir, "plugins", f), "w").write("// plugin\n")
         live.cfg.assets = adir
