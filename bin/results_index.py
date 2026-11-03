@@ -22,7 +22,9 @@ What it reads:
     SYMBOL and Existing_variation), else from the VCF the Nextflow report
     stages (INFO/PGP_GENE of the clinical VCF, the CSQ entries
     collect_summary.csq_rank picks in the prioritized VCF). Both forms give
-    the same entry for the same variant.
+    the same entry for the same variant when its most severe consequence is
+    on the transcript csq_rank picks; the slivar TSV keeps the gene of the
+    most severe one (split-vep -s worst), so the two can differ there.
 A section that is missing, failed or unreadable gives no entry.
 
 The index:

@@ -9,7 +9,9 @@ Nextflow report stages.
 Checks:
   1. every term the index finds in summary.json, genome_lookup.summary_lines
      finds too, through the one names_of() rule: with a GENE_KEYS entry
-     removed both lose CYP2C19 (so the check can fail);
+     removed both lose CYP2C19 (so the check can fail); a gene field that
+     holds prose ("VDBP (GC)", "SMN exon 7-8 deletion") gives its symbols
+     only;
   2. the step 23 and 31 genes come from the TSV on the bash path and from the
      VCF on the Nextflow path, and both give the same entries; with the VCF
      reader removed the Nextflow form has none (red);
@@ -149,6 +151,21 @@ def main():
             genome_lookup.GENE_KEYS = keep
         check("red control: without the 'gene' key both the index and the lookup lose CYP2C19",
               "CYP2C19" not in gone and "none of the reports mentions CYP2C19" in said, (sorted(gone), said))
+
+        # A gene field that holds prose ("SMN exon 7-8 deletion" from
+        # paraphase_report.py, "VDBP (GC)" from assets/traits.tsv): only the
+        # symbols are terms.
+        prose = copy.deepcopy(s_tsv)
+        prose["sections"]["mito"].update(state="ok", data={"variants": [{"gene": "SMN exon 7-8 deletion"},
+                                                                         {"gene": "VDBP (GC)"}]})
+        ppath = os.path.join(work, "summary-prose.json")
+        with open(ppath, "w") as f:
+            json.dump(prose, f)
+        pt = set(results_index.build(prose, tsv, render_report.SECTION_OF)["terms"])
+        check("a prose gene field: SMN, VDBP and GC are terms; EXON, DELETION, 7-8 and (GC) are not",
+              {"SMN", "VDBP", "GC"} <= pt and not {"EXON", "DELETION", "7-8", "(GC)", "(GC"} & pt, sorted(pt))
+        check("a prose gene field: the lookup finds GC too",
+              "none of the reports mentions GC" not in lookup_says(ppath, "GC"), lookup_says(ppath, "GC"))
 
         # 2. bash and Nextflow forms
         nf = results_index.build(s_vcf, vcf, render_report.SECTION_OF)

@@ -460,9 +460,11 @@ RSID_RE = re.compile(r"(?i)^rs\d+$")
 
 def names_of(obj):
     """(genes, rsids) a summary.json dict names itself: the genes of its gene
-    keys (GENE_KEYS; a string is split on , ; & / and spaces, a dict gives
-    its keys), upper-cased, and the rsIDs of its rsid and rsids keys,
-    lower-cased. '.' and '' are no name. bin/results_index.py builds the
+    keys (GENE_KEYS; a string is split on , ; & / ( ) and spaces and keeps
+    the words that hold an upper-case letter, so "VDBP (GC)" gives VDBP and
+    GC and the prose of "SMN exon 7-8 deletion" gives SMN only; a list gives
+    its strings, a dict its keys), upper-cased, and the rsIDs of its rsid and
+    rsids keys, lower-cased. '.' and '' are no name. bin/results_index.py builds the
     search index with this same function, so a lookup and the search find
     the same mentions."""
     genes, rsids = set(), set()
@@ -471,7 +473,7 @@ def names_of(obj):
     for k in GENE_KEYS:
         v = obj.get(k)
         if isinstance(v, str):
-            names = re.split(r"[,;&/ ]+", v)
+            names = [n for n in re.split(r"[,;&/ ()]+", v) if n != n.lower()]
         elif isinstance(v, list):
             names = [x for x in v if isinstance(x, str)]
         elif isinstance(v, dict):
