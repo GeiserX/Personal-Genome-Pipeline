@@ -277,6 +277,50 @@ def main():
                 f.write(src.replace(a, b))
             d, txt, _ = delta(w, prev, cur, "mutant", tool=mtool)
             check(f"fails on a planted mistake: {name}", not new_checks[name](d, txt), "passed on the mutant")
+
+        # 7. a check older than the run's manifest describes an earlier run, so it is left out; a rerun
+        # block that is not an object is dropped and the delta is still written.
+        late, odd = os.path.join(w, "late"), os.path.join(w, "odd")
+        write_run(late, s, set_row(MANIFEST, "run", "written_utc", "2026-03-01 00:00:00 UTC"))
+        write_run(odd, s, MANIFEST)
+        st = json.load(open(os.path.join(cur, "recheck", "state.json")))
+        for d_, rerun in ((late, None), (odd, [1])):
+            os.makedirs(os.path.join(d_, "recheck"))
+            with open(os.path.join(d_, "recheck", "state.json"), "w") as f:
+                json.dump(dict(st, rerun=rerun), f)
+        recheck_checks = {
+            "re-check: one older than the run's manifest is left out":
+                (late, lambda rc, d, t: rc == 0 and "recheck" not in d and "Database re-check" not in t),
+            "re-check: a rerun block that is not an object is dropped, the delta still written":
+                (odd, lambda rc, d, t: rc == 0 and (d.get("recheck") or {}).get("affected_steps") == ["06", "24"]
+                 and d["recheck"].get("rerun") is None),
+        }
+        recheck_planted = {
+            "re-check: one older than the run's manifest is left out":
+                ('if utc14(man.get(("run", "written_utc"))) > utc14(st.get("checked_utc")):', "if False:"),
+            "re-check: a rerun block that is not an object is dropped, the delta still written":
+                ('"rerun": st.get("rerun") if isinstance(st.get("rerun"), dict) else None}', '"rerun": st.get("rerun")}'),
+        }
+
+        def quiet_delta(cur_dir, name, tool=TOOL):
+            out = os.path.join(w, name)
+            p = subprocess.run([sys.executable, tool, "--sample", "S", "--summary", os.path.join(cur_dir, "summary.json"),
+                                "--manifest", os.path.join(cur_dir, "run_manifest.tsv"), "--out", out, "--previous", prev],
+                               capture_output=True, text=True)
+            try:
+                return p.returncode, json.load(open(out + ".json")), open(out + ".txt").read()
+            except (OSError, ValueError):
+                return p.returncode, {}, ""
+        for name, (d_, fn) in recheck_checks.items():
+            rc, d, txt = quiet_delta(d_, "rc-" + os.path.basename(d_))
+            check(name, fn(rc, d, txt), (rc, d.get("recheck")))
+            a_, b_ = recheck_planted[name]
+            check(f"planted mistake is in the copy: {name}", a_ in src, a_)
+            mtool = os.path.join(w, "run_delta_mutant.py")
+            with open(mtool, "w") as f:
+                f.write(src.replace(a_, b_))
+            rc, d, txt = quiet_delta(d_, "rc-mutant-" + os.path.basename(d_), tool=mtool)
+            check(f"fails on a planted mistake: {name}", not fn(rc, d, txt), "passed on the mutant")
     finally:
         shutil.rmtree(w)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")

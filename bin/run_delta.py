@@ -271,11 +271,21 @@ def read_recheck(path):
         return None
     if not isinstance(st, dict) or not isinstance(st.get("items"), list):
         return None
+    # A check of an earlier run: <sample>/run_manifest.tsv was written after it, so its "newer than
+    # the run used" may already be what this run used. Not shown; the next check replaces it.
+    man = read_manifest(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(path))), "run_manifest.tsv"))
+    if utc14(man.get(("run", "written_utc"))) > utc14(st.get("checked_utc")):
+        return None
     return {"checked_utc": st.get("checked_utc"),
             "items": [{k: i.get(k) for k in ("item", "label", "class", "ran_with", "upstream", "action")}
                       for i in st["items"] if isinstance(i, dict)],
             "affected_steps": st.get("affected_steps") or [],
-            "rerun": st.get("rerun")}
+            "rerun": st.get("rerun") if isinstance(st.get("rerun"), dict) else None}
+
+
+def utc14(text):
+    """'2026-09-02 12:00:00 UTC' or '2026-09-02T12:00:00Z' as '20260902120000'; '' without one."""
+    return "".join(c for c in str(text or "") if c.isdigit())[:14]
 
 
 def load_json(path):

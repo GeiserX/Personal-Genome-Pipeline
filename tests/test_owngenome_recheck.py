@@ -26,12 +26,15 @@ Each check is then run against a planted mistake and must fail there.
 Run: python3 tests/test_owngenome_recheck.py
 """
 import contextlib
+import fcntl
 import gzip
 import http.server
 import importlib.util
 import io
 import json
 import os
+import re
+import shlex
 import shutil
 import sys
 import tempfile
@@ -72,15 +75,25 @@ def clinvar_file(path, date):
         f.write(f"##fileformat=VCFv4.1\n##fileDate={date}\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
 
 
-def genome(tmp, installed_clinvar="20260901", finished=True):
+def genome(tmp, installed_clinvar="20260901", finished=True, installed_pgs=None, run_clinvar=None,
+           command="echo replayed"):
     g = os.path.join(tmp, "genome")
     s = os.path.join(g, "S1")
     os.makedirs(os.path.join(s, "logs"), exist_ok=True)
     shutil.copy(os.path.join(FIX, "run_manifest.tsv"), os.path.join(s, "run_manifest.tsv"))
+    if run_clinvar is not None:  # the run's ClinVar row as given ("" drops it)
+        rows = [x for x in open(os.path.join(s, "run_manifest.tsv")) if not x.startswith("data\tclinvar_file_date\t")]
+        if run_clinvar:
+            rows.append(f"data\tclinvar_file_date\t{run_clinvar} (clinvar/clinvar_pathogenic_chr.vcf.gz)\n")
+        open(os.path.join(s, "run_manifest.tsv"), "w").writelines(rows)
     clinvar_file(os.path.join(g, "clinvar", "clinvar_pathogenic_chr.vcf.gz"), installed_clinvar)
+    if installed_pgs:
+        os.makedirs(os.path.join(g, "prs_scores"), exist_ok=True)
+        with gzip.open(os.path.join(g, "prs_scores", "PGS000001.txt.gz"), "wt") as f:
+            f.write(f"#HmPOS_date={installed_pgs}\n")
     with open(os.path.join(s, "logs", "run_status.tsv"), "w") as f:
         f.write("meta\tstarted_epoch\t1000\nmeta\tstarted_utc\t2026-09-02 10:00:00 UTC\n"
-                "meta\tcommand\techo replayed\nmeta\tswitches\tGENOME_DIR TOOLS\n")
+                f"meta\tcommand\t{command}\nmeta\tswitches\tGENOME_DIR TOOLS\n")
         if finished:
             f.write("meta\tfinished_utc\t2026-09-02 12:00:00 UTC\n")
     return g
@@ -130,6 +143,32 @@ def all_checks(m):
         out["a newer PGS file upstream is upstream-only, steps 24 25 26"] = (
             p["class"] == "upstream-only" and p["steps"] == ["24", "25", "26"], p)
 
+        gp = genome(os.path.join(tmp, "pgs"), installed_pgs="2026-09-01")
+        stp = m.check("S1", gp, answers(m, gp), steps, THIS_PINS, "3.66.0")
+        out["a newer PGS file installed here is rerun-ready, steps 24 25 26"] = (
+            by_item(stp)["pgs:PGS000001"]["class"] == "rerun-ready"
+            and stp["rerun_ready_steps"] == ["24", "25", "26"], by_item(stp)["pgs:PGS000001"])
+
+        try:
+            gi = genome(os.path.join(tmp, "impossible"), run_clinvar="20260230")
+            ci = by_item(m.check("S1", gi, answers(m, gi), steps, THIS_PINS, "3.66.0"))["clinvar_file_date"]
+            out["an impossible ClinVar date of the run is error, not a crash"] = (
+                ci["class"] == "error" and "does not say" in ci["error"], ci)
+        except ValueError as e:
+            out["an impossible ClinVar date of the run is error, not a crash"] = (False, e)
+        gn = genome(os.path.join(tmp, "nodate"), run_clinvar="")
+        cn = by_item(m.check("S1", gn, answers(m, gn), steps, THIS_PINS, "3.66.0"))["clinvar_file_date"]
+        out["a run whose manifest has no ClinVar date is error"] = (cn["class"] == "error", cn)
+
+        ph = by_item(m.check("S1", g, answers(m, g, PHARMCAT_IMAGE={"upstream": "latest"}), steps, THIS_PINS,
+                             "3.66.0"))["PHARMCAT_IMAGE"]
+        out["an answer that names no release number is error"] = (
+            ph["class"] == "error" and "names no release" in ph["error"], ph)
+
+        hl = by_item(m.check("S1", g, answers(m, g), steps, THIS_PINS, None))["hla_database"]
+        out["an unread HLA_DB_RELEASE in this checkout is error"] = (
+            hl["class"] == "error" and "HLA_DB_RELEASE" in hl["error"], hl)
+
         bad = by_item(m.check("S1", g, answers(m, g, PHARMCAT_IMAGE={"error": "HTTP 500"}), steps, THIS_PINS,
                               "3.66.0"))["PHARMCAT_IMAGE"]
         srv, port = serve_500()
@@ -173,6 +212,32 @@ def all_checks(m):
             rc = m.main(["--sample", "S1", "--genome-dir", g4, "--offline", os.path.join(FIX, "offline.json"), "--rerun"])
         out["--rerun refuses while a run is going on"] = (rc == 3 and "going on" in e.getvalue(), (rc, e.getvalue()))
 
+        gl = genome(os.path.join(tmp, "lock"))
+        os.makedirs(os.path.join(gl, "S1", "recheck"), exist_ok=True)
+        e = io.StringIO()
+        with open(os.path.join(gl, "S1", "recheck", "rerun.lock"), "a") as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(e):
+                rc = m.main(["--sample", "S1", "--genome-dir", gl, "--offline", os.path.join(FIX, "offline.json"), "--rerun"])
+        out["--rerun refuses while another --rerun of the sample holds the lock"] = (
+            rc == 3 and "another --rerun" in e.getvalue(), (rc, e.getvalue()))
+
+        # The replay writes a manifest that used the newer ClinVar: the state after it must say so.
+        newman = os.path.join(tmp, "new_manifest.tsv")
+        with open(os.path.join(FIX, "run_manifest.tsv")) as f, open(newman, "w") as o:
+            for x in f:
+                o.write("data\tclinvar_file_date\t20261005 (clinvar/clinvar_pathogenic_chr.vcf.gz)\n"
+                        if x.startswith("data\tclinvar_file_date\t") else x)
+        gr = genome(os.path.join(tmp, "after"), installed_clinvar="20261005",
+                    command="cp " + shlex.quote(newman) + " " + shlex.quote(os.path.join(tmp, "after", "genome", "S1", "run_manifest.tsv")))
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = m.main(["--sample", "S1", "--genome-dir", gr, "--offline", os.path.join(FIX, "offline.json"), "--rerun"])
+        sr = json.load(open(os.path.join(gr, "S1", "recheck", "state.json")))
+        cr = by_item(sr)["clinvar_file_date"]
+        out["after --rerun the check is taken again on the manifest the rerun wrote"] = (
+            rc == 0 and cr["class"] == "no-newer-release" and cr["ran_with"] == "20261005"
+            and (sr.get("rerun") or {}).get("rc") == 0, (rc, cr, sr.get("rerun")))
+
         rs = {"steps": [
             {"step": "06", "processes": {"CLINVAR_SCREEN": {"done": 1, "cached": 0}}},
             {"step": "13", "processes": {"VEP": {"done": 0, "cached": 1}}},
@@ -191,6 +256,12 @@ def all_checks(m):
                     "2026-09-02 10:00:00\t2h\tlast_run\tOK\tabc\tsess2\tnextflow run main.nf --input b.csv\n")
         out["--launch-dir gives the last command with -resume"] = (
             m.launch_dir_command(ld) == "nextflow run main.nf --input b.csv -resume", m.launch_dir_command(ld))
+        lq = os.path.join(tmp, "launch-q")
+        os.makedirs(os.path.join(lq, ".nextflow"))
+        with open(os.path.join(lq, ".nextflow", "history"), "w") as f:
+            f.write("2026-09-02 10:00:00\t2h\tlast_run\tOK\tabc\tsess2\tnextflow run main.nf --input 'data -resume old.csv'\n")
+        out["--launch-dir: an argument holding -resume is not the option"] = (
+            m.launch_dir_command(lq) == "nextflow run main.nf --input 'data -resume old.csv' -resume", m.launch_dir_command(lq))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return out
@@ -289,6 +360,48 @@ def mutants():
     m = load()
     m.launch_dir_command = lambda d: "nextflow run main.nf --input b.csv"
     ms["--launch-dir gives the last command with -resume"] = m
+    m = load()
+    m.header_value = lambda *a: None
+    ms["a newer PGS file installed here is rerun-ready, steps 24 25 26"] = m
+    m = load()
+
+    def date8_unchecked(text):
+        x = re.search(r"(\d{4})-?(\d{2})-?(\d{2})", str(text or ""))
+        return "".join(x.groups()) if x else None
+    m.date8 = date8_unchecked
+    ms["an impossible ClinVar date of the run is error, not a crash"] = m
+    m = load()
+    oc3 = m.classify
+
+    def installed_as_ran(item, *a, **k):
+        item.setdefault("ran_with", None)
+        item["ran_with"] = item["ran_with"] or item.get("installed")
+        return oc3(item, *a, **k)
+    m.classify = installed_as_ran
+    ms["a run whose manifest has no ClinVar date is error"] = m
+    m = load()
+    ov = m.ver
+    m.ver = lambda text: ov(text) or (0,)
+    ms["an answer that names no release number is error"] = m
+    m = load()
+    ock = m.check
+    m.check = lambda sample, g, a, steps, pins, hla: ock(sample, g, a, steps, pins, hla or "3.66.0")
+    ms["an unread HLA_DB_RELEASE in this checkout is error"] = m
+    m = load()
+    m.fcntl = type("F", (), {"LOCK_EX": 0, "LOCK_NB": 0, "flock": staticmethod(lambda *a: None)})
+    m.subprocess = type("SP", (), {"run": staticmethod(lambda *a, **k: type("R", (), {"returncode": 0})())})
+    ms["--rerun refuses while another --rerun of the sample holds the lock"] = m
+    m = load()
+    orm, seen = m.read_manifest, {}
+    m.read_manifest = lambda path: seen.setdefault(path, orm(path))  # the manifest as first read: no check after
+    ms["after --rerun the check is taken again on the manifest the rerun wrote"] = m
+    m = load()
+
+    def regex_resume(d):
+        cmd = open(os.path.join(d, ".nextflow", "history")).read().splitlines()[-1].split("\t")[-1].strip()
+        return cmd if re.search(r"(^|\s)-resume(\s|$)", cmd) else cmd + " -resume"
+    m.launch_dir_command = regex_resume
+    ms["--launch-dir: an argument holding -resume is not the option"] = m
     return ms
 
 
@@ -334,6 +447,36 @@ def plugin_ok(p):
     return ok, (app.globs, none, got)
 
 
+def plugin_odd_rerun_ok(p):
+    """A rerun block that is not an object: the banner still comes, no badge from it."""
+    tmp = tempfile.mkdtemp(prefix="recheck-live-odd.")
+    try:
+        run = os.path.join(tmp, "S1")
+        os.makedirs(os.path.join(run, "recheck"))
+        out = []
+        for rr in ([1], {"finished_utc": "2026-10-05T10:00:00Z", "predicted_vs_redone": ["06"]}):
+            json.dump({"checked_utc": "2026-10-06T00:00:00Z", "items": [], "rerun": rr},
+                      open(os.path.join(run, "recheck", "state.json"), "w"))
+            try:
+                out.append(p.recheck_state(run, {}, []))
+            except (AttributeError, TypeError) as e:
+                out.append(e)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    ok = all(isinstance(g, dict) and g.get("steps") == {} and "nothing newer" in g.get("banner", "") for g in out)
+    return ok, out
+
+
+def plugin_from_source(src, name):
+    p = os.path.join(REPO, "tmp") if os.path.isdir(os.path.join(REPO, "tmp")) else tempfile.gettempdir()
+    path = os.path.join(tempfile.mkdtemp(prefix="recheck-plugin.", dir=p), name + ".py")
+    open(path, "w").write(src)
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def main():
     ok, detail = plugin_ok(load_plugin())
     check("the live-site plugin serves the check and gives each step its badges", ok, detail)
@@ -341,6 +484,14 @@ def main():
     bad.ACT = dict(bad.ACT, **{"refresh-available": "newer {name}"})
     check("fails on a planted mistake: the live-site plugin serves the check and gives each step its badges",
           not plugin_ok(bad)[0], "passed on the mutant")
+    ok, detail = plugin_odd_rerun_ok(load_plugin())
+    check("the live-site plugin survives a rerun block that is not an object", ok, detail)
+    src = open(os.path.join(REPO, "bin", "owngenome_live_recheck.py")).read()
+    guard = "rr = rr if isinstance(rr, dict) else {}"
+    check("planted mistake is in the copy: the live-site plugin survives a rerun block that is not an object", guard in src)
+    unguarded = plugin_from_source(src.replace(guard, "rr = rr or {}"), "owngenome_live_recheck_unguarded")
+    check("fails on a planted mistake: the live-site plugin survives a rerun block that is not an object",
+          not plugin_odd_rerun_ok(unguarded)[0], "passed on the mutant")
     results = all_checks(load())
     for name, (ok, detail) in results.items():
         check(name, ok, detail)

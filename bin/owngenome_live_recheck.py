@@ -44,9 +44,11 @@ def recheck_state(run_dir, state, events):
                 steps.setdefault(n, []).append(text)
         elif c in ("in-pipeline-release", "upstream-only", "error"):
             newer.append(f"{short(i.get('label') or i.get('item'))}: {c}")
-    rr = st.get("rerun") or {}
-    done = (rr.get("finished_utc") or "")[:10]
-    for n in ((rr.get("predicted_vs_redone") or {}).get("redone") or []) if done else []:
+    rr = st.get("rerun")
+    rr = rr if isinstance(rr, dict) else {}
+    done = str(rr.get("finished_utc") or "")[:10]
+    pvr = rr.get("predicted_vs_redone")
+    for n in ((pvr.get("redone") if isinstance(pvr, dict) else None) or []) if done else []:
         steps.setdefault(n, []).append(f"redone {done}")
     banner = (f"Database re-check of {st.get('checked_utc') or 'unknown date'}: "
               + ("; ".join(newer) if newer else "nothing newer than this run"))

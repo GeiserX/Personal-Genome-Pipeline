@@ -59,11 +59,11 @@ python3 bin/owngenome_recheck.py --sample your_sample --rerun
 python3 bin/owngenome_recheck.py --sample your_sample --rerun --refresh-clinvar   # refresh ClinVar first
 ```
 
-`run-all.sh` writes its own command into `logs/run_status.tsv` (`meta command`: a `cd` to the directory it was run from, the switches it reads that were set, then its arguments, each shell-quoted; `meta switches`: the names of those switches). `--rerun` runs that command again with those switches only, so a `TOOLS` set in your shell today does not change the run. Nextflow's `-resume` then redoes only the tasks whose inputs changed.
+`run-all.sh` writes its own command into `logs/run_status.tsv` (`meta command`: a `cd` to the directory it was run from, the switches it reads that were set, then its arguments, each shell-quoted; `meta switches`: the names of those switches). `--rerun` runs that command again with those switches only, so a `TOOLS` set in your shell today does not change the run. `NXF_OPTS` and `NXF_JVM_ARGS` are not recorded, because they can hold a proxy password; the replay takes them from your shell. Nextflow's `-resume` then redoes only the tasks whose inputs changed.
 
-It refuses while a run of the sample is going on (`run_status.tsv` has no `finished_utc`). A run that was killed without its exit trap leaves no `finished_utc` either: run `run-all.sh` by hand once, and the next check can rerun again.
+It refuses while a run of the sample is going on (`run_status.tsv` has no `finished_utc`), and while another `--rerun` of the sample holds `recheck/rerun.lock`. A run that was killed without its exit trap leaves no `finished_utc` either: run `run-all.sh` by hand once, and the next check can rerun again.
 
-When the run ends, it compares the steps that ran a task again with the steps the check named, and records the difference. The script steps (04b, 14, 29, 03a to 03d) skip when their output exists, so a named one is listed as not redone: delete its output and run its script. A sample that started from FASTQ redoes more once: the first `run-all.sh` call after a run that ended with every task done starts from the BAM and VCF that run published ([the delta report](delta-report.md)), so every step after the variant calls runs again and is listed as redone but not named. Later reruns redo only what the check names.
+When the run ends, it compares the steps that ran a task again with the steps the check named, and records the difference. Then it checks again against the run manifest the rerun wrote, with the answers it already has, so `state.json` no longer calls ready what the rerun has just used. The script steps (04b, 14, 29, 03a to 03d) skip when their output exists, so a named one is listed as not redone: delete its output and run its script. A sample that started from FASTQ redoes more once: the first `run-all.sh` call after a run that ended with every task done starts from the BAM and VCF that run published ([the delta report](delta-report.md)), so every step after the variant calls runs again and is listed as redone but not named. Later reruns redo only what the check names.
 
 A sample last run by an older `run-all.sh` has no `meta command` row: run the same command once by hand.
 
@@ -79,10 +79,11 @@ python3 bin/owngenome_recheck.py --launch-dir /path/to/launch/dir
 
 - `<sample>/recheck/state.json`, replaced whole on each check: `checked_utc`, the hosts asked, the pipeline release it read, one entry per item (`item`, `label`, `ran_with`, `installed`, `upstream`, `class`, `steps`, `action`, and `error` or `in_owngenome_release` when they apply), `affected_steps` (the steps a rerun would redo for the `rerun-ready` and `refresh-available` items), and after a rerun a `rerun` block (`started_utc`, `finished_utc`, `rc`, `command`, `predicted_vs_redone`). The last rerun stays until another one replaces it.
 - `<sample>/recheck/log.tsv`, only ever appended: one row per item and check, and a row as each rerun starts and ends.
+- `<sample>/recheck/rerun.lock`, an empty file each `--rerun` locks while it runs.
 
 ## In the reports and on the live site
 
-The next reports read `recheck/state.json`: both show one "Database re-check" line in the run facts. When the sample has a previous run in `history/` ([the delta report](delta-report.md)), a section whose results changed since it carries a badge such as "New since 2026-10-01T09:15:00Z", in both reports, and the delta report heads its changes the same way. The live site's re-check plugin (`bin/owngenome_live_recheck.py`, `assets/live/plugins/recheck.js`) shows the same line as a banner and marks each named step on the step map with a dot whose tooltip says "newer ClinVar available" or "redone 2026-10-05".
+The next reports read `recheck/state.json`: both show one "Database re-check" line in the run facts. A check older than the sample's `run_manifest.tsv` describes an earlier run, so the reports leave it out until the next check. When the sample has a previous run in `history/` ([the delta report](delta-report.md)), a section whose results changed since it carries a badge such as "New since 2026-10-01T09:15:00Z", in both reports, and the delta report heads its changes the same way. The live site's re-check plugin (`bin/owngenome_live_recheck.py`, `assets/live/plugins/recheck.js`) shows the same line as a banner and marks each named step on the step map with a dot whose tooltip says "newer ClinVar available" or "redone 2026-10-05".
 
 The Nextflow `HTML_REPORT` process sees no `history/` folder, so its report has no "New since" badge.
 

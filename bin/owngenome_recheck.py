@@ -39,11 +39,13 @@ skip when their output exists, as not redone. --refresh-clinvar runs
 setup.sh --refresh clinvar first. Standard library only.
 """
 import argparse
+import fcntl
 import gzip
 import importlib.util
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -105,7 +107,43 @@ def ver(text):
 def date8(text):
     """The first date in text as YYYYMMDD ('20261005', '2026-10-05'), or None."""
     m = re.search(r"(\d{4})-?(\d{2})-?(\d{2})", str(text or ""))
-    return "".join(m.groups()) if m else None
+    if not m:
+        return None
+    try:
+        return datetime.strptime("".join(m.groups()), "%Y%m%d").strftime("%Y%m%d")
+    except ValueError:  # an impossible date (20260230) reads as no date, so the item is an error, not a crash
+        return None
+
+
+class Remembered:
+    """The answers of one check, kept, so the check again after --rerun asks nobody a second time."""
+
+    def __init__(self, inner):
+        self.inner, self.hosts, self._seen = inner, inner.hosts, {}
+
+    def _ask(self, name, *args):
+        k = (name,) + args
+        if k not in self._seen:
+            try:
+                self._seen[k] = (True, getattr(self.inner, name)(*args))
+            except Failed as e:
+                self._seen[k] = (False, e)
+        ok, v = self._seen[k]
+        if not ok:
+            raise v
+        return v
+
+    def clinvar(self):
+        return self._ask("clinvar")
+
+    def pinned(self, key, lookup, pattern):
+        return self._ask("pinned", key, lookup, pattern)
+
+    def pgs(self, pgs_id):
+        return self._ask("pgs", pgs_id)
+
+    def release(self):
+        return self._ask("release")
 
 
 # --- the files ------------------------------------------------------------------------------
@@ -316,11 +354,11 @@ def classify(item, release_tag, release_pins, release_error, clinvar=False):
     ran, inst, up = item.get("ran_with"), item.get("installed"), item.get("upstream")
     if inst and ran and ver(inst) > ver(ran):
         return "rerun-ready"
-    base = inst or ran
-    if not base:
+    if not ran:
         item.setdefault("error", "the manifest does not say which release the run used")
         return "error"
-    if not up:
+    base = inst or ran
+    if not ver(up):
         item.setdefault("error", "the answer names no release")
         return "error"
     if clinvar:
@@ -389,8 +427,10 @@ def check(sample, genome_dir, answers, steps, this_pins, this_hla):
     for key, label, lookup, pattern in PINNED:
         ran = pin_value(key, man.get(("data", key)) if key == "hla_database" else version.get(key))
         inst = this_hla if key == "hla_database" else pin_value(key, this_pins.get(key))
-        add({"item": key, "label": label, "kind": "pin", "ran_with": ran, "installed": inst},
-            answers.pinned, key, lookup, pattern)
+        item = {"item": key, "label": label, "kind": "pin", "ran_with": ran, "installed": inst}
+        if key == "hla_database" and not this_hla:
+            item["error"] = "could not read this checkout's HLA_DB_RELEASE (scripts/lib/common.sh)"
+        add(item, answers.pinned, key, lookup, pattern)
     for (sec, key), value in sorted(man.items()):
         if sec != "data" or not key.startswith("pgs:"):
             continue
@@ -402,7 +442,7 @@ def check(sample, genome_dir, answers, steps, this_pins, this_hla):
     return {
         "schema_version": SCHEMA_VERSION, "sample": sample, "checked_utc": now_utc(),
         "manifest_written_utc": man.get(("run", "written_utc")),
-        "offline": isinstance(answers, Offline), "hosts": list(answers.hosts),
+        "offline": isinstance(getattr(answers, "inner", answers), Offline), "hosts": list(answers.hosts),
         "pipeline_release": {"tag": tag} if not rel_err else {"error": rel_err},
         "items": items,
         "affected_steps": affected_steps(steps, act),
@@ -482,6 +522,19 @@ def compare_rerun(predicted, rs, steps):
 
 def rerun(a, genome_dir, sample, steps, state, log):
     sample_dir = os.path.join(genome_dir, sample)
+    os.makedirs(os.path.join(sample_dir, "recheck"), exist_ok=True)
+    # One --rerun per sample at a time: held from the running check through the end of the replay,
+    # so two of them cannot both pass the check and run over each other's run_status.tsv.
+    with open(os.path.join(sample_dir, "recheck", "rerun.lock"), "a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            print(f"ERROR: another --rerun of {sample} is going on: not rerunning.", file=sys.stderr)
+            return 3
+        return _rerun_locked(sample, sample_dir, steps, state, log)
+
+
+def _rerun_locked(sample, sample_dir, steps, state, log):
     rs = run_state.collect(sample, sample_dir)
     if rs["run"]["state"] == "running":
         print(f"ERROR: a run of {sample} is going on (logs/run_status.tsv has no finished_utc): not rerunning. "
@@ -524,7 +577,11 @@ def launch_dir_command(d):
     if not lines:
         return None
     cmd = lines[-1].split("\t")[-1].strip()
-    return cmd if re.search(r"(^|\s)-resume(\s|$)", cmd) else cmd + " -resume"
+    try:
+        words = shlex.split(cmd)
+    except ValueError:
+        words = cmd.split()
+    return cmd if "-resume" in words else cmd + " -resume"
 
 
 def main(argv=None):
@@ -582,6 +639,7 @@ def main(argv=None):
         man = read_manifest(os.path.join(sample_dir, "run_manifest.tsv"))
         pins = {k: v for (sec, k), v in man.items() if sec == "version"}
         answers = Online(fr, pins, a.owngenome_repo, a.pgs_api, a.raw)
+    answers = Remembered(answers)
     state = check(a.sample, a.genome_dir, answers, steps, this_pins, this_hla)
     d = os.path.join(sample_dir, "recheck")
     log = os.path.join(d, "log.tsv")
@@ -600,7 +658,17 @@ def main(argv=None):
     print(f"Written: {os.path.join(d, 'state.json')}")
     errors = [i for i in state["items"] if i["class"] == "error"]
     if a.rerun:
+        before = state.get("rerun")
         rc = rerun(a, a.genome_dir, a.sample, steps, state, log)
+        if state.get("rerun") is not before:
+            # The replay wrote a new run_manifest.tsv: check again against it, with the same answers,
+            # so state.json no longer calls ready what the rerun has just used.
+            fresh = check(a.sample, a.genome_dir, answers, steps, this_pins, this_hla)
+            fresh["rerun"] = state["rerun"]
+            state = fresh
+            append_log(log, [(state["checked_utc"], "check", i["item"], i["class"],
+                              i.get("error") or f"{i.get('ran_with')} {i.get('installed')} {i.get('upstream')}")
+                             for i in state["items"]])
         write_json(os.path.join(d, "state.json"), state)
         if rc:
             return rc
