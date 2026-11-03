@@ -137,7 +137,7 @@ This is every step script that no e2e case runs, plus the full-size index build 
 | Step | Why no e2e case runs it | What checks it instead |
 |---|---|---|
 | 26b (fine-grained ancestry) on the full panel | the install reads about 19 GB from gnomAD's bucket | case `ancestry-fine-grained-1` runs it on a reduced panel of the fixture's regions plus chr22:20-35 Mb |
-| 43 (archaic ancestry) on the whole genome | `setup.sh --archaic` reads about 165 GB of archaic genomes | case `archaic-ancestry-1` runs it on a slice; the `archaic-hg002` jobs of `public-evidence.yml` run setup and step 43 on HG002's 22 autosomes, by hand |
+| 43 (archaic ancestry) on the whole genome | `setup.sh --archaic` reads 150 GB of archaic genomes | case `archaic-ancestry-1` runs it on a slice; the `archaic-hg002` jobs of `public-evidence.yml` run setup and step 43 on HG002's 22 autosomes, by hand |
 | 44 (ancient populations) on the full AADR panel | the install reads the 7.1 GB AADR release and runs smartpca on it for an hour | case `ancient-similarity-1` runs it on a planted panel; the `ancient-footprint` job of `public-evidence.yml` runs setup and step 44 on HG002, by hand |
 | 13 (VEP, offline) | the cache is 26 GB; the fixture's VEP subset was annotated once with `--database` instead | the image's smoke test, which annotates 50 records with `--database` |
 | 17 (CPSR) | the PCGR bundle (about 8 GB) plus a second VEP cache. CI never runs real CPSR | the image's smoke test, and the fake-docker cases for the command line |

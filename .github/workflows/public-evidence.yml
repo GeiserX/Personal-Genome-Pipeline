@@ -8,7 +8,7 @@ name: Public evidence
 #                      downloaded once (its md5 checked) and indexed, for
 #                      every chromosome job.
 #   archaic-hg002      setup.sh --archaic and step 43 on HG002's GIAB v4.2.1
-#                      genotypes, one job per autosome (about 165 GB of
+#                      genotypes, one job per autosome (about 150 GB of
 #                      archaic downloads in all; each job fetches its three
 #                      files side by side first, and setup.sh resumes them
 #                      and checks their md5), then archaic-share joins the
