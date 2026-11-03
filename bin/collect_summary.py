@@ -385,9 +385,12 @@ def tabix_lines(path, index, chrom, pos):
 
 
 def vep_gnomad_af(vep, hits):
-    """gnomAD exome and genome AF of each hit from step 13's VEP output, as
-    {(chrom, pos, ref, alt): (exome, genome)}; a hit with no record is left
-    out. The fields are VEP's gnomADe_AF and gnomADg_AF (--everything)."""
+    """gnomAD exome and genome AF and the rsIDs of each hit from step 13's VEP
+    output, as {(chrom, pos, ref, alt): (exome, genome, rsids)}; a hit with
+    no record is left out. The fields are VEP's gnomADe_AF, gnomADg_AF and
+    Existing_variation (--everything); rsids keeps the rs ids of
+    Existing_variation ("rs123&COSV1" gives ["rs123"]), sorted, [] without
+    the field."""
     fmt = None
     with open_text(vep) as f:
         for line in f:
@@ -399,6 +402,7 @@ def vep_gnomad_af(vep, hits):
     if not fmt or "Allele" not in fmt:
         return {}
     cols = [fmt.index(c) if c in fmt else None for c in ("gnomADe_AF", "gnomADg_AF")]
+    ev = fmt.index("Existing_variation") if "Existing_variation" in fmt else None
 
     def num(v):
         vals = []
@@ -420,7 +424,7 @@ def vep_gnomad_af(vep, hits):
             # VEP's Allele drops the base an indel's alleles share.
             snv = len(ref) == 1 and all(len(a) == 1 for a in alts)
             allele = alt if snv or any(a[:1] != ref[:1] for a in alts) else (alt[1:] or "-")
-            got = [None, None]
+            got, ids = [None, None], set()
             for tr in info_map(r[7]).get("CSQ", "").split(","):
                 v = tr.split("|")
                 if len(v) != len(fmt) or (len(alts) > 1 and v[fmt.index("Allele")] != allele):
@@ -428,13 +432,17 @@ def vep_gnomad_af(vep, hits):
                 for i, c in enumerate(cols):
                     if c is not None and got[i] is None:
                         got[i] = num(v[c])
-            out[key] = tuple(got)
+                if ev is not None:
+                    ids.update(x.lower() for x in v[ev].split("&") if re.fullmatch(r"(?i)rs\d+", x))
+            out[key] = (got[0], got[1], sorted(ids, key=lambda x: int(x[2:])))
     return out
 
 
 def clinvar_frequencies(d, s, rows):
-    """Put the gnomAD AF from step 13's VEP output on each ClinVar hit, and
-    say where it came from or why there is none."""
+    """Put the gnomAD AF and the rsIDs (rsids, [] when unknown) from step
+    13's VEP output on each ClinVar hit, and say where they came from or why
+    there are none. The hits VCF's ID column is ClinVar's own variation id,
+    not an rsID, so VEP is where a hit's rsID comes from."""
     vep = first_existing(d, [f"vep/{s}_vep.vcf.gz"])
     note = None
     if not vep:
@@ -448,9 +456,10 @@ def clinvar_frequencies(d, s, rows):
         except (OSError, EOFError, ValueError, struct.error, gzip.BadGzipFile, zlib.error) as e:
             note = f"{os.path.relpath(vep, d)} could not be read: {e}"
     for x in rows:
-        e, g = found.get((x["chrom"], x["pos"], x["ref"], x["alt"]), (None, None))
+        e, g, ids = found.get((x["chrom"], x["pos"], x["ref"], x["alt"]), (None, None, []))
         known = [v for v in (e, g) if v is not None]
         x["gnomad_exome_af"], x["gnomad_genome_af"] = e, g
+        x["rsids"] = ids
         x["af"] = max(known) if known else None
         x["common"] = x["af"] is not None and x["af"] > COMMON_AF
     return {"source": os.path.relpath(vep, d) if note is None else None, "note": note, "common_af": COMMON_AF}
