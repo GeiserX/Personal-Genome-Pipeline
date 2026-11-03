@@ -261,7 +261,10 @@ def prs_evaluations(work, schema):
                      ("an ancestry that is not a 1000 Genomes group", "PGS000018\tx\t\tPPM000591\tEuropean\tHR 1.53"),
                      ("an ancestry listed twice", "PGS000018\tx\t\tPPM000591;PPM000594\tEUR;EUR\tHR 1.53;HR 1.27"),
                      ("a malformed PPM id", "PGS000018\tx\t\tPGS000018\tEUR\tHR 1.53"),
-                     ("a beta, not an OR or HR", "PGS000018\tx\t\tPPM000591\tEUR\tbeta 1.53")):
+                     ("a beta, not an OR or HR", "PGS000018\tx\t\tPPM000591\tEUR\tbeta 1.53"),
+                     ("evaluations but no pgs_id", "\tx\t\tPPM000591\tEUR\tHR 1.53"),
+                     ("one score's evaluations on two rows",
+                      "PGS000018\tx\t\tPPM000591\tEUR\tHR 1.53\nPGS000018\tx\t\tPPM000594\tAFR\tHR 1.27")):
         put(f"{work}/ev_bad.tsv", head + row + "\n")
         try:
             collect_summary.read_metrics(f"{work}/ev_bad.tsv")
@@ -321,17 +324,37 @@ def prs_evaluations(work, schema):
     put(f"{work}/ev_plain.tsv", "pgs_id\ttrait_reported\nPGS000018\tCoronary artery disease\n")
     collect_summary.main(["prs-format", "--scores", f"{work}/ev_in", "--labels", f"{work}/ev_plain.tsv",
                           "--out", f"{work}/ev_pgs_plain", "--alleles", f"{work}/ev_alleles_plain.tsv"])
-    rc, hdr, plain, _ = table("EUR", pgs=f"{work}/ev_pgs_plain")
+    rc, hdr, plain, plain_out = table("EUR", pgs=f"{work}/ev_pgs_plain")
     check("27: control: a list without evaluations gives the older columns and no effect",
           rc == 0 and hdr == collect_summary.PRS_COLUMNS and "Effect" not in plain, hdr)
+    # A score for one sex, with a EUR evaluation, run for the other sex in EUR: no effect.
+    put(f"{work}/ev_female.tsv", "pgs_id\ttrait_reported\tapplies_to\tppm_id\tancestry\teffect\n"
+        "PGS000018\tCoronary artery disease\tfemale\tPPM000591\tEUR\tHR 1.53\n")
+    collect_summary.main(["prs-format", "--scores", f"{work}/ev_in", "--labels", f"{work}/ev_female.tsv",
+                          "--out", f"{work}/ev_pgs_female", "--alleles", f"{work}/ev_alleles_female.tsv"])
+    rc, _, man, man_out = table("EUR", pgs=f"{work}/ev_pgs_female", sex="male")
+    check("27: a female-only score for a male sample in EUR: no effect",
+          rc == 0 and man.get("Sex_Check") == collect_summary.SEX_NOT_APPLICABLE and man.get("Evaluated_In") == "EUR"
+          and man.get("Effect") == "", man)
+    rc, _, woman, _ = table("EUR", pgs=f"{work}/ev_pgs_female", sex="female")
+    check("27: control: the same score for a female sample in EUR has its effect",
+          rc == 0 and woman.get("Effect") == "HR 1.53 (EUR, PPM000591)", woman)
+    # A hand-edited row with an effect but a score that does not apply: the reports print none.
+    check("27: the reports print no effect for a score that does not apply to the declared sex",
+          render_report.prs_effect({"effect": "HR 1.53 (EUR, PPM000591)", "evaluated_in": ["EUR"], "percentile": "",
+                                    "group": "EUR", "sex_check": render_report.PRS_NOT_APPLICABLE}) == ""
+          and render_report.prs_effect({"effect": "HR 1.53 (EUR, PPM000591)", "evaluated_in": ["EUR"],
+                                        "percentile": "81.2", "group": "EUR", "sex_check": ""})
+          == "HR 1.53 (EUR, PPM000591)")
 
     # The reports, one sample placed in EUR and one in EAS.
     got = {}
-    for tag, src in (("EUR", eur_out), ("EAS", eas_out)):
+    for tag, src in (("EUR", eur_out), ("EAS", eas_out), ("PLAIN", plain_out)):
         d = f"{work}/ev_sample_{tag}/S"
         os.makedirs(f"{d}/prs", exist_ok=True)
         shutil.copy(src, f"{d}/prs/S_prs_summary.tsv")
-        put(f"{d}/ancestry/S_ancestry.tsv", f"key\tvalue\nsample\tS\nreference_panel\tpgsc_1000G_v1\npopulation\t{tag}\n")
+        put(f"{d}/ancestry/S_ancestry.tsv", "key\tvalue\nsample\tS\nreference_panel\tpgsc_1000G_v1\n"
+            f"population\t{'EUR' if tag == 'PLAIN' else tag}\n")
         summ, txt, html = render(d)
         got[tag] = (summ, txt, html)
         check(f"27: {tag} summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
@@ -345,6 +368,11 @@ def prs_evaluations(work, schema):
           "HR 1.53" not in txt and "HR 1.53" not in html
           and "no published OR or HR for EAS; evaluated in EUR, AFR, AMR" in txt
           and "<td>no published OR or HR for EAS; evaluated in EUR, AFR, AMR</td>" in html, txt)
+    _, txt, html = got["PLAIN"]
+    check("27: a table without evaluation columns: neither report claims the score has no published effect",
+          "no published OR" not in txt and "no published OR" not in html
+          and "Effect in your group" not in html and "Effect: the odds ratio" not in txt
+          and "percentile 81.2 (EUR)" in txt, txt)
 
 
 def render(d, s="S"):

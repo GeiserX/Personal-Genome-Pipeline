@@ -145,8 +145,8 @@ sys.exit(0 if ok else 1)
 }
 
 # The evaluations table of file $1; exit 1 when one is wrong. A score's
-# three lists must have the same number of entries, and an ancestry may
-# appear once per score.
+# three lists must have the same number of entries with none empty, and an
+# ancestry may appear once per score.
 check_metrics() {
   local f=$1 bad=0 n=0 id ppms ancs effs i said rc
   local -a P A E
@@ -155,6 +155,12 @@ check_metrics() {
   echo "| PGS ID | PPM ID | Ancestry | Effect | PGS Catalog (score, ancestry, effect) | Result |"
   echo "|---|---|---|---|---|---|"
   while IFS=$'\t' read -r id ppms ancs effs; do
+    # read -a drops a trailing empty entry, so "PPM000591;" would pass as one.
+    if [[ "${ppms};" == *';;'* || "${ancs};" == *';;'* || "${effs};" == *';;'* \
+          || $ppms == ';'* || $ancs == ';'* || $effs == ';'* ]]; then
+      echo "| ${id} | ${ppms} | ${ancs} | ${effs} | | ERROR: an empty entry (a ; at the start or end, or two in a row) |"
+      bad=$((bad + 1)); continue
+    fi
     IFS=';' read -r -a P <<<"$ppms"
     IFS=';' read -r -a A <<<"$ancs"
     IFS=';' read -r -a E <<<"$effs"
@@ -274,19 +280,21 @@ self_test() {
 
   # Control 6: the evaluations. Right ones pass (two of one score, in
   # order); a PPM id of another score, a wrong ancestry, a wrong effect, an
-  # unknown PPM id and lists of different lengths each fail. The labels are
+  # unknown PPM id, lists of different lengths and lists ending in ";" each
+  # fail. The labels are
   # all right, so the failure can only come from the evaluations.
-  printf 'pgs_id\ttrait_reported\tapplies_to\tppm_id\tancestry\teffect\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+  printf 'pgs_id\ttrait_reported\tapplies_to\tppm_id\tancestry\teffect\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
     $'PGS000018\tCoronary artery disease\t\tPPM000591;PPM000594\tEUR;AFR\tHR 1.53;HR 1.27' \
     $'PGS000004\tBreast cancer\tfemale\tPPM000591\tEUR\tHR 1.53' \
     $'PGS000016\tAtrial fibrillation\t\tPPM014988\tAFR\tHR 1.4' \
     $'PGS000334\tLate-onset Alzheimer’s disease\t\tPPM022981\tEUR\tHR 1.99' \
     $'PGS000662\tProstate cancer\tmale\tPPM999999\tEUR\tOR 2.04' \
-    $'PGS000014\tType 2 diabetes (T2D)\t\tPPM021437;PPM021589\tEUR\tOR 1.71' > "${d}/metrics.tsv"
+    $'PGS000014\tType 2 diabetes (T2D)\t\tPPM021437;PPM021589\tEUR\tOR 1.71' \
+    $'PGS000017\tInflammatory bowel disease\t\tPPM000591;\tEUR;\tHR 1.53;' > "${d}/metrics.tsv"
   rc=0; out=$(check_file "${d}/metrics.tsv" 2>&1) || rc=$?
-  echo "Control 6, the planted evaluations (three must be a mismatch, two an error, two must pass):"
+  echo "Control 6, the planted evaluations (three must be a mismatch, three an error, two must pass):"
   grep '^| PGS0' <<<"$out" | grep 'PPM' || true
-  if [ "$rc" -eq 0 ] || ! grep -q 'Checked 6 PGS IDs, 0 problem(s).' <<<"$out" \
+  if [ "$rc" -eq 0 ] || ! grep -q 'Checked 7 PGS IDs, 0 problem(s).' <<<"$out" \
      || ! grep -q '| PGS000018 | PPM000591 | EUR | HR 1.53 | .*| ok |' <<<"$out" \
      || ! grep -q '| PGS000018 | PPM000594 | AFR | HR 1.27 | .*| ok |' <<<"$out" \
      || ! grep -q '| PGS000004 | PPM000591 | EUR | HR 1.53 | .*| MISMATCH |' <<<"$out" \
@@ -294,12 +302,13 @@ self_test() {
      || ! grep -q '| PGS000334 | PPM022981 | EUR | HR 1.99 | .*| MISMATCH |' <<<"$out" \
      || ! grep -q '| PGS000662 | PPM999999 | EUR | OR 2.04 | .*| ERROR: lookup failed or empty |' <<<"$out" \
      || ! grep -q '| PGS000014 | .*| ERROR: ppm_id, ancestry and effect have different numbers of entries |' <<<"$out" \
-     || ! grep -q 'Checked 6 evaluations, 5 problem(s).' <<<"$out"; then
+     || ! grep -q '| PGS000017 | .*| ERROR: an empty entry (a ; at the start or end, or two in a row) |' <<<"$out" \
+     || ! grep -q 'Checked 6 evaluations, 6 problem(s).' <<<"$out"; then
     echo "SELF-TEST FAIL: an evaluation was judged wrongly:"; echo "$out"; fail=1
   fi
 
   if [ "$fail" -eq 0 ]; then
-    echo "SELF-TEST OK: wrong label (list and map formats), old format, empty answer, no answer, empty map, and a wrong PPM id, ancestry or effect are all caught."
+    echo "SELF-TEST OK: wrong label (list and map formats), old format, empty answer, no answer, empty map, and a wrong PPM id, ancestry or effect or an empty entry are all caught."
   fi
   return "$fail"
 }

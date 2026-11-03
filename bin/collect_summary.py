@@ -957,7 +957,10 @@ def sec_prs(d, s):
                      "group": "" if r.get("Ancestry_Group", "NA") == "NA" else r.get("Ancestry_Group", ""),
                      # the groups the PGS Catalog has an OR or HR of the score for, and the
                      # one of the sample's group ("HR 1.53 (EUR, PPM000591)"); empty in older tables
-                     "evaluated_in": [x for x in (r.get("Evaluated_In") or "").split(";") if x],
+                     # None when the table has no Evaluated_In column (a score list without
+                     # evaluations, or an older table): nothing is known, so nothing is said
+                     "evaluated_in": ([x for x in r["Evaluated_In"].split(";") if x]
+                                      if r.get("Evaluated_In") is not None else None),
                      "effect": r.get("Effect", "") or ""})
     data = {"scores": rows,
             # Percentiles exist only when step 25 ran pgsc_calc with an ancestry panel.
@@ -1053,9 +1056,10 @@ def read_metrics(path):
     """ID -> [(ancestry, effect, ppm_id), ...]: the PGS Catalog evaluations of
     each score, from the optional ppm_id, ancestry and effect columns of
     assets/pgs_scores.tsv (entries separated by ";", in the same order in the
-    three). Raises Unreadable when the three lists differ in length, an
-    ancestry is not a 1000 Genomes group or appears twice, or an effect is
-    not "OR <number>" or "HR <number>"."""
+    three). Raises Unreadable when a row with evaluations has no pgs_id or
+    repeats one, the three lists differ in length, an ancestry is not a 1000
+    Genomes group or appears twice, or an effect is not "OR <number>" or
+    "HR <number>"."""
     out = {}
     if not path:
         return out
@@ -1064,10 +1068,14 @@ def read_metrics(path):
             pid = (r.get("pgs_id") or "").strip()
             cols = [[x.strip() for x in (r.get(k) or "").split(";")] if (r.get(k) or "").strip() else []
                     for k in ("ppm_id", "ancestry", "effect")]
-            if not pid or not any(cols):
-                continue
-            ppm, anc, eff = cols
             name = os.path.basename(path)
+            if not any(cols):
+                continue
+            if not pid:
+                raise Unreadable(f"{name}: a row has ppm_id, ancestry or effect entries but no pgs_id")
+            if pid in out:
+                raise Unreadable(f"{name}: {pid} has evaluations on two rows")
+            ppm, anc, eff = cols
             if not (len(ppm) == len(anc) == len(eff)):
                 raise Unreadable(f"{name}: {pid} has {len(ppm)} ppm_id, {len(anc)} ancestry and {len(eff)} effect entries")
             for p_, a_, e_ in zip(ppm, anc, eff):

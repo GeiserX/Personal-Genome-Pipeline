@@ -69,7 +69,7 @@ The third column of the file, `applies_to`, names the sex a score was built for:
 
 ### Effect sizes and the ancestry they were measured in
 
-A polygenic score predicts best in the ancestry it was built and tested in, and its effect is smaller in others. The PGS Catalog records each published evaluation of a score as a performance metric with its own id (PPM), the samples it was measured in and the effect it found. The last three columns of the file name the evaluations the reports use, one per ancestry, in the same order in each column:
+A polygenic score is built and tested mostly in one ancestry, and its effect in other ancestries can be smaller or larger. The PGS Catalog records each published evaluation of a score as a performance metric with its own id (PPM), the samples it was measured in and the effect it found. The last three columns of the file name the evaluations the reports use, one per ancestry, in the same order in each column:
 
 - `ppm_id`: the evaluations, for example `PPM000591;PPM000594;PPM000597` for PGS000018.
 - `ancestry`: the 1000 Genomes group each was measured in, as pgsc_calc names your reference group: `EUR;AFR;AMR`. The catalog's broad ancestry terms map to them as "European" to EUR; "African unspecified", "African American or Afro-Caribbean" and "Sub-Saharan African" to AFR; "Hispanic or Latin American" to AMR; "East Asian" to EAS; "South Asian" to SAS. An evaluation in mixed, unreported or other ancestries is not used.
@@ -97,8 +97,12 @@ To add a score, add a line to `assets/pgs_scores.tsv` with the label the API giv
 
 ```bash
 curl -s https://www.pgscatalog.org/rest/score/PGS000017 | jq -r '.trait_reported, .variants_number'
-curl -s 'https://www.pgscatalog.org/rest/performance/search?pgs_id=PGS000017' \
-  | jq -r '.results[] | [.id, ([.sampleset.samples[].ancestry_broad] | join("; ")), ([.performance_metrics.effect_sizes[] | "\(.name_short) \(.estimate)"] | join("; "))] | @tsv'
+url='https://www.pgscatalog.org/rest/performance/search?pgs_id=PGS000017'
+while [ -n "$url" ] && [ "$url" != null ]; do   # the answer comes in pages; follow each next link
+  page=$(curl -s "$url")
+  jq -r '.results[] | [.id, ([.sampleset.samples[].ancestry_broad] | join("; ")), ([.performance_metrics.effect_sizes[] | "\(.name_short) \(.estimate)"] | join("; "))] | @tsv' <<<"$page"
+  url=$(jq -r '.next' <<<"$page")
+done
 ```
 
 Only additive scores are accepted (no `dosage_*_weight` columns, no `is_dominant` or `is_recessive` rows); step 25 stops on any other.
