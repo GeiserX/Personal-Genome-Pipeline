@@ -72,7 +72,7 @@ on:
         type: boolean
         default: false
       save_images:
-        description: 'e2e: save the image cache from this branch too (only main saves by default)'
+        description: 'e2e: save the image and data caches from this branch too (only main saves by default)'
         type: boolean
         default: false
 

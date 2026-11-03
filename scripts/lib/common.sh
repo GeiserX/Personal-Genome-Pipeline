@@ -354,7 +354,9 @@ consumer_sites_digest() {
 # resuming the partial OUT.
 _get() {
   local rc=0 stall=${FETCH_STALL:-120}
-  case "$stall" in ''|*[!0-9]*|0) echo "ERROR: FETCH_STALL must be a whole number of seconds above 0, got '${FETCH_STALL}'" >&2; return 1 ;; esac
+  # 10# so 00, 08 and 09 read as decimal; curl and wget take 0 as no bound.
+  case "$stall" in ''|*[!0-9]*) stall=0 ;; esac
+  [ "$((10#$stall))" -gt 0 ] || { echo "ERROR: FETCH_STALL must be a whole number of seconds above 0, got '${FETCH_STALL}'" >&2; return 1; }
   # The URL stays the last argument (scripts/ci/fake-docker/curl takes it from there).
   local cbound=(--connect-timeout 30 --speed-limit 1024 --speed-time "$stall")
   if command -v curl >/dev/null 2>&1; then

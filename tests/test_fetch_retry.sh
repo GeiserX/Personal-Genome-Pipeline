@@ -98,12 +98,14 @@ expect "control: curl without the bounds hangs until the timeout" \
   "$(fetch_in "${WORK}/curl-unbounded/scripts/lib/common.sh" "$PATH" curl-mutant stall.bin 25)" '^rc=124 ' curl-mutant
 expect "control: wget without the bounds hangs until the timeout" \
   "$(fetch_in "${WORK}/wget-unbounded/scripts/lib/common.sh" "${WORK}/nocurl" wget-mutant stall.bin 25)" '^rc=124 ' wget-mutant
-# shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
-if FETCH_STALL=0 bash -c '. "$1" && _get "$2" "$3"' _ "$LIB" "${URL}/whole.bin" "${WORK}/zero" > "${WORK}/zero.log" 2>&1; then
-  fail "FETCH_STALL=0 was accepted"
-else
-  expect "FETCH_STALL=0 is refused" "$(cat "${WORK}/zero.log")" 'FETCH_STALL must be'
-fi
+for z in 0 00 x; do
+  # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
+  if FETCH_STALL=$z bash -c '. "$1" && _get "$2" "$3"' _ "$LIB" "${URL}/whole.bin" "${WORK}/zero" > "${WORK}/zero.log" 2>&1; then
+    fail "FETCH_STALL=${z} was accepted"
+  else
+    expect "FETCH_STALL=${z} is refused" "$(cat "${WORK}/zero.log")" 'FETCH_STALL must be'
+  fi
+done
 
 if [ "$FAILS" -gt 0 ]; then echo "${FAILS} check(s) failed"; exit 1; fi
 echo "All fetch stall checks passed."

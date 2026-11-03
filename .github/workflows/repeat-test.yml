@@ -97,6 +97,8 @@ jobs:
         with:
           name: result-${{ matrix.run }}-exit-${{ env.RC }}
           path: ${{ runner.temp }}/rc
+          # A rerun of a job may write the same name again.
+          overwrite: true
           retention-days: 1
 
   summary:
@@ -112,7 +114,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
-            -q '.artifacts[].name | select(startswith("result-"))' | sed -n 's/^result-\(.*\)-exit-\([0-9]*\)$/\1\t\2/p' > results.tsv
+            -q '.artifacts[] | select(.name | startswith("result-")) | "\(.created_at)\t\(.id)\t\(.name)"' \
+            | sort -t$'\t' -k1,1 -k2,2n \
+            | sed -n 's/^.*\tresult-\(.*\)-exit-\([0-9]*\)$/\1\t\2/p' \
+            | awk -F'\t' '{ last[$1] = $2 } END { for (s in last) print s "\t" last[s] }' > results.tsv
+          # A rerun leaves the old attempt's artifact beside the new one;
+          # the newest result of each run counts.
           sort -V results.tsv
           ctl=$(awk -F'\t' '$1 == "control" {print $2}' results.tsv)
           [ -n "$ctl" ] && [ "$ctl" -ne 0 ] || { echo "FAIL: the control run should fail, its exit is '${ctl:-missing}'"; exit 1; }
