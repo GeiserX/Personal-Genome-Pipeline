@@ -20,7 +20,9 @@ bin/collect_summary.py turns that into the report's section.
      the ones the table reads), in the summary and in both reports. Control:
      a reader that drops the ALT-only genes from that list fails it;
   4. a table from another catalog (a gene missing) makes the section
-     unreadable, not a reading;
+     unreadable, not a reading; a chromosome with no row at all (a BAM
+     whose reference lacks it, as the e2e fixture's) puts its genes under
+     "not on this reference";
   5. bin/copy_number.py check-bam and call --bam-header refuse a header with
      an ALT or an HLA contig (exit 4, a REFUSED line) and pass a header
      without one (the positive control).
@@ -190,6 +192,14 @@ with tempfile.TemporaryDirectory() as work:
     sec = collect_summary.collect("S", sd)["sections"]["callability"]
     check("4. a table missing a catalog gene is unreadable", sec["state"] == "unreadable"
           and UNIQUE in (sec["note"] or ""), sec)
+
+    # 4b. a BAM whose reference lacks a whole chromosome (as the e2e fixture's): no row there
+    chr3 = {r["gene"] for r in cat if r["chrom"] == "chr3"}
+    write_thresholds(os.path.join(sd, "mosdepth", "S_callability.bed.gz"), cat, drop=chr3)
+    sec = collect_summary.collect("S", sd)["sections"]["callability"]
+    nr = {g["gene"]: g["status"] for g in (sec.get("data") or {}).get("not_read", []) + (sec.get("data") or {}).get("not_read_owned", [])}
+    check("4. genes on a chromosome with no row at all are not on this reference, not unreadable",
+          sec["state"] == "ok" and chr3 and all(nr.get(g) == "not on this reference" for g in chr3), sec.get("state"))
 
 
 # --- 5. the ALT contig refusal ---------------------------------------------------------
