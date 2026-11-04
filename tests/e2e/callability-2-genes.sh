@@ -31,9 +31,11 @@ docker run --rm --user "$(id -u):$(id -g)" -v "${GENOME_DIR}:/genome" -w /genome
   | samtools view -b -o '${CAL}/aligned/${CAL}_sorted.bam' - && samtools index '${CAL}/aligned/${CAL}_sorted.bam' \
   && samtools view -b -o '${RAW}/aligned/${RAW}_sorted.bam' '${SAMPLE}/aligned/${SAMPLE}_sorted.bam' chr20 \
   && samtools index '${RAW}/aligned/${RAW}_sorted.bam'"
+# One container: two `docker run -i` at once (one inside the other's pipe) share stdin,
+# and the outer one printed nothing.
 check_ge "the MAPQ 0 copy has reads of MAPQ 0 in the window" \
-  "$(sam view -c -q 0 "${CAL}/aligned/${CAL}_sorted.bam" chr20:10400000-10480000 2>/dev/null \
-     | awk -v q="$(sam view -c -q 1 "${CAL}/aligned/${CAL}_sorted.bam" chr20:10400000-10480000 2>/dev/null)" '{print $1 - q}')" 1000
+  "$(sam view "${CAL}/aligned/${CAL}_sorted.bam" chr20:10400000-10480000 2>/dev/null \
+     | awk -F'\t' '$5 == 0 {n++} END {print n + 0}')" 1000
 
 # reading SAMPLE_DIR_TABLE: "gene status" lines of a per-gene table read with the test catalog
 reading() {
@@ -99,7 +101,8 @@ check_eq "MOSDEPTH's table is step 16b's" "$(gzip -dc "$N_CAL" 2>/dev/null | md5
 
 # --- 2. the reports, with the real catalog -------------------------------------------
 REAL="${REPO}/assets/callability_genes.tsv"
-# expected TABLE: the genes with no owner that are ALT-only or under 90% at 10x, by awk
+# expected TABLE: the genes with no owner that are ALT-only, have no row (a contig the BAM
+# lacks) or are under 90% at 10x, by awk
 expected() {
   gzip -dc "$1" | awk -F'\t' 'NR == FNR {if (!/^#/) share[$4] = ($3 > $2 ? $5 / ($3 - $2) : 0); next}
     !/^#/ && $1 != "gene" && $7 == "." && ($4 == "." || share[$1] < 0.9) {n++} END {print n + 0}' - "$REAL"
@@ -110,8 +113,13 @@ listed() {
 }
 B_T="${GENOME_DIR}/${SAMPLE}/mosdepth/${SAMPLE}_callability.bed.gz"
 check "bash: step 16b wrote the per-gene table" test -s "$B_T"
-check_eq "bash: its rows are the catalog genes with a position" "$(gzip -dc "$B_T" 2>/dev/null | grep -vc '^#')" \
-  "$(awk -F'\t' '!/^#/ && $4 ~ /^[0-9]+$/' "$REAL" | wc -l | tr -d ' ')"
+# mosdepth writes no row on a contig the BAM lacks, and the fixture holds 13 of the 24
+# chromosomes: the report lists the genes on the others as not on this reference.
+CONTIGS=$(sam view -H "${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null | awk -F'\t' '$1 == "@SQ" {print substr($2, 4)}' | tr '\n' ' ')
+check_eq "bash: its rows are the catalog genes with a position on the BAM's contigs" \
+  "$(gzip -dc "$B_T" 2>/dev/null | grep -vc '^#')" \
+  "$(awk -F'\t' -v c="$CONTIGS" 'BEGIN {n = split(c, a, " "); for (i = 1; i <= n; i++) on[a[i]] = 1}
+     !/^#/ && $4 ~ /^[0-9]+$/ && ($3 in on)' "$REAL" | wc -l | tr -d ' ')"
 B_N=$(expected "$B_T")
 check_eq "bash: step 24's summary lists the genes the catalog query gives" \
   "$(listed "${GENOME_DIR}/${SAMPLE}/summary.json")" "ok ${B_N}"
