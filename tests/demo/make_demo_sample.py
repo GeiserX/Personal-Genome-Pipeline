@@ -665,6 +665,26 @@ def read_count(d):
         "missing_reads\t0\nread_count_check\tok\n")
 
 
+# Genes the demo leaves below step 16b's share: four that another step owns and
+# four with no other reading, so both lines of the card have names in them.
+DEMO_NOT_READ = {"SMN1", "SMN2", "NCF1", "PMS2", "NBPF1", "ANKRD36C", "DUX4", "MUC12"}
+
+
+def callability(d, rng):
+    """Step 16b's gene table (mosdepth --thresholds 10 over the genes of
+    assets/callability_genes.tsv: chrom, start, end, gene, bases at 10x),
+    written from the repository's catalog, so it always matches it. The ALT-only
+    genes get no row, as in the real step."""
+    rows = ["#chrom\tstart\tend\tregion\t10X"]
+    for r in collect_summary.asset_rows("callability_genes.tsv"):
+        if r["start"] == ".":
+            continue
+        start, end = int(r["start"]), int(r["end"])
+        share = rng.uniform(0.35, 0.8) if r["gene"] in DEMO_NOT_READ else rng.uniform(0.93, 1.0)
+        rows.append(f"{r['chrom']}\t{start}\t{end}\t{r['gene']}\t{int((end - start) * share)}")
+    put(os.path.join(d, "mosdepth", f"{SAMPLE}_callability.bed.gz"), "\n".join(rows) + "\n", gz=True)
+
+
 def mosaic(d, rng):
     """mosdepth's 500 bp windows (step 16b's regions.bed.gz), cut down to three
     200 kb stretches of each autosome and the single-copy part of chrY, then
@@ -1174,7 +1194,8 @@ def make(a):
              ("lpa", lambda r: lpa(d, r)), ("chip", lambda r: chip(d, r)),
              ("archaic", lambda r: archaic(d, r)), ("ancient", lambda r: ancient(d, r)),
              ("exomiser", lambda r: exomiser(d)), ("mocha", lambda r: mocha(d)),
-             ("vntyper", lambda r: vntyper(d)), ("mei", lambda r: mei(d, r))]
+             ("vntyper", lambda r: vntyper(d)), ("mei", lambda r: mei(d, r)),
+             ("callability", lambda r: callability(d, r))]
     for name, fn in parts:
         fn(random.Random(f"{a.seed}:{name}"))
         print(f"  {name}: written")
