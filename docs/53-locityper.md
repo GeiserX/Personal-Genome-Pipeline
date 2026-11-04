@@ -93,7 +93,7 @@ The red control takes out of the panel HG002's haplotypes and every other haplot
 
 The same row runs the shipped `bin/locityper_report.py` in the image on that run's own `res.json.gz` files: every locus must come back called, with a quality, its reads and a weighted distance. Its red control removes CYP2D6's `success` file, and CYP2D6 must then read "not called".
 
-On the fixture in two CI runs, CYP2D6 and HLA-DQB1 came back as HG002's own two haplotypes. HLA-DRB1 came back at QV 49.9 to both of HG002's haplotypes (one base in about 98 kb): in one run one of HG002's own plus a near copy of the other, in the other two near copies. Locityper's own quality moved between the two runs (HLA-DQB1 7.8 and 5.4, HLA-DRB1 8.5 and 6.1, CYP2D6 18.7 and 28.8) and was below 20 at both HLA loci even where the call is exact. That quality is the chance another genotype is right, and near-identical panel haplotypes compete for it; a low value there does not mean a wrong call.
+On the fixture in two CI runs, CYP2D6 and HLA-DQB1 came back as HG002's own two haplotypes. HLA-DRB1 came back at QV 49.9 to both of HG002's haplotypes (one base in about 98 kb): in one run one of HG002's own plus a near copy of the other, in the other two near copies. Locityper's own quality moved between the two runs (HLA-DQB1 7.8 and 5.4, HLA-DRB1 8.5 and 6.1, CYP2D6 18.7 and 28.8) and was below 20 at both HLA loci even where the call is exact. That quality is on the Phred scale (20 means a 1% chance that another genotype is right, 10 a 10% chance), and near-identical panel haplotypes compete for it; a low value there does not mean a wrong call.
 
 ## Runtime
 
