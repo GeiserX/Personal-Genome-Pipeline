@@ -282,11 +282,13 @@ def part2(pysam):
             out = os.path.join(tmp, f"construct-{kind}.tsv")
             rc, log = run_main(["--hits", hits, "--bam", os.path.join(tmp, f"{kind}.bam"), "--exons", exons,
                                 "--construct", catalog, "--out", out])
+            expect(f"--construct, {kind}: exit code", rc, 0)
             names = [line_.rstrip("\n").split("\t")[10] for line_ in open(out)][1:]
             expect(f"--construct, {kind}: the construct_site column names the site, and only it",
                    names, ["GENET X1Y", "", ""])
             expect(f"--construct, {kind}: the log prints the site with its counts", line + verdict in log, True)
         rc, log = run_main(["--hits", hits, "--skip", "no BAM", "--construct", catalog, "--out", out])
+        expect("--construct with --skip: exit code", rc, 0)
         expect("--construct with --skip: the line says not checked, and why", line + "not checked (no BAM)" in log, True)
         rc, log = run_main(["--hits", hits, "--bam", os.path.join(tmp, "genomic.bam"), "--exons", exons, "--out", out])
         expect("without --construct: no construct line (red control)", "KNOWN CONSTRUCT SITE" in log, False)
