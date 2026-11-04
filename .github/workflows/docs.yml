@@ -21,8 +21,8 @@ on:
       - 'mkdocs.yml'
       - '.github/workflows/docs.yml'
       # The live-site demo at /demo/ is built from these (tests/demo/build_live_demo.py).
-      - 'assets/live/**'
-      - 'assets/steps.tsv'
+      # assets/** because render_report.py also reads the gene and rule tables there.
+      - 'assets/**'
       - 'bin/**'
       - 'tests/demo/**'
       - 'tests/fixtures/live/**'
