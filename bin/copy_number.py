@@ -97,9 +97,10 @@ TABLES = {"HBA": "hba_copy_number", "LPA_KIV2": "lpa_kiv2"}
 # its copies are read, and the findings a reading must exist for.
 PSV_MIN_READS = 30
 # A site reads as converted when its copies estimate lies this far under the
-# others' count (or under the usual count) or more: at 30x, about 70 reads at
-# a site, the estimate of a copy count of 2 has a standard deviation of about
-# 0.25, so 0.6 keeps a false call on a site to under 1 in 100.
+# others' count (or under the usual count) or more. At 30x, about 70 reads at
+# a site, read sampling alone gives an estimate of 2 copies a standard
+# deviation of about 0.25; HG002's six sites read 1.62 to 2.82 (35x), so the
+# real spread is wider and 0.6 is a screen setting, not a measured error rate.
 PSV_MARGIN = 0.6
 PSV_FINDINGS = ("none", "deletion", "conversion", "pseudogene_deletion")
 BASES = "ACGT"

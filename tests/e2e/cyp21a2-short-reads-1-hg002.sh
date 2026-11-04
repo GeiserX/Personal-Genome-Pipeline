@@ -7,9 +7,9 @@
 #   - a planted In2G conversion: every second read that carries CYP21A2's
 #     base at In2G (chr6:32039081, a read without clips or indels) gets
 #     CYP21A1P's G there: a possible conversion at In2G, its ratio under 0.7;
-#   - a planted 30 kb chimeric deletion: every second read is dropped that
-#     starts on CYP21A2 before 32,039,600 (its In2G and I172N part) or on the
-#     matching CYP21A1P stretch after 32,006,864 (the rest), so one
+#   - a planted 30 kb chimeric deletion: every second read is dropped whose
+#     middle lies on CYP21A2 from 32,038,951 to 32,039,600 (its In2G and
+#     I172N part) or on CYP21A1P from 32,006,865 to its end (the rest), so one
 #     chromosome holds a chimera of CYP21A1P's 5' part and CYP21A2's 3' part:
 #     module total 3, 1 CYP21A2 copy, finding deletion.
 # The block of step 35 runs on each (cut from scripts/35-paralogs.sh, with
@@ -58,7 +58,8 @@ bam conversion conversion.sam
 
 # The planted chimeric deletion.
 awk -F'\t' '/^@/ {print; next}
-  $3 == "chr6" && (($4 >= 32038800 && $4 < 32039600) || ($4 >= 32006864 && $4 < 32008909)) { if (n++ % 2) next }
+  $3 == "chr6" { m = $4 + int(length($10) / 2)
+    if ((m >= 32038950 && m < 32039600) || (m >= 32006864 && m < 32008909)) { if (n++ % 2) next } }
   {print}' "${W}/orig.sam" > "${W}/deletion.sam"
 bam deletion deletion.sam
 rm -f "${W}"/*.sam
