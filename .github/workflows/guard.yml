@@ -83,7 +83,12 @@ jobs:
       - name: Self-test (planted bgzip/tabix calls behind if !, time and VAR=, and an orad option orad does not list, must be caught)
         run: scripts/ci/check-container-helpers.sh --self-test
 
+      # tests/test_exec_bits.sh (unit-tests) plants a helper without the bit.
+      - name: Every bin/ helper the pipeline calls by name is executable
+        run: scripts/ci/check-exec-bits.sh
+
       - name: Table of helper calls derived from scripts and modules
+        if: ${{ !cancelled() }}   # runs even when a step above failed, so each result shows
         run: scripts/ci/check-container-helpers.sh --list
 
       - name: Each helper binary exists in the image that calls it
