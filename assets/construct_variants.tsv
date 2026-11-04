@@ -1,0 +1,26 @@
+# Pathogenic alleles that lab expression constructs and transgenic models
+# carry, read by bin/clip_check.py (--construct) in step 06 and
+# CLINVAR_CDNA_CHECK. A ClinVar hit at one of these sites gets a
+# "known construct site" line with its cDNA read check counts, whatever the
+# verdict: spliced cDNA or plasmid DNA in a library is called like a germline
+# variant, and these are the alleles it most often brings (Kim 2020, Nature,
+# PMID 32814883; Kim 2016, Bioinformatics, PMID 27334474). A real carrier is
+# possible at every row (LRRK2 G2019S above all), so the line is a prompt to
+# look at the reads, not a verdict.
+# Positions are GRCh38 VCF positions; REF and ALT are ClinVar's alleles, from
+# its canonical SPDI (E-utilities esummary, queried 2026-11-04; REF checked
+# against UCSC hg38 the same day). clinvar_id is ClinVar's variation id.
+# name is the allele as model and construct papers name it (legacy protein
+# numbering: SOD1 G93A is p.Gly94Ala in HGVS, MAPT P301L is numbered on the
+# 441-residue isoform).
+chrom	pos	ref	alt	gene	name	hgvs	clinvar_id
+chr21	25897626	TC	GA	APP	Swedish K670N/M671L	NM_000484.4:c.2010_2011inv	18093
+chr21	25891784	C	T	APP	London V717I	NM_000484.4:c.2149G>A	18088
+chr14	73173663	A	C	PSEN1	M146L	NM_000021.4:c.436A>C	18123
+chr14	73192832	C	A	PSEN1	A246E	NM_000021.4:c.737C>A	18125
+chr14	73198117	C	G	PSEN1	L286V	NM_000021.4:c.856C>G	18126
+chr17	46010389	C	T	MAPT	P301L	NM_005910.6:c.902C>T	14245
+chr17	46010388	C	T	MAPT	P301S	NM_005910.6:c.901C>T	14256
+chr4	89828149	C	T	SNCA	A53T	NM_000345.4:c.157G>A	14007
+chr21	31667299	G	C	SOD1	G93A	NM_000454.5:c.281G>C	14760
+chr12	40340400	G	A	LRRK2	G2019S	NM_198578.4:c.6055G>A	1940
