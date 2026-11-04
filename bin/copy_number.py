@@ -520,8 +520,8 @@ def call_intervals(cat, rows_in, sex):
     for row in interval_rows(cat):
         want = regions(row)
         have = [w for w in want if w[3] in by_name]
-        if have and len(have) != len(want):
-            raise ValueError(f"the bedcov table holds part of {row['locus']}'s segments: "
+        if len(have) != len(want):
+            raise ValueError(f"the bedcov table lacks some of {row['locus']}'s segments: "
                              f"its regions differ from `copy_number.py bed --kind interval`")
         m = {}
         for c, s, e, n in have:

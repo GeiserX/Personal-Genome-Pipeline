@@ -284,7 +284,8 @@ rm -rf "$DOSAGE_WORK"
 # Interval rows of bin/cn_loci.tsv (as the PARASCOPY module): one samtools
 # bedcov over the segments of every row, then copy_number.py intervals; one
 # line per row in <sample>_cn_intervals.tsv. A failed pass writes every row as
-# not assessed (check_failed), and the step goes on.
+# not assessed (check_failed), and the step goes on; when even that cannot be
+# written (the catalog does not load), the step stops, as the module does.
 INTERVAL_OUT="${OUTDIR}/${SAMPLE}_cn_intervals.tsv"
 INTERVAL_WORK="${OUTDIR}/cn_intervals.part"
 rm -rf "$INTERVAL_OUT" "$INTERVAL_WORK"
@@ -298,8 +299,7 @@ if ! { run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
            --sex "$SEX" --out "$(cpath "$INTERVAL_OUT")"; }; then
   echo "WARNING: the interval depth check failed; ${INTERVAL_OUT##*/} lists every row as not assessed." >&2
   run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
-    python3 /pgp-bin/copy_number.py intervals --failed --out "$(cpath "$INTERVAL_OUT")" \
-    || printf 'locus\tname\tchrom\tstart\tend\tstatus\tcopies\texpected\tchange\testimate\treason\n' > "$INTERVAL_OUT"
+    python3 /pgp-bin/copy_number.py intervals --failed --out "$(cpath "$INTERVAL_OUT")"
 fi
 rm -rf "$INTERVAL_WORK"
 

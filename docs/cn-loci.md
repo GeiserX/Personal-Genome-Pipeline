@@ -103,7 +103,7 @@ pypgx owns the genes it calls from the BAM, the `bam` rows of `assets/pgx_genes.
 
 1. Check that no pinned caller owns the gene: Parascopy (`assets/parascopy_models_v1.7.txt`), pypgx, Paraphase.
 2. Choose single-copy controls near the gene, outside any common deletion or duplication there and outside segmental duplications.
-3. Add the row to `bin/cn_loci.tsv` and cite the method in `pmids`.
+3. Add the row to `bin/cn_loci.tsv`, above its marker line, and cite the method in `pmids`. An interval row (everything after the marker) is never added by hand: add it to `scripts/ci/build-cn-intervals.py` and rerun the script.
 4. Run it from a step: `copy_number.py bed --locus NAME`, `samtools bedcov` with the row's passes, then `copy_number.py call --locus NAME --bedcov ... --json ...`.
 5. Add made-up bedcov tables for the row to `tests/test_copy_number.py`, at every count it can call and at each guard.
 

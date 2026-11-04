@@ -406,7 +406,8 @@ def read_cn_intervals(path):
     """{locus: row} of step 35's <id>_cn_intervals.tsv."""
     with open(path, encoding="utf-8", errors="replace") as f:
         lines = [ln.rstrip("\n").split("\t") for ln in f if ln.strip()]
-    if not lines or lines[0][:6] != ["locus", "name", "chrom", "start", "end", "status"]:
+    if (not lines or lines[0][:6] != ["locus", "name", "chrom", "start", "end", "status"]
+            or not {"copies", "expected", "change", "reason"} <= set(lines[0])):
         die(["%s: not step 35's interval table (bin/copy_number.py intervals)" % path])
     head = lines[0]
     return {r[0]: dict(zip(head, r)) for r in lines[1:] if len(r) == len(head)}

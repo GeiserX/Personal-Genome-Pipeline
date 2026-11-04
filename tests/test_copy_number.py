@@ -668,9 +668,9 @@ def intervals(cat, read):
     except bld.BuildError as e:
         got = str(e)
     check("converter: an unknown contig stops the build", "'chrQ' is not a GRCh38 chromosome" in got, got)
-    check("converter: no target piece inside a breakpoint row",
-          all(not (18159724 <= s < 18924717 or 21111384 <= s < 21562827) for r in rows[:1]
-              for _, s, _, _ in cn.parse_row(r)["_targets"]))
+    check("converter: no target piece overlaps a breakpoint row",
+          all(not (s < 18924717 and 18159724 < e) and not (s < 21562827 and 21111384 < e) for r in rows[:1]
+              for _, s, e, _ in cn.parse_row(r)["_targets"]))
 
     iv = [r for r in cat.values() if r["kind"] == "interval" and r["_passes"] == ["."]]
     names = [r["locus"] for r in iv]
