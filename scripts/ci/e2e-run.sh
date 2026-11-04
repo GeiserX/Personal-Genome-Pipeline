@@ -506,8 +506,11 @@ data_seed() {
   # Control: under OFFLINE a request to a host that answers must fail, or
   # the offline run would prove nothing.
   # Read from curl's own error, so a host that is down cannot pass for it.
-  if ! "${OFFLINE[@]}" curl -fsS --max-time 20 -o /dev/null https://raw.githubusercontent.com/ 2>&1 \
-       | grep -q '127\.0\.0\.1.* 9\b'; then
+  # (A variable, not a pipe: under pipefail curl's own failure would fail it.)
+  local out
+  out=$("${OFFLINE[@]}" curl -fsS --max-time 20 -o /dev/null https://raw.githubusercontent.com/ 2>&1 || true)
+  if ! grep -q '127\.0\.0\.1.* 9\b' <<< "$out"; then
+    echo "$out"
     echo "::error::Data cache: a request under the network block did not fail at the closed port; ${1%.sh} runs with the network"
     return 0
   fi
