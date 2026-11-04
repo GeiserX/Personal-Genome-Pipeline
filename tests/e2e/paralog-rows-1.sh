@@ -100,13 +100,14 @@ check "step 35 ran the 37-row catalog in 30 minutes or less (${ELAPSED} s)" test
 
 # --- 2. every row: an integer agCN with its quality, or not assessed with the reason --
 # table_state TABLE: called, not-assessed, not-resolved or bad. Each row is read on its own: an
-# integer agCN with a numeric quality, "." with the filter that says why (not
+# integer agCN, or a bound such as <5 that Parascopy writes at a high copy number, with a
+# numeric quality; "." with the filter that says why (not
 # resolved), or "not assessed: <reason>"; any other row, or no row, makes it bad.
 # shellcheck disable=SC2016  # awk fields
 table_state() {
   awk -F'\t' 'NR == 1 {next}
     NF != 11 {b = 1; next}
-    $6 ~ /^[0-9]+$/ && $7 ~ /^[0-9.]+$/ {c = 1; next}
+    $6 ~ /^[<>]?[0-9]+$/ && $7 ~ /^[0-9.]+$/ {c = 1; next}
     $5 ~ /^not assessed: ./ {n = 1; next}
     $6 == "." && $5 != "" && $5 != "." {r = 1; next}
     {b = 1}
