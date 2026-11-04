@@ -31,59 +31,19 @@ check "that line says it was skipped and how to install the panel" has '^Step 26
 check "step 26 without a panel wrote no ancestry table" test ! -e "${D}/ancestry/${SAMPLE}_ancestry.tsv"
 
 # --- the panel ------------------------------------------------------------------
-# EBI's FTP server fails now and then (curl exit 7). The e2e workflow keeps
-# the panel in the Actions cache (E2E_DATA_CACHE/hapnest, keyed on the pin
-# below). From the cache, setup.sh runs with every HTTP(S) request sent to a
-# closed port, so an EBI outage cannot fail the case; on a miss setup.sh
-# downloads the panel as a user's run does, and the case puts it in the cache.
-# The pin is the sha256 of the file EBI served on 2026-11-04 (281,185,251
-# bytes, md5 3630f2ec3343599f3c55827ddbe38f60 as EBI's md5s.txt lists it).
-HAPNEST_SHA256=8ba05cffc4b816f8f8aafd78add52b90ab80315e930936277e09861c5d134aa3
-BLOCKED=(env http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9
-         HTTPS_PROXY=http://127.0.0.1:9 no_proxy= NO_PROXY= FETCH_TRIES=1 FETCH_WAIT=0)
-sha256() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
-CACHED="${E2E_DATA_CACHE:-}/hapnest/${PANEL_NAME}.tar.zst"
-
+# From the Actions cache when it is there, with EBI unreachable
+# (setup_ancestry_panel in lib.sh, which holds the pin HAPNEST_SHA256).
 # Red control: with the network blocked and no panel, setup.sh must fail, or
-# the cached run below would prove nothing about EBI.
+# the cached run would prove nothing about EBI.
 mkdir -p "${CASE_TMP}/blocked"
-"${BLOCKED[@]}" ANCESTRY_PANEL_NAME="$PANEL_NAME" "${REPO}/scripts/setup.sh" --ancestry-panel "${CASE_TMP}/blocked" \
+"${NET_BLOCKED[@]}" ANCESTRY_PANEL_NAME="$PANEL_NAME" "${REPO}/scripts/setup.sh" --ancestry-panel "${CASE_TMP}/blocked" \
   > "${CASE_TMP}/blocked.log" 2>&1
 BRC=$?
 tail -n 3 "${CASE_TMP}/blocked.log"
 check "with EBI unreachable and no panel, setup.sh --ancestry-panel fails (exit ${BRC})" \
   bash -c '[ "$1" -ne 0 ] && grep -q "Could not download the ancestry panel" "$2"' _ "$BRC" "${CASE_TMP}/blocked.log"
 rm -rf "${CASE_TMP}/blocked"
-
-FROM_CACHE=false
-if [ "$PANEL_NAME" = GRCh38_HAPNEST_reference ] && [ -n "${E2E_DATA_CACHE:-}" ] && [ -s "$CACHED" ]; then
-  if [ "$(sha256 "$CACHED")" = "$HAPNEST_SHA256" ]; then
-    mkdir -p "${PANEL%/*}"
-    ln -f "$CACHED" "$PANEL" 2>/dev/null || cp -f "$CACHED" "$PANEL"
-    FROM_CACHE=true
-  else
-    echo "Data cache: ${CACHED} does not match its pin; setup.sh downloads the panel"
-    rm -f "$CACHED"
-  fi
-fi
-echo "+ ANCESTRY_PANEL_NAME=${PANEL_NAME} scripts/setup.sh --ancestry-panel (panel from the Actions cache: ${FROM_CACHE})"
-if $FROM_CACHE; then
-  "${BLOCKED[@]}" ANCESTRY_PANEL_NAME="$PANEL_NAME" "${REPO}/scripts/setup.sh" --ancestry-panel "$GENOME_DIR" 2>&1 | tee "$STEP_LOG"
-  check_eq "setup.sh --ancestry-panel exits 0 from the cached panel, with EBI unreachable" "${PIPESTATUS[0]}" 0
-  check "and downloads nothing" lacks 'Downloading' "$(cat "$STEP_LOG")"
-else
-  ANCESTRY_PANEL_NAME="$PANEL_NAME" "${REPO}/scripts/setup.sh" --ancestry-panel "$GENOME_DIR" 2>&1 | tee "$STEP_LOG"
-  check_eq "setup.sh --ancestry-panel exits 0" "${PIPESTATUS[0]}" 0
-  if [ "$PANEL_NAME" = GRCh38_HAPNEST_reference ]; then
-    check_eq "the downloaded panel matches its pin" "$(sha256 "$PANEL")" "$HAPNEST_SHA256"
-    if [ "${E2E_HAPNEST_KEEP:-false}" = true ] && [ "$(sha256 "$PANEL")" = "$HAPNEST_SHA256" ]; then
-      mkdir -p "${CACHED%/*}"
-      ln -f "$PANEL" "$CACHED" 2>/dev/null || cp -f "$PANEL" "$CACHED"
-      echo "Data cache: the panel is in ${CACHED} for the Actions cache"
-    fi
-  fi
-fi
-echo "ancestry panel: from the Actions cache ${FROM_CACHE}" >> "$E2E_NOTES"
+setup_ancestry_panel "$PANEL_NAME" "$PANEL"
 check "the panel is installed" test -s "$PANEL"
 check_ge "GRCh38 SNVs in the panel's site list" "$(wc -l < "$SITES" 2>/dev/null | tr -d ' ')" 1000
 check "the site list is chrN, position, REF, ALT" \
