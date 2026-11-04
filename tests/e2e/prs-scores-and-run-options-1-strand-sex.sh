@@ -111,13 +111,23 @@ check_eq "chrX hom-ref rows" "$(wc -l < "$X_SITES" | tr -d ' ')" 3
 SCORES="${GENOME_DIR}/prs_scores"
 rm -rf "$SCORES" "${D}/prs"
 mkdir -p "$SCORES"
+# scripts/ci/e2e-run.sh keeps the four real files and the .md5 files served
+# beside them in E2E_DATA_CACHE/pgs (the e2e workflow's Actions cache), so an
+# EBI outage cannot fail the case; without that entry they are downloaded here.
 PGS_BASE=https://ftp.ebi.ac.uk/pub/databases/spot/pgs/scores
+PGS_CACHE="${E2E_DATA_CACHE:-}/pgs"
 for id in $(awk -F'\t' '$1 ~ /^PGS[0-9]+$/ {print $1}' "${REPO}/assets/pgs_scores.tsv"); do
   case " ${NEW_IDS} " in
     *" ${id} "*)
       url="${PGS_BASE}/${id}/ScoringFiles/Harmonized/${id}_hmPOS_GRCh38.txt.gz"
-      curl -fsSL --retry 3 -o "${SCORES}/${id}.txt.gz" "$url"
-      want=$(curl -fsSL --retry 3 "${url}.md5" | awk '{print $1}')
+      if [ -n "${E2E_DATA_CACHE:-}" ] && [ -s "${PGS_CACHE}/${id}.txt.gz" ] && [ -s "${PGS_CACHE}/${id}.txt.gz.md5" ]; then
+        echo "${id}: from the Actions cache (${PGS_CACHE}), no download"
+        cp "${PGS_CACHE}/${id}.txt.gz" "${SCORES}/${id}.txt.gz"
+        want=$(awk '{print $1; exit}' "${PGS_CACHE}/${id}.txt.gz.md5")
+      else
+        curl -fsSL --retry 3 -o "${SCORES}/${id}.txt.gz" "$url"
+        want=$(curl -fsSL --retry 3 "${url}.md5" | awk '{print $1}')
+      fi
       check_eq "${id}: the PGS Catalog's GRCh38-harmonised file, md5 checked" \
         "$( (md5sum "${SCORES}/${id}.txt.gz" 2>/dev/null || echo x) | awk '{print $1}')" "${want:-none}"
       continue ;;

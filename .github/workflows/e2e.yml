@@ -503,6 +503,8 @@ jobs:
           grep -qx nextflow-hardening-2-nf "$list" && echo "parity_hardening=true" >> "$GITHUB_OUTPUT"
           grep -qx mocha-1 "$list" && echo "data_mocha=true" >> "$GITHUB_OUTPUT"
           grep -qx archaic-ancestry-1 "$list" && echo "data_archaic=true" >> "$GITHUB_OUTPUT"
+          grep -qx bash-step-08-hla "$list" && echo "data_hla=true" >> "$GITHUB_OUTPUT"
+          grep -qx prs-scores-and-run-options-1-strand-sex "$list" && echo "data_pgs=true" >> "$GITHUB_OUTPUT"
           echo "list=${list}" >> "$GITHUB_OUTPUT"
 
       # Before the base outputs: the base leg pulled the same images.
@@ -554,12 +556,18 @@ jobs:
       # runs" there) and downloads what a miss leaves out. Saved like the
       # images: on main, or a run by hand with save_images, on a miss. Only
       # the leg whose cases include the case restores and saves its entry.
+      # Two small ones the same way, keyed by e2e-run.sh --data-key: hla.dat
+      # of two IPD-IMGT/HLA releases and GENCODE's genes and exons
+      # (bash-step-08-hla, which then runs with the network blocked), and the
+      # four real PGS Catalog score files of prs-scores-and-run-options-1.
       - name: Data cache keys
         id: data-keys
         run: |
           . versions.env
           echo "mocha=e2e-data-mocha-${MOCHA_PANEL_MANIFEST_SHA256:0:16}-chr20" | tee -a "$GITHUB_OUTPUT"
           echo "archaic=e2e-data-1kg-sites-${ARCHAIC_1KG_SITES_MD5}" | tee -a "$GITHUB_OUTPUT"
+          echo "hla=$(scripts/ci/e2e-run.sh --data-key hla)" | tee -a "$GITHUB_OUTPUT"
+          echo "pgs=$(scripts/ci/e2e-run.sh --data-key pgs)" | tee -a "$GITHUB_OUTPUT"
 
       - name: Restore cached data, MoChA panel
         id: data-mocha
@@ -577,21 +585,38 @@ jobs:
           path: ${{ env.E2E_DATA_CACHE }}/archaic
           key: ${{ steps.data-keys.outputs.archaic }}
 
-      # The PGS Catalog's synthetic HAPNEST panel (prs-2-ancestry, 268 MB),
-      # from EBI's FTP server, keyed on the sha256 the case pins. The case
-      # takes it from E2E_DATA_CACHE/hapnest, checks it and then runs setup.sh
-      # with EBI unreachable; on a miss it downloads it and puts it there.
-      # Saved like the entries above: on main, or a run by hand with
-      # save_images, on a miss.
+      - name: Restore cached data, IPD-IMGT/HLA and GENCODE
+        id: data-hla
+        if: steps.cases-list.outputs.data_hla == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/hla
+          key: ${{ steps.data-keys.outputs.hla }}
+
+      - name: Restore cached data, PGS Catalog scores
+        id: data-pgs
+        if: steps.cases-list.outputs.data_pgs == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/pgs
+          key: ${{ steps.data-keys.outputs.pgs }}
+
+      # The PGS Catalog's synthetic HAPNEST panel (prs-2-ancestry and
+      # prs-scores-and-run-options-2, 268 MB), from EBI's FTP server, keyed
+      # on the sha256 tests/e2e/lib.sh pins. The cases take it from
+      # E2E_DATA_CACHE/hapnest, check it and then run setup.sh with EBI
+      # unreachable; on a miss the first one downloads it and puts it there
+      # (setup_ancestry_panel in lib.sh). Saved like the entries above: on
+      # main, or a run by hand with save_images, on a miss.
       - name: Data cache, HAPNEST panel
         id: hapnest
         env:
           LIST: ${{ steps.cases-list.outputs.list }}
           SAVE: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && 'true' || 'false' }}
         run: |
-          grep -qx prs-2-ancestry "$LIST" || exit 0
-          sha=$(sed -n 's/^HAPNEST_SHA256=//p' tests/e2e/prs-2-ancestry.sh)
-          [ "${#sha}" -eq 64 ] || { echo "::error::No HAPNEST_SHA256= line in tests/e2e/prs-2-ancestry.sh"; exit 1; }
+          grep -qxE 'prs-2-ancestry|prs-scores-and-run-options-2-panel-chrx' "$LIST" || exit 0
+          sha=$(sed -n 's/^HAPNEST_SHA256=//p' tests/e2e/lib.sh)
+          [ "${#sha}" -eq 64 ] || { echo "::error::No HAPNEST_SHA256= line in tests/e2e/lib.sh"; exit 1; }
           { echo "run=true"; echo "key=e2e-data-hapnest-${sha:0:16}"; } | tee -a "$GITHUB_OUTPUT"
           echo "E2E_HAPNEST_KEEP=${SAVE}" >> "$GITHUB_ENV"
 
@@ -613,14 +638,15 @@ jobs:
           E2E_BASE_OUT: ${{ matrix.job == 'base' && format('{0}/base.tar.zst', runner.temp) || '' }}
           E2E_BASE_IN: ${{ matrix.job != 'base' && format('{0}/e2e-base/base.tar.zst', runner.temp) || '' }}
           # Keep the downloads to the end of the job only when a save step uses them.
-          E2E_DATA_KEEP: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && ((steps.cases-list.outputs.data_mocha == 'true' && steps.data-mocha.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_archaic == 'true' && steps.data-archaic.outputs.cache-hit != 'true')) && 'true' || 'false' }}
+          E2E_DATA_KEEP: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && ((steps.cases-list.outputs.data_mocha == 'true' && steps.data-mocha.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_archaic == 'true' && steps.data-archaic.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_hla == 'true' && steps.data-hla.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_pgs == 'true' && steps.data-pgs.outputs.cache-hit != 'true')) && 'true' || 'false' }}
           HIT_MOCHA: ${{ steps.data-mocha.outputs.cache-hit || 'false' }}
           HIT_ARCHAIC: ${{ steps.data-archaic.outputs.cache-hit || 'false' }}
-          DATA_MOCHA: ${{ steps.cases-list.outputs.data_mocha || 'false' }}
-          DATA_ARCHAIC: ${{ steps.cases-list.outputs.data_archaic || 'false' }}
+          HIT_HLA: ${{ steps.data-hla.outputs.cache-hit || 'false' }}
+          HIT_PGS: ${{ steps.data-pgs.outputs.cache-hit || 'false' }}
+          DATA_ANY: ${{ steps.cases-list.outputs.data_mocha || steps.cases-list.outputs.data_archaic || steps.cases-list.outputs.data_hla || steps.cases-list.outputs.data_pgs || 'false' }}
         run: |
-          if [ "$DATA_MOCHA" = true ] || [ "$DATA_ARCHAIC" = true ]; then
-            echo "Data cache (${JOB}): exact key hit, MoChA panel ${HIT_MOCHA}, 1000 Genomes sites ${HIT_ARCHAIC}" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$DATA_ANY" = true ]; then
+            echo "Data cache (${JOB}): exact key hit, MoChA panel ${HIT_MOCHA}, 1000 Genomes sites ${HIT_ARCHAIC}, IPD-IMGT/HLA and GENCODE ${HIT_HLA}, PGS scores ${HIT_PGS}" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
           scripts/ci/e2e-run.sh
 
@@ -634,6 +660,8 @@ jobs:
         env:
           HIT_MOCHA: ${{ steps.data-mocha.outputs.cache-hit }}
           HIT_ARCHAIC: ${{ steps.data-archaic.outputs.cache-hit }}
+          HIT_HLA: ${{ steps.data-hla.outputs.cache-hit }}
+          HIT_PGS: ${{ steps.data-pgs.outputs.cache-hit }}
         run: |
           d=$E2E_DATA_CACHE
           if [ "$HIT_MOCHA" != true ] && [ -s "${d}/mocha/manifest.txt" ] \
@@ -643,6 +671,13 @@ jobs:
           if [ "$HIT_ARCHAIC" != true ] && [ -s "${d}/archaic/1kg_sites.vcf.gz" ]; then
             echo "archaic=true" >> "$GITHUB_OUTPUT"
           fi
+          # Whole and checked (data_ok in e2e-run.sh), or not saved.
+          for n in hla pgs; do
+            hit=HIT_${n^^}
+            if [ "${!hit}" != true ] && [ -d "${d}/${n}" ] && scripts/ci/e2e-run.sh --data-check "$n"; then
+              echo "${n}=true" >> "$GITHUB_OUTPUT"
+            fi
+          done
           du -sh "${d}"/* 2> /dev/null || echo "Data cache: nothing downloaded"
 
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -656,6 +691,18 @@ jobs:
         with:
           path: ${{ env.E2E_DATA_CACHE }}/archaic
           key: ${{ steps.data-keys.outputs.archaic }}
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.data-save.outputs.hla == 'true'
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/hla
+          key: ${{ steps.data-keys.outputs.hla }}
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.data-save.outputs.pgs == 'true'
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/pgs
+          key: ${{ steps.data-keys.outputs.pgs }}
 
       # The case leaves the panel there only once its sha256 matched.
       - name: Data cache, HAPNEST panel, what to save

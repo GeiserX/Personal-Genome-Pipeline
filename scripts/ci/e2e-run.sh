@@ -11,6 +11,9 @@
 #   --image-groups  prints "GROUP IMAGE" for every image the cases use (the
 #            e2e workflow's image cache entries) and exits.
 #   --pull-images  pulls those images, as step 3 below does, and exits.
+#   --data-key NAME  prints the Actions cache key of data entry NAME (hla, pgs).
+#   --data-check NAME  exits 0 when entry NAME in E2E_DATA_CACHE is whole and
+#            matches its checksums (the e2e workflow saves only such an entry).
 #
 # Env: E2E_WORK  work area (default ${RUNNER_TEMP:-/tmp}/e2e-work), about 25 GB
 #      GH_TOKEN  token for `gh release download` (the job's GITHUB_TOKEN)
@@ -135,6 +138,65 @@ if [ "${1:-}" = --image-groups ]; then
   image_groups
   exit 0
 fi
+
+# --- Data cache keys and checks -------------------------------------------------
+# The e2e workflow asks here for the Actions cache key of the entries hla and
+# pgs (`--data-key NAME`) and whether an entry is whole before it saves it
+# (`--data-check NAME`), so the key and the check are written once. The other
+# entries (mocha, archaic) are keyed in e2e.yml on their versions.env pins.
+DATA_CACHE=${E2E_DATA_CACHE:-}
+HLA_CASE="${REPO}/tests/e2e/bash-step-08-hla.sh"
+PGS_CASE="${REPO}/tests/e2e/prs-scores-and-run-options-1-strand-sex.sh"
+# hla_releases: the IPD-IMGT/HLA releases bash-step-08-hla installs (the
+# release before the pin, then the pin), from the case and scripts/lib/common.sh.
+hla_releases() {
+  local other pin
+  other=$(sed -n 's/^OTHER=//p' "$HLA_CASE")
+  pin=$(sed -n 's/^HLA_DB_RELEASE=\${HLA_DB_RELEASE:-\(.*\)}$/\1/p' "${REPO}/scripts/lib/common.sh")
+  [ -n "$other" ] && [ -n "$pin" ] || { echo "ERROR: no OTHER= line in ${HLA_CASE} or no HLA_DB_RELEASE default in scripts/lib/common.sh" >&2; return 1; }
+  echo "$other $pin"
+}
+# data_key NAME: the Actions cache key of entry NAME. hla: the two releases,
+# GENCODE's release and a hash of the code that installs them (the "Pinned
+# data files" part of scripts/lib/common.sh), since the entry holds what that
+# code writes. pgs: a hash of the score ids and the server they come from.
+data_key() {
+  local r g h
+  case "$1" in
+    hla)
+      r=$(hla_releases) || return 1
+      g=$(sed -n 's/^GENCODE_RELEASE=//p' "${REPO}/scripts/lib/common.sh")
+      h=$(awk '/^# --- Pinned data files/,/^_keep_lines\(\)/' "${REPO}/scripts/lib/common.sh" | sha256sum | cut -c1-16)
+      echo "e2e-data-hla-${r// /-}-gencode${g}-${h}" ;;
+    pgs)
+      h=$(grep -E '^(NEW_IDS|PGS_BASE)=' "$PGS_CASE" | sha256sum | cut -c1-16)
+      echo "e2e-data-pgs-${h}" ;;
+    *) echo "ERROR: no data cache key for ${1}" >&2; return 1 ;;
+  esac
+}
+# data_ok NAME: 0 when entry NAME in E2E_DATA_CACHE is whole and checks out.
+# hla: every file its SHA256SUMS lists, which data_fetch writes after the
+# downloads passed their md5 checks, matches. pgs: each score of the case is
+# there with the md5 file the PGS Catalog serves beside it, and matches it.
+data_ok() {
+  local d="${DATA_CACHE:?}/$1" id
+  case "$1" in
+    hla)
+      [ -s "${d}/SHA256SUMS" ] && [ "$(wc -l < "${d}/SHA256SUMS")" -eq 4 ] \
+        && (cd "$d" && sha256sum --quiet -c SHA256SUMS) ;;
+    pgs)
+      for id in $(sed -n 's/^NEW_IDS="\(.*\)"$/\1/p' "$PGS_CASE"); do
+        [ -s "${d}/${id}.txt.gz" ] && [ -s "${d}/${id}.txt.gz.md5" ] \
+          && [ "$(md5sum "${d}/${id}.txt.gz" | cut -d' ' -f1)" = "$(awk '{print $1; exit}' "${d}/${id}.txt.gz.md5")" ] \
+          || return 1
+      done ;;
+    *) return 1 ;;
+  esac
+}
+case "${1:-}" in
+  --data-key) data_key "${2:?--data-key NAME}"; exit ;;
+  --data-check) data_ok "${2:?--data-check NAME}"; exit ;;
+esac
 
 # pull_all: pull every image of case_images that is not here yet.
 pull_all() {
@@ -341,6 +403,9 @@ data_fetch() (
   d="${DATA_CACHE}/$1"
   # shellcheck source=../lib/common.sh
   . "${REPO}/scripts/lib/common.sh" || exit 1
+  # More and longer-spaced tries than a user's run: EBI and GitHub's raw host
+  # stayed down for minutes at a time on 2026-11-04 (curl exit 7 and 28).
+  FETCH_TRIES=${E2E_FETCH_TRIES:-6} FETCH_WAIT=${E2E_FETCH_WAIT:-30}
   case "$1" in
     mocha)
       m="${d}/manifest.txt"
@@ -360,24 +425,68 @@ data_fetch() (
       s="${d}/1kg_sites.vcf.gz"
       [ -s "$s" ] && [ "$(_digest md5 "$s")" = "$ARCHAIC_1KG_SITES_MD5" ] && exit 0
       fetch "$url" "$s" md5 "$ARCHAIC_1KG_SITES_MD5" || exit 1 ;;
+    hla)
+      # The files install_data_file writes, made by install_data_file itself
+      # with the entry as GENOME_DIR: hla.dat of both releases (md5 from
+      # IPD-IMGT/HLA's md5checksum.txt) and GENCODE's genes and exons (md5
+      # from its MD5SUMS). Their sha256 go to SHA256SUMS, which data_ok checks.
+      data_ok hla && exit 0
+      rm -rf "$d" && mkdir -p "$d" || exit 1
+      read -r other pin <<< "$(hla_releases)"
+      [ -n "$pin" ] || exit 1
+      ( GENOME_DIR=$d
+        unset SAMPLE
+        HLA_DB_RELEASE=$other install_data_file hla_dat \
+          && HLA_DB_RELEASE=$pin install_data_file hla_dat \
+          && install_data_file gencode_genes && install_data_file gencode_exons ) || exit 1
+      (cd "$d" && find . -type f ! -name 'SHA256SUMS*' ! -name '*.part' | LC_ALL=C sort | xargs sha256sum) > "${d}/SHA256SUMS.tmp" \
+        && mv "${d}/SHA256SUMS.tmp" "${d}/SHA256SUMS" && data_ok hla || exit 1 ;;
+    pgs)
+      # The four real PGS Catalog files of prs-scores-and-run-options-1, each
+      # with the .md5 file served beside it, checked against it.
+      base=$(sed -n 's/^PGS_BASE=//p' "$PGS_CASE")
+      [ -n "$base" ] || { echo "ERROR: no PGS_BASE= line in ${PGS_CASE}" >&2; exit 1; }
+      for id in $(sed -n 's/^NEW_IDS="\(.*\)"$/\1/p' "$PGS_CASE"); do
+        f="${d}/${id}.txt.gz" url="${base}/${id}/ScoringFiles/Harmonized/${id}_hmPOS_GRCh38.txt.gz"
+        [ -s "$f" ] && [ -s "${f}.md5" ] && [ "$(_digest md5 "$f")" = "$(awk '{print $1; exit}' "${f}.md5")" ] && continue
+        rm -f "$f" "${f}.md5"
+        fetch "${url}.md5" "${f}.md5" || exit 1
+        fetch "$url" "$f" md5 "$(awk '{print $1; exit}' "${f}.md5")" || exit 1
+      done
+      data_ok pgs || exit 1 ;;
     *) echo "ERROR: no data cache entry ${1}" >&2; exit 1 ;;
   esac
 )
-# data_name CASE: the E2E_DATA_CACHE entry CASE reads, and where setup.sh wants it.
+# data_name CASE: the E2E_DATA_CACHE entry CASE reads, and where setup.sh
+# wants it ("-": the case reads the entry itself), then "offline" when the
+# case runs with the network blocked once its files are in place.
+#   bash-step-08-hla: hla.dat of two IPD-IMGT/HLA releases (raw.githubusercontent.com,
+#     which served it under 1 KB/s at times) and GENCODE's genes and exons
+#     (ftp.ebi.ac.uk), at the paths data_file names, so install_data_file
+#     finds them and downloads nothing.
+#   prs-scores-and-run-options-1: the four real PGS Catalog score files
+#     (ftp.ebi.ac.uk); the case copies them from E2E_DATA_CACHE/pgs.
 data_name() {
   # shellcheck source=../../versions.env
   case "$1" in
     mocha-1.sh) echo "mocha ${GENOME_DIR}/reference/mocha-$(. "${REPO}/versions.env" && echo "$MOCHA_PANEL_VERSION")" ;;
     archaic-ancestry-1.sh) echo "archaic ${GENOME_DIR}/reference/archaic/$(. "${REPO}/versions.env" && echo "$ARCHAIC_DATA_VERSION")/download" ;;
+    bash-step-08-hla.sh) echo "hla ${GENOME_DIR} offline" ;;
+    prs-scores-and-run-options-1-strand-sex.sh) echo "pgs -" ;;
   esac
 }
+# Every HTTP(S) request of a process run under it goes to a closed port.
+OFFLINE=(env http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9
+         HTTPS_PROXY=http://127.0.0.1:9 no_proxy= NO_PROXY= FETCH_TRIES=1 FETCH_WAIT=0)
 # data_seed CASE: before CASE, its files from E2E_DATA_CACHE. A failure here
 # only warns and costs the download: setup.sh in the case fetches what is
-# not there.
+# not there. Sets CASE_ENV to OFFLINE when the case's entry says "offline"
+# and every file is in place, after a control shows the block holds.
 data_seed() {
-  local n dest f t
+  local n dest flag f t placed=true
+  CASE_ENV=()
   [ -n "$DATA_CACHE" ] || return 0
-  read -r n dest <<< "$(data_name "$1")"
+  read -r n dest flag <<< "$(data_name "$1")"
   [ -n "$n" ] || return 0
   if [ -n "$(find "${DATA_CACHE}/${n}" -type f ! -name '*.part' 2> /dev/null | head -n 1)" ]; then
     echo "Data cache: ${n} restored from the Actions cache"
@@ -385,13 +494,25 @@ data_seed() {
     echo "Data cache: ${n} not in the Actions cache; downloading it"
   fi
   data_fetch "$n" || { echo "::warning::Data cache: could not fill ${n}; ${1%.sh} downloads it itself"; return 0; }
+  [ "$dest" = - ] && { echo "Data cache: ${n} is whole; ${1%.sh} reads it from ${DATA_CACHE}/${n}"; return 0; }
   while IFS= read -r f; do
     t="${dest}/${f#./}"
     mkdir -p "${t%/*}" \
       && { ln -f "${DATA_CACHE}/${n}/${f#./}" "$t" 2> /dev/null || cp -f "${DATA_CACHE}/${n}/${f#./}" "$t"; } \
-      || echo "::warning::Data cache: could not place ${f#./}; ${1%.sh} downloads it itself"
-  done < <(cd "${DATA_CACHE}/${n}" && find . -type f ! -name '*.part')
-  echo "Data cache: ${n}: $(cd "${DATA_CACHE}/${n}" && find . -type f ! -name '*.part' | wc -l | tr -d ' ') files in ${dest}"
+      || { echo "::warning::Data cache: could not place ${f#./}; ${1%.sh} downloads it itself"; placed=false; }
+  done < <(cd "${DATA_CACHE}/${n}" && find . -type f ! -name '*.part' ! -name SHA256SUMS)
+  echo "Data cache: ${n}: $(cd "${DATA_CACHE}/${n}" && find . -type f ! -name '*.part' ! -name SHA256SUMS | wc -l | tr -d ' ') files in ${dest}"
+  [ "$flag" = offline ] && $placed || return 0
+  # Control: under OFFLINE a request to a host that answers must fail, or
+  # the offline run would prove nothing.
+  # Read from curl's own error, so a host that is down cannot pass for it.
+  if ! "${OFFLINE[@]}" curl -fsS --max-time 20 -o /dev/null https://raw.githubusercontent.com/ 2>&1 \
+       | grep -q '127\.0\.0\.1.* 9\b'; then
+    echo "::error::Data cache: a request under the network block did not fail at the closed port; ${1%.sh} runs with the network"
+    return 0
+  fi
+  echo "Data cache: control passed (a request under the block failed); ${1%.sh} runs with every HTTP(S) request sent to a closed port"
+  CASE_ENV=("${OFFLINE[@]}")
 }
 # data_drop CASE: after CASE, its cache files go, unless this run saves them.
 data_drop() {
@@ -472,7 +593,7 @@ for c in "${CASES[@]}"; do
   echo "::group::${name}"
   data_seed "$c"
   set +e
-  timeout -k 30 "$CASE_TIMEOUT" bash "${REPO}/tests/e2e/${c}" 2>&1 | tee "$log"
+  timeout -k 30 "$CASE_TIMEOUT" "${CASE_ENV[@]}" bash "${REPO}/tests/e2e/${c}" 2>&1 | tee "$log"
   rc=${PIPESTATUS[0]}
   set -e
   data_drop "$c"
