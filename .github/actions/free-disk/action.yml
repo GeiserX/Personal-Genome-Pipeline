@@ -2,8 +2,8 @@ name: Free disk space
 description: >-
   Removes the preinstalled toolchains no OwnGenome job uses and the
   preinstalled Docker images, and prints the free space before and after.
-  A hosted runner starts with about 20 GB free on /; the e2e legs and the
-  Nextflow stub runs pull more images than that. Java and Python stay in the
+  The free space on / varies with the runner image, and the e2e legs and the
+  Nextflow stub runs ran out of it on 2026-11-04. Java and Python stay in the
   tool cache: setup-java and the scripts use them.
 
 runs:
