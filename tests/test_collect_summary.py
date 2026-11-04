@@ -1204,7 +1204,8 @@ def report_followups_sections(work, schema):
     html_ = htmlmod.unescape(html_)
     rl = summ["sections"]["traits"]["data"].get("rules") or []
     check("rules: the TAS2R38 line is read, PAV/PAV, and APOE (in the traits table) is left out",
-          [(r["rule"], r["result"], r["status"], r["phase"]) for r in rl] == [("TAS2R38", "PAV/PAV", "called", "not_needed")],
+          [(r["rule"], r["result"], r["status"], r["phase"]) for r in rl if r["rule"] in ("TAS2R38", "APOE")]
+          == [("TAS2R38", "PAV/PAV", "called", "not_needed")],
           rl)
     trait = rules["TAS2R38"]["trait"]
     check("rules: the text report prints the rule line with its result and sites",

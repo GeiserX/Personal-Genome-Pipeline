@@ -36,6 +36,19 @@ What the converter writes for each locus:
 - **Seven loci get no thresholds**, so step 9b gives them no status, and the step log lists them as "Not graded": MUC1, CEL, TYMS and PLIN4, whose reference repeat is longer than 300 bases, so no short read spans it; VWA1 and POLG, where STRchive gives no pathogenic size; and MIR7-2, where disease comes from a contraction. ExpansionHunter still writes a record for each.
 - **The motifs** of the eleven loci where the motif decides, not the size: RFC1, the FAME loci (SAMD12, STARD7, YEATS2, MARCHF6, RAPGEF2, TNRC6A, RAI1), SCA31 (BEAN1), SCA37 (DAB1) and aFTLD-U (GOLGA8A). Step 9b counts them in the reads ([step 9b](09b-stranger.md)).
 
+## Repeats STRchive Leaves Out (opt-in)
+
+Two short repeats that change how other findings read are not disease expansions, so STRchive does not list them. `assets/str_extra_loci.json` holds them in ExpansionHunter's form, and `STR_EXTRA_LOCI=yes ./scripts/setup.sh --strchive-data <genome_dir>` appends them to the STRchive catalog (`bin/strchive_convert.py --extra`). Without the opt-in the catalog stays STRchive's 82 loci; the stamp names the file's sha256, so turning it on or off converts again. Both the bash step and the pipeline then size them, since both read that catalog.
+
+| Locus | Repeats (GRCh38) | What the counts mean | Source |
+|---|---|---|---|
+| `CFTR` | `CFTR_TG` and `CFTR_T`: the intron 9 (legacy IVS8) TG and poly-T tract, chr7:117548606-117548635, GRCh38 TG11 T7 | a splicing modifier: 5T with TG12 or TG13 is a variable-penetrance allele, read beside R117H and CBAVD findings | [Deignan et al. 2020](https://pubmed.ncbi.nlm.nih.gov/32404922/) |
+| `UGT1A1` | the promoter TA repeat, chr2:233760234-233760248, GRCh38 A(TA)6TAA | ExpansionHunter counts TA units from the first T, so 7 units is TA6 (`*1`), 6 is TA5 (`*36`), 8 is TA7 (`*28`) and 9 is TA8 (`*37`); `*28` and `*37` are decreased function | [Gammal et al. 2016](https://pubmed.ncbi.nlm.nih.gov/26417955/) |
+
+Each entry has a `NoThresholds` reason and no Stranger thresholds: step 9b gives them no status, and the step 09 log prints them as "Not graded" with that reason. The counts are in the VCF (`REPCN`) and the JSON. No step reads them into a result yet: the report prints neither a 5T line nor a UGT1A1 `*28` call from them, and UGT1A1 `*28` is still read by PharmCAT ([step 7](07-pharmacogenomics.md)) from the small-variant calls, with the reference-block fill of `bin/pgx_refblock_fill.py`. `tests/test_str_catalog.py` checks each region against the GRCh38 sequence, and the e2e case `genotype-rule-rows-1-str-extra` sizes both tracts on made-up reads with ExpansionHunter 5.0.0.
+
+SLC6A4 5-HTTLPR, the serotonin transporter promoter length polymorphism, is not tested by any step. CPIC's 2023 SSRI guideline ([Bousman et al. 2023](https://pubmed.ncbi.nlm.nih.gov/37032427/)) found that the data on SLC6A4 do not support its clinical use in antidepressant prescribing, so a result would carry no recommendation.
+
 ## Key Disease Thresholds
 
 The thresholds step 9b grades with on the STRchive v2.28.0 catalog, in repeat units: Stranger calls a count up to the normal maximum `normal`, one in the pre-mutation band `pre_mutation`, and one from the full-mutation minimum `full_mutation`. `tests/test_str_ranges.py` checks every row against the catalog. With `EH_CATALOG=bundled`, step 9b uses Stranger's bundled catalog, whose thresholds differ at some loci.

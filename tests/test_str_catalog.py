@@ -26,7 +26,18 @@ two sha256), downloaded once into a cache directory (STRCHIVE_DIR, default
      normal, pre_mutation and full_mutation; SAMD12 at the reference count
      normal and one above pre_mutation; MUC1 no status; and the control:
      Stranger's bundled GRCh38 catalog does not call HTT 27 pre_mutation, so
-     the check tells the two catalogs apart.
+     the check tells the two catalogs apart;
+  5. the repeats STRchive leaves out (assets/str_extra_loci.json, --extra):
+     the merged catalog is STRchive's 82 entries plus every extra locus,
+     copied as it is, with ranges rows and no Stranger thresholds; each
+     extra region is, in GRCh38 (NCBI's GRCh38.p14 chromosome sequence), a
+     whole run of its motif that the bases beside it do not continue; and
+     the controls: an extra catalog missing UGT1A1 gives a merged catalog
+     the missing-locus check flags, and a planted entry with no
+     NoThresholds, one whose region is not a whole number of motifs, one
+     named like a STRchive locus and one with Stranger thresholds each stop
+     the converter (exit 2, nothing written), as does a region shifted by
+     one base in the sequence check.
 
 Run: python3 tests/test_str_catalog.py
 """
@@ -299,6 +310,90 @@ def part_stranger(cat_path):
               bundled is not None and bundled.get("HTT.1") != "pre_mutation", bundled)
 
 
+# --- 5. the extra repeats ---------------------------------------------------------------
+EXTRA = os.path.join(REPO, "assets", "str_extra_loci.json")
+NCBI = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&rettype=fasta"
+ACCESSION = {"chr2": "NC_000002.12", "chr7": "NC_000007.14"}  # GRCh38.p14, as the no-ALT set's chr2 and chr7
+
+
+def grch38(chrom, start, end):
+    """GRCh38 bases [start, end) (0-based) of chrom, from NCBI."""
+    url = f"{NCBI}&id={ACCESSION[chrom]}&seq_start={start + 1}&seq_stop={end}"
+    for i in range(3):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as r:
+                text = r.read().decode()
+            return "".join(text.splitlines()[1:]).upper()
+        except OSError as e:
+            print(f"NCBI fetch {i + 1}/3 failed: {e}")
+            time.sleep(5 * (i + 1))
+    raise SystemExit(f"FAIL could not read {chrom}:{start}-{end} from NCBI")
+
+
+def region_errors(entry, shift=0):
+    """Why each region of an extra entry is not a whole run of its motif in GRCh38 (empty when it is)."""
+    errs = []
+    for m, r in zip(sc.motifs_of(entry["LocusStructure"]), sc.as_list(entry["ReferenceRegion"])):
+        chrom, a, b = sc.region(r)
+        a, b = a + shift, b + shift
+        k = len(m)
+        seq = grch38(chrom, a - k, b + k)
+        inner, left, right = seq[k:-k], seq[:k], seq[-k:]
+        if inner != m * ((b - a) // k):
+            errs.append(f"{r}: GRCh38 has {inner}, not {m} repeated")
+        elif left == m or right == m:
+            errs.append(f"{r}: the {m} run goes on past the region ({left}|...|{right})")
+    return errs
+
+
+def missing_extra(extra, cat):
+    """The LocusIds of the extra catalog that the merged catalog lacks."""
+    have = {e["LocusId"] for e in cat}
+    return [e["LocusId"] for e in extra if e["LocusId"] not in have]
+
+
+def part_extra(rel, eh, loci):
+    extra = json.load(open(EXTRA))
+    check("the extra catalog names CFTR (TG and T) and UGT1A1 (TA)",
+          [(e["LocusId"], e["LocusStructure"]) for e in extra] == [("CFTR", "(TG)*(T)*"), ("UGT1A1", "(TA)*")],
+          [e.get("LocusId") for e in extra])
+    with tempfile.TemporaryDirectory() as tmp:
+        out, rng = os.path.join(tmp, "catalog.json"), os.path.join(tmp, "ranges.tsv")
+        rc = sc.main(["--eh", eh, "--loci", loci, "--release", rel, "--out", out, "--ranges", rng, "--extra", EXTRA])
+        cat = json.load(open(out)) if rc == 0 else []
+        check("--extra: STRchive's 82 entries and the extra loci", rc == 0 and len(cat) == 82 + len(extra), (rc, len(cat)))
+        check("every extra locus is in the merged catalog", rc == 0 and not missing_extra(extra, cat),
+              missing_extra(extra, cat))
+        check("the extra loci are copied as they are, last", cat[-len(extra):] == extra, cat[-len(extra):])
+        check("no extra locus has Stranger thresholds, each says why",
+              all("NormalMax" not in e and "PathologicMin" not in e and e.get("NoThresholds") for e in cat[-len(extra):]))
+        rows = [l.split("\t") for l in open(rng).read().splitlines()[2:]] if rc == 0 else []
+        check("the ranges table has a row per entry, the extra ones without STRchive ranges",
+              len(rows) == len(cat) and [r[:6] for r in rows[-len(extra):]]
+              == [[e["LocusId"], e["SourceId"], "", "", "", ""] for e in extra], rows[-len(extra):])
+        short = [e for e in extra if e["LocusId"] != "UGT1A1"]
+        json.dump(short, open(os.path.join(tmp, "short.json"), "w"))
+        sc.main(["--eh", eh, "--loci", loci, "--release", rel, "--out", out, "--extra", os.path.join(tmp, "short.json")])
+        check("control: an extra catalog without UGT1A1 gives a merged catalog the check flags",
+              missing_extra(extra, json.load(open(out))) == ["UGT1A1"])
+        cftr = extra[0]
+        planted = {"no NoThresholds": dict(cftr, NoThresholds=""),
+                   "a region that is not a whole number of motifs": dict(
+                       cftr, ReferenceRegion=["chr7:117548606-117548627", "chr7:117548627-117548635"]),
+                   "a STRchive locus name": dict(cftr, LocusId="HTT"),
+                   "Stranger thresholds": dict(cftr, NormalMax=11, PathologicMin=13)}
+        for desc, bad in planted.items():
+            p, o, g = (os.path.join(tmp, x) for x in ("bad.json", "bad_out.json", "bad_ranges.tsv"))
+            json.dump([bad], open(p, "w"))
+            rc = sc.main(["--eh", eh, "--loci", loci, "--release", rel, "--out", o, "--ranges", g, "--extra", p])
+            check(f"control: an extra entry with {desc} stops the converter (exit 2, nothing written)",
+                  rc == 2 and not os.path.exists(o) and not os.path.exists(g), rc)
+    for e in extra:
+        errs = region_errors(e)
+        check(f"{e['LocusId']}: every region is a whole run of its motif in GRCh38", not errs, errs)
+    check("control: the UGT1A1 region shifted by one base fails the sequence check", bool(region_errors(extra[1], 1)))
+
+
 def main():
     rel, eh, loci = files()
     part_files(rel, eh, loci)
@@ -306,6 +401,7 @@ def main():
     part_convert(rel, eh, loci, cat, cat_path)
     part_motifs(cat_path)
     part_stranger(cat_path)
+    part_extra(rel, eh, loci)
     if FAILS:
         print(f"{len(FAILS)} check(s) failed")
         return 1
