@@ -1238,6 +1238,63 @@ def parascopy_section(work, schema):
     ps = collect_summary.collect("S", d)["sections"].get("parascopy") or {}
     check("parascopy: a table without the psCN columns is unreadable", ps.get("state") == "unreadable", ps)
 
+    # Every other catalog table (assets/paralog_loci.tsv), and HBA without an
+    # SMN1 table: a PARALOG_LOCI of the user's that leaves SMN1 out still
+    # shows the HBA count and the other loci.
+    g = os.path.join(work, "parascopy_loci", "S")
+    put(f"{g}/paralogs/S_gba1_copy_number.tsv", SMN_COLS
+        + "chr1\t155231478\t155238000\tGBA\tPASS\t4\t45\tPASS\t2,2\t30,30\tchr1:155210851-155215050:-\n"
+        + "chr1\t155238000\t155244699\tGBA\tPASS\t4\t38\tLowQual\t?,?\t5,5\t*\n")
+    put(f"{g}/paralogs/S_c4_copy_number.tsv", SMN_COLS
+        + "chr6\t31980531\t31990000\tC4A\tPASS\t5\t40\t.\t.\t.\t*\n"
+        + "chr6\t31990000\t32006219\tC4A\tLowQual\t4\t12\t.\t.\t.\t*\n")
+    put(f"{g}/paralogs/S_amy1_copy_number.tsv", SMN_COLS
+        + "chr1\t103745406\t103761087\tAMY1C\tnot assessed: no read over chr1:103745407-103761087\t.\t.\t"
+        "not assessed: no read over chr1:103745407-103761087\t.\t.\t.\n")
+    put(f"{g}/paralogs/S_mine_copy_number.tsv", SMN_COLS + "chr2\t10\t20\tX\tPASS\t2\t50\t.\t.\t.\t*\n")
+    put(f"{g}/paralogs/S_hba_copy_number.tsv", "metric\tvalue\nstatus\tcalled\nalpha_globin_genes\t4\n"
+        "estimate\t4.02\nmessage\tfour alpha-globin genes (aa/aa): no deletion seen\n")
+    summ, txt, html = render(g)
+    ps = summ["sections"].get("parascopy") or {"state": "missing", "data": {}}
+    pd = ps["data"]
+    check("no SMN1 table: the section is still read, with HBA, and HBA is off the not-assessed list",
+          ps["state"] == "ok" and (pd.get("hba") or {}).get("alpha_globin_genes") == "4"
+          and "HBA1 and HBA2 together (alpha-globin genes, from depth): 4" in txt
+          and not any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), (ps, summ["not_assessed"]))
+    check("no SMN1 table: SMN1 says why it has no reading, never a carrier reading",
+          pd.get("reading") == "no SMN1 table (step 35's catalog had no SMN1 row): no carrier reading"
+          and (pd.get("smn1") or {}).get("cn") is None, pd.get("reading"))
+    loci = {x["table"]: x for x in pd.get("loci", [])}
+    check("loci: one per catalog table, in the catalog's order, a table the catalog lacks last",
+          [x["table"] for x in pd.get("loci", [])] == ["gba1", "c4", "amy1", "mine"], list(loci))
+    check("loci: GBA with every region PASS and quality 20 or more reads 4, with the catalog's genes and reading",
+          loci.get("gba1", {}).get("cn") == 4 and loci["gba1"]["status"] == "called"
+          and loci["gba1"]["text"] == "4 (2 region(s), quality 38 or more, filter PASS)"
+          and loci["gba1"]["genes"] == "GBA1,GBAP1" and "Gaucher" in loci["gba1"]["reading"], loci.get("gba1"))
+    check("loci: C4 with a low-quality region lists each region and gives no single number",
+          loci.get("c4", {}).get("cn") is None and loci["c4"]["status"] == "called"
+          and "chr6:31980532-31990000 5 (quality 40, filter PASS)" in loci["c4"]["text"]
+          and "4 (quality 12, filter LowQual)" in loci["c4"]["text"], loci.get("c4"))
+    check("loci: a not-assessed table keeps its reason",
+          loci.get("amy1", {}).get("status") == "not assessed"
+          and loci["amy1"]["text"] == "not assessed: no read over chr1:103745407-103761087", loci.get("amy1"))
+    check("loci: a table the catalog does not name is read, with its name for genes",
+          loci.get("mine", {}).get("cn") == 2 and loci["mine"]["genes"] == "mine" and loci["mine"]["reading"] == ".",
+          loci.get("mine"))
+    card_g = html.split("<h2>SMN1/SMN2 Copy Number (Parascopy)</h2>", 1)[-1].split("<h2>", 1)[0]
+    check("loci: both reports list them, the reading only for a call",
+          "  GBA1, GBAP1 (agCN): 4 (2 region(s), quality 38 or more, filter PASS). Reading: agCN of GBA1" in txt
+          and "  AMY1A, AMY1B, AMY1C (agCN): not assessed: no read over" in txt
+          and "<td>GBA1, GBAP1</td>" in card_g and "<th>Copies together (agCN)</th>" in card_g
+          and "Gaucher" in card_g, (txt, card_g))
+    check("loci: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+    put(f"{g}/paralogs/S_c4_copy_number.tsv", "chrom\tstart\tend\tagCN\nchr6\t1\t2\t4\n")
+    pd = (collect_summary.collect("S", g)["sections"].get("parascopy") or {}).get("data") or {}
+    check("loci: an unreadable table is that locus's problem, not the section's",
+          {x["table"]: x["status"] for x in pd.get("loci", [])}.get("c4") == "unreadable"
+          and (pd.get("hba") or {}).get("alpha_globin_genes") == "4", pd.get("loci"))
+
     # Neither step 35 nor step 35b: the not-checked line in both reports.
     n = os.path.join(work, "noparalog", "S")
     put(f"{n}/vcf/S.vcf.gz", VCF_HEAD + "chr1\t1\t.\tA\tG\t50\tPASS\t.\tGT\t0/1\n", gz=True)

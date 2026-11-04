@@ -19,8 +19,10 @@
     collect_summary.py looks for it. assets/acmg_sf.tsv (the ACMG SF rules)
     and assets/carrier_genes.tsv (the carrier list) and
     assets/callability_genes.tsv (the hard-to-read genes) come in the same list
-    and go to assets/, which --assets names, as does assets/mito_confirmed.tsv
-    (the confirmed mtDNA variants step 20's section names). Every gene and rsID the
+    and go to assets/, which --assets names, as do assets/mito_confirmed.tsv
+    (the confirmed mtDNA variants step 20's section names) and the paralog
+    catalogs assets/paralog_loci.tsv and assets/paraphase_genes.tsv. Every
+    <id>_<table>_copy_number.tsv of step 35 goes to paralogs/. Every gene and rsID the
     results mention also goes to ${id}_search_index.json beside it
     (bin/results_index.py), for the live site's search, and the report's
     charts to ${id}_charts.json, for the live page (docs/24-html-report.md).
@@ -69,7 +71,7 @@ process HTML_REPORT {
             ${id}_haplogroup.txt|${id}_haplocheck.txt)    place mito "\$f" ;;
             ${id}_y_haplogroup.txt)                       place y_haplogroup "\$f" ;;
             ${id}_y_str.tsv)                              place y_str "\$f" ;;
-            ${id}_paraphase_copy_number.tsv|${id}_paraphase_variants.tsv|${id}_smn_copy_number.tsv|${id}_hba_copy_number.tsv) place paralogs "\$f" ;;
+            ${id}_paraphase_copy_number.tsv|${id}_paraphase_variants.tsv|${id}_*_copy_number.tsv) place paralogs "\$f" ;;
             ${id}.mosdepth.summary.txt|${id}_callability.bed.gz) place coverage "\$f" ;;
             ${id}_sample_qc.tsv)                          place qc "\$f" ;;
             ${id}_prs_summary.tsv)                        place prs "\$f" ;;
@@ -103,7 +105,7 @@ process HTML_REPORT {
             ${id}_mei.tsv|${id}_mei_sites.tsv)            place mei "\$f" ;;
             ${id}_mocha.tsv|${id}_mocha_summary.tsv)      place mosaic "\$f" ;;
             ${id}_couple_carrier.tsv)                     place couple "\$f" ;;
-            acmg_sf.tsv|carrier_genes.tsv|callability_genes.tsv|mito_confirmed.tsv) mkdir -p assets && ln -s "\$(readlink -f "\$f")" assets/ ;;
+            acmg_sf.tsv|carrier_genes.tsv|callability_genes.tsv|mito_confirmed.tsv|paralog_loci.tsv|paraphase_genes.tsv) mkdir -p assets && ln -s "\$(readlink -f "\$f")" assets/ ;;
             *) echo "ERROR: HTML_REPORT got an input it has no place for: \$(basename "\$f")" >&2; exit 1 ;;
         esac
     done
