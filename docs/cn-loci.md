@@ -1,6 +1,6 @@
 # Copy Number from Depth (the locus catalog)
 
-Several steps count copies of a gene from short-read depth: HBA1 and HBA2 in step 35, the RHD deletion in step 41 and the LPA KIV-2 repeat in step 46. Step 35 also counts three gene-dosage loci that no pinned caller models: HP, LCE3B/LCE3C and CCL3L1. They all use one engine, `bin/copy_number.py`, and one table, `bin/cn_loci.tsv`, with one row per locus. A new locus is a new row, not a new script.
+Several steps count copies of a gene from short-read depth: HBA1 and HBA2 in step 35, the RHD deletion in step 41 and the LPA KIV-2 repeat in step 46. Step 35 also counts three gene-dosage loci that no pinned caller models (HP, LCE3B/LCE3C and CCL3L1) and the interval rows: the recurrent CNV regions ClinGen curates (22q11.2, 1q21.1, 15q11.2, 16p11.2, 17p12 and the rest), three carrier deletion alleles and the Y chromosome AZF regions. They all use one engine, `bin/copy_number.py`, and one table, `bin/cn_loci.tsv`, with one row per locus. A new locus is a new row, not a new script.
 
 The table sits in `bin/` because `bin/` is the one repository folder that every container mounts: the bash steps mount it as `/pgp-bin`, and Nextflow puts it on every task's PATH.
 
@@ -47,7 +47,7 @@ Then the row's `call` column decides:
 | `readings` | `KEY=text`, separated by `\|`: the text for a count, a class, or `more` for any count above the keys |
 | `input` | `bedcov` (this engine) or `cnvpytor-level` (the row records thresholds on CNVpytor's depth level, where 1.0 is two copies) |
 | `owner` | the engine that calls the locus (`cn-depth`, this one) |
-| `cross_check` | another engine that also reports the locus (`parascopy:RHCE`, `paraphase:hba`) or `none` |
+| `cross_check` | another engine that also reports the locus (`parascopy:RHCE`, `paraphase:hba`, `cnvpytor:cnvs` for step 18's CNVpytor calls) or `none` |
 | `pmids` | the papers the method of the row comes from, or `.` |
 
 ## The loci
@@ -72,6 +72,21 @@ Step 35 (and the PARASCOPY module) runs these three rows one after the other and
 
 The report does not show `<sample>_cn_dosage.tsv` yet; the table and the step log are where to read it.
 
+### The interval rows
+
+`scripts/ci/build-cn-intervals.py` writes these rows, everything in `bin/cn_loci.tsv` after its marker line; do not edit them by hand. Step 35 (and the PARASCOPY module) runs `copy_number.py bed --kind interval`, one `samtools bedcov` over every segment of every row, then `copy_number.py intervals`, which writes one line per row to `<sample>_cn_intervals.tsv`: locus, name, chrom, start, end, status, copies, expected, change (`deletion`, `duplication`, `no change`, or `.` when not called), estimate and reason. The step log lists the rows with a change. The rows give a total copy count only, never breakpoints.
+
+- **The ClinGen recurrent regions**: every region row of ClinGen Dosage Sensitivity's recurrent CNV BED, version 2.1, GRCh38 (CC0, pinned by `CLINGEN_RECURRENT_CNV_URL` and its sha256 in `versions.env`). The file's breakpoint and LCR rows are the segmental duplications that bound the regions. They are cut out of the targets, as are GIAB v3.6 segmental duplications, assembly gaps, satellites and the regions of every pinned Parascopy model (CHRNA7 in 15q13.3 stays with Parascopy). Targets are cut to pieces of at most 500 kb, and their depth is pooled. Controls are two 100 kb windows, one on each side of the cluster of ClinGen rows the region belongs to, clear of all of that; a side with no clear window within 3 Mb (a chromosome end, as next to 22q11.2 and 15q11.2) is left out. The BED spells its chrX rows `chrx`; the script normalises them, and the engine refuses any contig name that is not a GRCh38 chromosome. The classification of a CNV found here follows the ACMG and ClinGen technical standards (Riggs 2020, PMID 31690835); a call from this step is a lead for a clinical test, not a classification.
+- **Two more ClinGen curations**: the 1p36 terminal region (ISCA-37434, haploinsufficiency score 3) and the Xq28 region that holds MECP2 (ISCA-46304, triplosensitivity score 3: the MECP2 duplication), from ClinGen's region curation list, read on 2026-11-04.
+- **Carrier deletion alleles**, at their ClinVar GRCh38 spans: del(GJB6-D13S1830) (variation 5546; del Castillo 2002, PMID 11807148), CFTRdele2,3 (variation 66105) and a 621 bp HBB deletion that removes exon 3 (variation 3769040). The alpha-globin `--SEA` deletion is read by the HBA row: two alpha-globin genes, with the reading that names `--SEA`. The 619 bp HBB deletion and the Sicilian delta-beta deletion have no row: we could not confirm their GRCh38 spans in a primary source.
+- **AZF** (Y chromosome microdeletions, Krausz 2024, PMID 37674303): AZFa as USP9Y and DDX3Y, AZFb as KDM5D and EIF1AY (single-copy genes the deletion removes), and AZFc as the four DAZ copies added up, against ZFY and NLGN4Y. A male has 1 copy of AZFa and AZFb and 4 DAZ copies; a complete AZFc deletion leaves 0, the partial gr/gr and b2/b3 deletions 2. Which copies are lost is not claimed. Gene spans from Ensembl, checked on 2026-11-04.
+
+A row on chrX or chrY is read against the sample's own count there: its controls sit on the same chromosome, so a male's one X or Y gives 1 copy, and `expected` says so. The sex comes from step 35's second argument, else from step 16's inferred sex; in Nextflow from the samplesheet. A chrY row on a female is `not applicable`; without a sex, chrX and chrY rows are `not assessed` (`sex_unknown`). Every row needs 8x of control depth (4x on chrY), flanks within 1.5x of each other, and an estimate within 0.3 of a whole number; a control with no read makes that row `not assessed` (`broken_control`) and the others still run. A failed bedcov pass writes every row as `not assessed` (`check_failed`).
+
+The couple screen (step 39) reads the table with `couple_report.py screen --cn-intervals ID=<id>_cn_intervals.tsv`: each carrier allele is present, absent or not assessable for each partner, and a male partner's AZF regions are listed. With `--cnvpytor ID=<id>_cnvs.vcf.gz` (step 18), a CNVpytor call that disagrees with the depth call is printed beside it. Step 39 and the Nextflow couple screen do not pass these two inputs yet.
+
+To change a row, change the script (its hand rows or a pinned download) and run `scripts/ci/build-cn-intervals.py`; `--check` fails when the catalog is not what the downloads give.
+
 ## One owner per locus
 
 A gene gets a row only when no pinned caller already counts it. The pinned Parascopy data (version 1.7) models 167 genes, among them AMY1C, C4A, CFH, CFHR4, FCGR3A, CHRNA7, APOBEC3A and GYPA. Parascopy owns those, so the engine never gets a row for them. A model covers its main region and the paralog copies it counts with it: C4A's model also covers C4B. `assets/parascopy_models_v1.7.txt` lists every one of those regions, and `tests/test_copy_number.py` fails when a row's targets or controls overlap one. Naming the model in `cross_check` does not lift that. Planted rows on AMY1C and on C4B show the check catching them.
@@ -93,6 +108,9 @@ pypgx owns the genes it calls from the BAM, the `bam` rows of `assets/pgx_genes.
 5. Add made-up bedcov tables for the row to `tests/test_copy_number.py`, at every count it can call and at each guard.
 
 ## How it is tested
+
+- `tests/test_copy_number.py` section 9 runs the converter on a small ClinGen BED whose chrX rows are spelled `chrx` (the rows load on chrX; the same rows left as `chrx` are refused; an unknown contig stops the build). Made-up depths call a 22q11.2 A-D deletion at 1 copy and a 17p12 duplication at 3, and 2 for both unaltered. AZFc at half its DAZ depth on a male is a deletion; every AZF row on a female is not applicable. The interval block of step 35, cut out and run on made-up bedcov tables, writes one line per row, and a failed bedcov writes every row as not assessed. `tests/test_couple_report.py` section 11 checks the three states and the CNVpytor cross-check.
+- The e2e case `cn-intervals-1-catalog` rebuilds the interval rows from the pinned downloads and fails on any difference with the committed catalog. `cn-intervals-2-hg002` runs the interval blocks of step 35 and of the PARASCOPY module on HG002's real reads at the AZF genes, their controls and 22q11.2: a male with one copy of AZFa and AZFb, no change at 22q11.2 A-B, and the AZF rows not applicable when the same reads are read as female.
 
 - `tests/test_copy_number.py` checks every row and refuses broken ones. For the three gene-dosage rows it calls made-up depths at 0 to 4 copies, cuts the dosage block out of step 35 and runs it on the made-up bedcov tables in `tests/fixtures/cn/` (HP 3, LCE3BC 1, CCL3L1 5 copies), checks that a row shifted by 1 kb no longer matches its table, and that the PARASCOPY module runs the same list. It runs the owner check with planted AMY1C, C4B and DEFB4 rows. It feeds made-up bedcov tables at 0, 1, 2, 3 and 4 copies and a MAPQ 0 share over the ceiling. It checks that a control with no read stops the run with `BROKEN_CONTROL`. It also checks that the depth tables of `tests/test_hba_copy_number.py` and `tests/test_lpa_kiv2.py` give, through the engine, the same tables the code before the engine wrote.
 - The fake-docker case `cn-engine-calls` runs steps 35, 41 and 46 with made-up depths. Each step calls `copy_number.py` once for its regions, step 35 and 46 once more for the call, and none calls the old per-gene scripts. A control exon with no read fails step 46 with `BROKEN_CONTROL`.
