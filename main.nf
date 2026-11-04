@@ -1167,7 +1167,7 @@ workflow {
         .join(ch_mocha_summary.map                { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
-        .map { items -> [items[1], items[2], items[3..-1].collectMany { f -> f instanceof List ? f : [f] }.findAll { f -> f != null } + report_assets] }
+        .map { items -> [items[1], items[2], items[3..-1].collectMany { f -> (f instanceof List ? f : [f]) }.findAll { f -> f != null } + report_assets] }
 
     // QC files for MultiQC (mosdepth summaries)
     ch_multiqc_files = BAM_ANALYSIS.out.coverage.map { meta, f -> f }
