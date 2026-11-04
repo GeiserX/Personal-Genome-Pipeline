@@ -25,6 +25,22 @@ column says. docs/cn-loci.md describes the columns and how to add a locus.
       coordinates are wrong, or the sample lacks that stretch, and no number
       is given.
 
+  copy_number.py bed --kind interval
+      the segments of every interval row (kind interval, one bedcov pass: the
+      recurrent CNV regions, the carrier deletion alleles and AZF) in one BED
+  copy_number.py intervals [--catalog TSV] --bedcov T --sex male|female|unknown
+                           --out OUT.tsv
+  copy_number.py intervals --failed --out OUT.tsv
+      call every interval row from one `samtools bedcov` over that BED; write
+      one line per row (locus, name, chrom, start, end, status, copies,
+      expected, change, estimate, reason). A row on chrX or chrY is read
+      against the sample's own count there: 1 on a male, 2 on a female's X;
+      a chrY row on a female is 'not applicable', and without a sex both are
+      'not assessed' (sex_unknown). A row whose control has no read is 'not
+      assessed' (broken_control) and the others still run. --failed writes
+      every row as 'not assessed' (check_failed), for a step whose depth
+      pass failed.
+
   copy_number.py check-bam --header H
       refuse a BAM aligned to a reference with ALT or HLA contigs. H is
       `samtools view -H` of the BAM, or its contig names one per line ('-'
@@ -52,6 +68,13 @@ COLUMNS = ["locus", "kind", "chrom", "targets", "controls", "details", "target_d
            "scale", "offset", "bedcov", "mapq0_min", "mapq0_max", "min_control_depth", "max_control_ratio",
            "call", "interval", "readings", "input", "owner", "cross_check", "pmids"]
 KINDS = ("gene", "interval", "organelle")
+# GRCh38 names of the primary chromosomes (the ClinGen BED spells chrX 'chrx':
+# scripts/ci/build-cn-intervals.py normalises it, and a row with any other
+# spelling is refused here).
+CHROMS = {f"chr{c}" for c in list(range(1, 23)) + ["X", "Y", "M"]}
+SEXES = ("male", "female", "unknown")
+INTERVAL_COLUMNS = ["locus", "name", "chrom", "start", "end", "status", "copies", "expected", "change",
+                    "estimate", "reason"]
 INPUTS = ("bedcov", "cnvpytor-level")
 Z95 = 1.96
 # The step table of a locus, by the module that lays it out (same folder).
@@ -168,7 +191,7 @@ def parse_row(row):
         raise CatalogError(f"{loc}: kind {row['kind']!r} (one of {', '.join(KINDS)})")
     if row["input"] not in INPUTS:
         raise CatalogError(f"{loc}: input {row['input']!r} (one of {', '.join(INPUTS)})")
-    if not row["chrom"].startswith("chr"):
+    if row["chrom"] not in CHROMS:
         raise CatalogError(f"{loc}: chrom {row['chrom']!r} (GRCh38 names, chr1 to chrM)")
     p = dict(row)
     p["_targets"], p["_controls"], p["_details"] = (_segments(row, c) for c in ("targets", "controls", "details"))
@@ -282,14 +305,31 @@ def reading(row, key):
     return ""
 
 
-def assess(row, m, q1=None):
+def ploidy(row, sex):
+    """The copies of the row's chromosome a sample has: 2, or 1 on a male's
+    chrX or chrY; None where it cannot be said (a chrY row on a female or on
+    a sample of no known sex, a chrX row without a sex)."""
+    if row["chrom"] not in ("chrX", "chrY"):
+        return 2
+    if sex == "male":
+        return 1
+    if sex == "female" and row["chrom"] == "chrX":
+        return 2
+    return None
+
+
+def assess(row, m, q1=None, sex=None):
     """The locus's block for mean depths m (every read) and q1 (reads of
     MAPQ >= 1, or None for a row without a MAPQ 0 guard; mapq0_share is then
     None).
 
     status is 'called' or 'not assessed'; reason names the guard that
     stopped it: no_data, low_control_depth, controls_disagree,
-    low_mapq0_share, high_mapq0_share, below_floor, between_counts."""
+    low_mapq0_share, high_mapq0_share, below_floor, between_counts,
+    sex_unknown; status 'not applicable' (reason no_y) for a chrY row on a
+    female. sex matters only for a row on chrX or chrY: there the controls
+    sit on the same chromosome, so the scale follows the sample's count
+    there (ploidy). expected is the count with no change."""
     guarded = q1 is not None
     if not guarded and (row["_mapq0_min"] is not None or row["_mapq0_max"] is not None):
         raise ValueError(f"{row['locus']} has a MAPQ 0 guard: the MAPQ >= 1 depths are needed")
@@ -297,7 +337,18 @@ def assess(row, m, q1=None):
     tg, ct = row["_targets"], row["_controls"]
     b = {"locus": row["locus"], "status": "not assessed", "reason": None, "estimate": None, "total": None,
          "copies": None, "ci95": None, "class": None, "target_depth": None, "control_depth": None,
-         "depths": dict(m), "mapq0_share": None, "details": {}, "reading": ""}
+         "depths": dict(m), "mapq0_share": None, "details": {}, "reading": "", "expected": None}
+    # expected: the copies with no change, the ploidy times the reference
+    # units (each target segment is one with target_depth sum: AZFc's 4 DAZ)
+    units = len(row["_targets"]) if row.get("target_depth") == "sum" else 1
+    pl = ploidy(row, sex)
+    b["expected"] = None if pl is None else pl * units
+    if row["chrom"] == "chrY" and sex == "female":
+        b.update(status="not applicable", reason="no_y")
+        return b
+    if pl is None:
+        b["reason"] = "sex_unknown"
+        return b
     if not m or any(n not in m for n, *_ in tg + ct):
         b["reason"] = "no_data"
         return b
@@ -321,10 +372,10 @@ def assess(row, m, q1=None):
         if min(vals) <= 0 or max(vals) / min(vals) > row["_max_ratio"]:
             b["reason"] = "controls_disagree"
             return b
-    total = row["_scale"] * T / C
+    total = row["_scale"] * pl / 2 * T / C
     est = total - row["_offset"]
     b.update(total=total, estimate=est,
-             details={n: row["_scale"] * m[n] / C for n, *_ in row["_details"] if n in m})
+             details={n: row["_scale"] * pl / 2 * m[n] / C for n, *_ in row["_details"] if n in m})
     # With no copy left there is no read to judge the aligner by (a row with
     # an offset has a floor of its own below, after this guard).
     no_copy = row["_offset"] == 0 and round(est) == 0
@@ -360,9 +411,20 @@ def assess(row, m, q1=None):
     return b
 
 
+def interval_rows(cat):
+    """The rows `intervals` calls: kind interval with one bedcov pass (LCE3BC,
+    an interval row with a MAPQ >= 1 pass, stays a gene-dosage row)."""
+    return [r for r in cat.values() if r["kind"] == "interval" and r["input"] == "bedcov" and r["_passes"] == ["."]]
+
+
 def _bed(args):
     cat = load_catalog(args.catalog)
-    loci = args.locus or [k for k, r in cat.items() if r["input"] == "bedcov"]
+    if args.kind == "interval":
+        if args.locus:
+            raise CatalogError("bed: --kind interval or --locus, not both")
+        loci = [r["locus"] for r in interval_rows(cat)]
+    else:
+        loci = args.locus or [k for k, r in cat.items() if r["input"] == "bedcov"]
     for loc in loci:
         if loc not in cat or cat[loc]["input"] != "bedcov":
             raise CatalogError(f"no bedcov locus {loc!r} in the catalog")
@@ -419,6 +481,93 @@ def _call_cmd(args):
     return 0
 
 
+def read_bedcov_all(path):
+    """[(chrom, start, end, name, depth sum)] of a `samtools bedcov` table."""
+    out = []
+    with open(path, errors="replace") as f:
+        for line in f:
+            if not line.strip() or line.startswith("#"):
+                continue
+            c = line.rstrip("\n").split("\t")
+            if len(c) < 5:
+                raise ValueError(f"{path}: expected chrom, start, end, name, depth sum; got {line.strip()!r}")
+            out.append((c[0], int(c[1]), int(c[2]), c[3], float(c[4])))
+    return out
+
+
+def interval_line(row, block):
+    """One line of the interval table for a row and its block."""
+    tg = row["_targets"]
+    f = (lambda x: "." if x is None else f"{x:.2f}")
+    copies, exp = block["copies"], block["expected"]
+    change = "." if copies is None or exp is None else \
+        "deletion" if copies < exp else "duplication" if copies > exp else "no change"
+    return [row["locus"], tg[0][3] or row["locus"], row["chrom"], str(min(s for _, s, _, _ in tg)),
+            str(max(e for _, _, e, _ in tg)), block["status"], "." if copies is None else str(copies),
+            "." if exp is None else str(exp), change, f(block["estimate"]), block["reason"] or "."]
+
+
+def call_intervals(cat, rows_in, sex):
+    """[line] of every interval row from one bedcov table (rows_in, as
+    read_bedcov_all gives it); a broken control makes that row 'not
+    assessed' (broken_control), never the whole table."""
+    by_name = {}
+    for c, s, e, n, d in rows_in:
+        if n in by_name:
+            raise ValueError(f"segment {n} appears twice in the bedcov table")
+        by_name[n] = (c, s, e, d)
+    out = []
+    for row in interval_rows(cat):
+        want = regions(row)
+        have = [w for w in want if w[3] in by_name]
+        if len(have) != len(want):
+            raise ValueError(f"the bedcov table lacks some of {row['locus']}'s segments: "
+                             f"its regions differ from `copy_number.py bed --kind interval`")
+        m = {}
+        for c, s, e, n in have:
+            if by_name[n][:3] != (c, s, e):
+                raise ValueError(f"segment {n} of {row['locus']} has other coordinates in the bedcov table")
+            m[n] = by_name[n][3] / (e - s)
+        try:
+            block = assess(row, m, None, sex)
+        except BrokenControl as e:
+            print(f"WARNING: {e}", file=sys.stderr)
+            block = assess(row, {}, None, sex)
+            if block["status"] == "not assessed":
+                block["reason"] = "broken_control"
+        out.append(interval_line(row, block))
+    return out
+
+
+def _intervals(args):
+    try:
+        cat = load_catalog(args.catalog)
+        if args.failed:
+            lines = [interval_line(r, {"status": "not assessed", "copies": None, "estimate": None,
+                                       "reason": "check_failed", "expected": None}) for r in interval_rows(cat)]
+        else:
+            if not args.bedcov or not args.sex:
+                raise ValueError("intervals needs --bedcov and --sex (or --failed)")
+            lines = call_intervals(cat, read_bedcov_all(args.bedcov), args.sex)
+    except (OSError, ValueError, KeyError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 2
+    try:
+        with open(args.out + ".tmp", "w") as f:
+            f.write("\t".join(INTERVAL_COLUMNS) + "\n")
+            for ln in lines:
+                f.write("\t".join(ln) + "\n")
+        os.replace(args.out + ".tmp", args.out)
+    except OSError as e:
+        print(f"ERROR: cannot write: {e}", file=sys.stderr)
+        return 2
+    n = {}
+    for ln in lines:
+        n[ln[5]] = n.get(ln[5], 0) + 1
+    print(f"interval rows: {len(lines)} ({', '.join(f'{v} {k}' for k, v in sorted(n.items()))})")
+    return 0
+
+
 def table(row, block):
     """([(metric, value)], one summary line) of a locus's step table."""
     mod = TABLES.get(row["locus"])
@@ -438,6 +587,7 @@ def main(argv=None):
     b = sub.add_parser("bed", help="print the segments of the loci")
     b.add_argument("--catalog")
     b.add_argument("--locus", action="append")
+    b.add_argument("--kind", choices=["interval"], help="every interval row (as `intervals` calls them)")
     c = sub.add_parser("call", help="the copy number of one locus from samtools bedcov over its segments")
     c.add_argument("--catalog")
     c.add_argument("--locus", required=True)
@@ -446,6 +596,12 @@ def main(argv=None):
     c.add_argument("--json")
     c.add_argument("--table")
     c.add_argument("--bam-header", help="refuse a BAM with ALT or HLA contigs first (as check-bam)")
+    iv = sub.add_parser("intervals", help="call every interval row from one samtools bedcov table")
+    iv.add_argument("--catalog")
+    iv.add_argument("--bedcov", help="samtools bedcov over `copy_number.py bed --kind interval`")
+    iv.add_argument("--sex", choices=SEXES)
+    iv.add_argument("--failed", action="store_true", help="every row not assessed (check_failed)")
+    iv.add_argument("--out", required=True)
     k = sub.add_parser("check-bam", help="refuse a BAM aligned to a reference with ALT or HLA contigs")
     k.add_argument("--header", required=True, help="samtools view -H of the BAM, or contig names; - for stdin")
     args = ap.parse_args(argv)
@@ -459,6 +615,8 @@ def main(argv=None):
             print(f"ERROR: {e}", file=sys.stderr)
             return 2
         return 0
+    if args.cmd == "intervals":
+        return _intervals(args)
     if args.cmd == "bed":
         try:
             return _bed(args)

@@ -723,15 +723,33 @@ def sec_parascopy(d, s):
     # when the locus was not run (no read over it, no model, Parascopy failed).
     na = next((r["agCN_filter"] for r in rows if (r.get("agCN_filter") or "").startswith("not assessed")), None)
     hp = os.path.join(os.path.dirname(p), f"{s}_hba_copy_number.tsv")
+    ip = os.path.join(os.path.dirname(p), f"{s}_cn_intervals.tsv")
     return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
                "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
                "rows": len(rows),
                # HBA1/HBA2 from depth (bin/hba_copy_number.py); None when
                # step 35 wrote no HBA table (a run from before the check)
                "hba": read_hba(hp) if os.path.isfile(hp) else None,
+               # the interval rows of bin/cn_loci.tsv (recurrent CNV regions,
+               # carrier deletions, AZF); None without step 35's table
+               "cn_intervals": read_cn_intervals(ip) if os.path.isfile(ip) else None,
                "reading": (f"SMN1 and SMN2 {na}: no carrier reading" if na
                            else "no row of step 35's table covers SMN1 exon 7: no carrier reading"
                            if smn1["text"] == "no row covers exon 7" else smn_reading(smn1["cn"]))}
+
+
+def read_cn_intervals(path):
+    """Step 35's interval table (bin/copy_number.py intervals): the rows with
+    a deletion or a duplication, and a count of the rows by status."""
+    rows = read_tsv(path)
+    if rows and not {"locus", "name", "status", "copies", "expected", "change"} <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(path)} lacks the locus, name, status, copies, expected or change column")
+    counts = {}
+    for r in rows:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    return {"rows": len(rows), "by_status": counts,
+            "changes": [{k: r[k] for k in ("locus", "name", "chrom", "start", "end", "copies", "expected", "change")}
+                        for r in rows if r["change"] in ("deletion", "duplication")]}
 
 
 def read_hba(path):
