@@ -6,17 +6,17 @@
     workflows/bam_analysis.nf passes the BAMs whose sex is male, the sex
     INDEXCOV has checked against the reads.
 
-    The Yleaf image has no samtools, which Yleaf calls for a BAM, and no
-    marker tables (--yleaf_data, setup.sh --yleaf-data), so the work is
-    three processes, as in scripts/37-y-haplogroup.sh (bin/yleaf_run.py
-    says why):
+    Yleaf (4.1.6, its own tree YFull v14.01) reads its marker tables from
+    --yleaf_data (setup.sh --yleaf-data), and its pileup is made in the
+    samtools pass that also writes the chrY BAM, so the work is three
+    processes, as in scripts/37-y-haplogroup.sh (bin/yleaf_run.py says why):
       Y_POSITIONS   Yleaf's GRCh38 marker positions (Yleaf image, once)
       Y_PILEUP      samtools idxstats and the pileup at those positions, and
                     <id>_chrY.bam (+ .bai), the chrY reads only: the file
                     YFull and the Y-DNA projects read. Nothing is uploaded.
       Y_HAPLOGROUP  Yleaf on that pileup, offline; Hg NA means too few Y
                     markers had reads to call a haplogroup
-    Each process also does the same for the current YFull YTree in
+    Each process also does the same for the pinned YFull YTree release in
     <yleaf_data>/ytree (bin/y_tree_place.py): its SNP positions, a second
     pileup at them, and the placement, published as <id>_y_tree.txt and
     <id>_y_tree_path.tsv. Without that folder (an install older than this
@@ -89,10 +89,12 @@ process Y_PILEUP {
     task.ext.when == null || task.ext.when
 
     script:
-    // -AQ20q1: the flags Yleaf gives samtools mpileup at its default quality 20
+    // -ABQ20q1: the flags Yleaf 4 gives samtools mpileup at its default quality 20
+    // (bin/yleaf_run.py stops if Yleaf asks for others). The current tree's
+    // pileup keeps -AQ20q1, the flags bin/y_tree_place.py was checked with.
     """
     samtools idxstats ${bam} > ${meta.id}_idxstats.txt
-    samtools mpileup -l ${positions} -AQ20q1 ${bam} > ${meta.id}_y_pileup.txt
+    samtools mpileup -l ${positions} -ABQ20q1 ${bam} > ${meta.id}_y_pileup.txt
     if [ -s ${tree_positions} ]; then
         samtools mpileup -l ${tree_positions} -AQ20q1 ${bam} > ${meta.id}_y_tree_pileup.txt
     else
