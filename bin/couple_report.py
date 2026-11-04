@@ -615,7 +615,10 @@ def write_markdown(path, a, b, sexes, rows, assessed, gaps, ngenes, common, cn=N
     if cn:
         out.extend(["## Carrier deletion alleles and AZF regions (read depth, step 35)", "",
                     "Each allele is present, absent or not assessable from the read depth over it. A present "
-                    "deletion needs a clinical test. The AZF regions are read on a male partner only.", ""])
+                    "deletion needs a clinical test. The AZF regions are read on a male partner only. The three "
+                    "beta-globin rows overlap: the Sicilian deletion covers both HBB rows, and the 619 bp and "
+                    "exon 3 rows share 487 bp, so one deletion can read as present on two or three of them; "
+                    "only a clinical test tells which allele it is.", ""])
         out.extend(cn)
         out.append("")
     out.extend(["## What was assessed", "", "| Partner | ClinVar hits (in listed genes / all) | Deletions | SMN1 | FMR1 and FXN repeats |",

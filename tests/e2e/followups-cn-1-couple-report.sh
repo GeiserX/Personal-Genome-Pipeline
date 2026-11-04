@@ -65,7 +65,7 @@ printf '##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\nchr
   | gzip -n > "${C}/${B}/cnvpytor/${B}_cnvs.vcf.gz"
 printf 'sample\tsex\tfather\tmother\tpartner\n%s\tmale\t.\t.\t%s\n%s\tfemale\t.\t.\t%s\n' "$A" "$B" "$B" "$A" > "${C}/pedigree.tsv"
 
-GJB6_A="- ${A}, del(GJB6-D13S1830): \*\*present\*\* \(read depth, step 35: 1 of 2 copies\); CNVpytor \(step 18\) calls no deletion here"
+GJB6_A="- ${A}, del\(GJB6-D13S1830\): \*\*present\*\* \(read depth, step 35: 1 of 2 copies\); CNVpytor \(step 18\) calls no deletion here"
 AZFC_A="- ${A}, AZFc deletion \(DAZ copies; gr/gr and b2/b3 leave two of four\): \*\*present\*\* \(read depth, step 35: 2 of 4 copies\)"
 CFTR_B="- ${B}, CFTRdele2,3: \*\*absent\*\* \(read depth, step 35: 2 of 2 copies\); CNVpytor \(step 18\) calls a deletion here"
 AZF_B="- ${B}, AZF regions: not applicable \(no Y chromosome\)"
