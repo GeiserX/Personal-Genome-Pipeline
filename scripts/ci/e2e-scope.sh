@@ -43,7 +43,12 @@ export LC_ALL=C
 # The paths the e2e cases exercise. A pull request that changes none of them
 # runs no case. The push paths of e2e.yml are the same list (e2e-plan checks).
 SCOPE_DIRS=(scripts modules workflows bin conf assets tests/e2e)
-SCOPE_FILES=(tests/fixtures/VERSION main.nf nextflow.config nextflow_schema.json versions.env .github/workflows/e2e.yml)
+SCOPE_FILES=(tests/fixtures/VERSION main.nf nextflow.config nextflow_schema.json versions.env .github/workflows/e2e.yml
+  # The committed fixtures the cases read (their rows name them too).
+  tests/fixtures/annotsv/class45.sh tests/fixtures/comphet/make_fixture.py tests/fixtures/consumer_export/sites.tsv.gz
+  tests/fixtures/families/stub_families.tsv tests/fixtures/pharmcat/refblocks.g.vcf tests/fixtures/sv/cnvpytor.vcf.in
+  tests/fixtures/sv/delly.vcf.in tests/fixtures/sv/manta.vcf.in tests/fixtures/vcf/combined_allele_clinvar.vcf
+  tests/fixtures/vcf/combined_allele_sample.vcf tests/fixtures/vcf/grch37_no_contigs.vcf)
 
 # Shared wiring: every case runs through these, so a change to one runs every
 # case. The pipeline's entry and config, the shared library and launcher, the
@@ -85,6 +90,9 @@ check() {
   local bad="" all base c globs g f hit gl
   [ -f "$PATHS" ] || die "no table ${PATHS}"
   all=$(cases); base=$(base_cases)
+  for c in "${SMOKE[@]}"; do
+    grep -qx -- "$c" <<< "$all" || bad+="smoke case ${c} is not a file in the case directory"$'\n'
+  done
   bad+=$(rows_of "$PATHS" | awk -F'\t' -v list="$(paste -sd' ' - <<< "$all")" -v blist="$(paste -sd' ' - <<< "$base")" '
     BEGIN { n = split(list, c, " "); for (i = 1; i <= n; i++) known[c[i]] = 1
             m = split(blist, b, " "); for (i = 1; i <= m; i++) isbase[b[i]] = 1 }

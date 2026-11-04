@@ -20,7 +20,9 @@ parallel jobs by `scripts/ci/e2e-shards.sh`, and each case runs at most once.
 - Every case needs a row in
   [`scripts/ci/e2e-case-paths.tsv`](../../scripts/ci/e2e-case-paths.tsv):
   the globs of the files it runs (step scripts, modules, bin helpers,
-  assets), or `-` for a base case. A pull request runs only the cases whose
+  assets, a committed file under `tests/fixtures/`), or `-` for a base
+  case. A fixture a case reads also goes in `SCOPE_FILES` of
+  `scripts/ci/e2e-scope.sh` and in the push paths of `e2e.yml`. A pull request runs only the cases whose
   files, rows or paths it changed, the cases those need and two smoke cases;
   a change to shared wiring such as `main.nf` runs them all
   (`scripts/ci/e2e-scope.sh`). A case with no row turns `e2e` red.

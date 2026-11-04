@@ -57,6 +57,13 @@ broken "a glob that matches no file" "bin/no_such_helper.py matches no tracked f
 broken "a module glob that matches no file" "modules/local/nope/\\* matches no tracked file" "^lpa-1${TAB}" \
   "lpa-1${TAB}modules/local/nope/*"
 broken "a row of one column" "has 1 columns" "^traits-2${TAB}" "traits-2"
+mkdir -p "${WORK}/nosmoke"
+cp "${E2E_CASE_DIR}"/*.sh "${WORK}/nosmoke/"
+rm "${WORK}/nosmoke/nextflow-from-fastq-2-nextflow.sh"
+paths | grep -v "^nextflow-from-fastq-2-nextflow${TAB}" > "${WORK}/nosmoke.tsv"
+if out=$(E2E_CASE_DIR="${WORK}/nosmoke" E2E_PATHS="${WORK}/nosmoke.tsv" "$S" check 2>&1); then bad "check accepted a smoke case with no file"
+elif grep -q "smoke case nextflow-from-fastq-2-nextflow is not a file" <<< "$out"; then ok "check refuses a smoke case with no file"
+else bad "check refused a missing smoke case without naming it: ${out}"; fi
 
 # --- select -------------------------------------------------------------------
 pick() {  # pick CHANGED-PATHS... : the picked cases on one line
@@ -78,6 +85,8 @@ expect "the e2e runner runs every shard case" "lpa-1 ${SMOKE} traits-1 traits-2"
 expect "one helper runs the smoke cases, its case and the case that needs it" "${SMOKE} traits-1 traits-2" bin/traits_report.py
 expect "a file in one module runs that module's case" "lpa-1 ${SMOKE}" modules/local/lpa/main.nf
 expect "an in-scope path no case runs runs the smoke cases" "${SMOKE}" scripts/ci/check-name.sh
+expect "a committed fixture a case reads is in the scope" "${SMOKE}" tests/fixtures/consumer_export/sites.tsv.gz
+expect "a fixture only the unit tests read runs nothing" "" tests/fixtures/pharmcat/report-3.4.0.json
 expect "a case's own file runs it" "lpa-1 ${SMOKE}" tests/e2e/lpa-1.sh
 expect "a base step runs the smoke cases only (the base leg runs every base case)" "${SMOKE}" tests/e2e/01-base.sh
 printf '%s\n' traits-2 > "${WORK}/rows.txt"
@@ -123,5 +132,9 @@ printf '%s\n' bin/traits_report.py > "${WORK}/changed.txt"
 if [ -s "${WORK}/real.txt" ] && E2E_SELECT="${WORK}/real.txt" "${REPO}/scripts/ci/e2e-shards.sh" plan 2 > /dev/null; then
   ok "a real pick splits: $(paste -sd' ' "${WORK}/real.txt")"
 else bad "a real pick did not split: $(paste -sd' ' "${WORK}/real.txt")"; fi
+
+printf '%s\n' tests/fixtures/consumer_export/sites.tsv.gz > "${WORK}/changed.txt"
+if "$S" select "${WORK}/changed.txt" 2> /dev/null | grep -qx consumer-export-1; then ok "the real table runs consumer-export-1 when its fixture changes"
+else bad "the real table does not run consumer-export-1 when its fixture changes"; fi
 
 [ "$FAILS" -eq 0 ]
