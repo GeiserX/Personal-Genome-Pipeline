@@ -108,7 +108,19 @@ def cdna_text(h):
         return f"{site}{c['note']} ({counts})"
     if c["check"] == "clear":
         return f"{site}clear ({counts})" if site else "clear"
-    return site + "not checked" + (f": {c['note']}" if c["note"] else "")
+    out = site + "not checked" + (f": {c['note']}" if c["note"] else "")
+    # A construct-site hit prints its counts whatever the verdict, when they were measured.
+    return out + (f" ({counts})" if site and c.get("alt_reads") is not None else "")
+
+
+def construct_past_cap(hits, shown=50):
+    """Hits at a known lab-construct site below the listed first `shown`: both
+    reports print them too, so every hit the overview counts has a row."""
+    return [h for h in hits[shown:] if (h.get("cdna") or {}).get("construct")]
+
+
+def construct_past_cap_text(h):
+    return f"{h['gene']} {h['chrom']}:{h['pos']} {h['ref']}>{h['alt']} {h['genotype']}: {cdna_text(h)}"
 
 
 CDNA_SCAN_NOTE = ("A locus with reads that jump from one exon to the next is spliced DNA: cDNA or plasmid "
@@ -127,7 +139,9 @@ def cdna_scan_lines(d):
     loci = scan["loci"]
     if scan["note"].startswith("not run"):
         return [f"cDNA scan of every exon: {scan['note']}"]
-    out = [f"cDNA scan of every exon: {len(loci)} loci with reads across two or more exon junctions"]
+    # The note says what was read (exon regions, contigs): a BAM short of contigs is no whole-exome negative.
+    out = [f"cDNA scan of every exon: {len(loci)} loci with reads across two or more exon junctions"
+           + (f" ({scan['note']})" if scan["note"] else "")]
     out += [f"  {x['chrom']}:{x['start']}-{x['end']}: {x['junctions']} junctions, {x['reads']} reads" for x in loci[:20]]
     return out
 
@@ -993,6 +1007,11 @@ def text_report(s):
                     w(f"               call: {call_text(h)}")
                 if "cdna" in h:
                     w(f"               reads: {cdna_text(h)}")
+            extra = construct_past_cap(d["hits"])
+            if extra:
+                w("  Hits at a known lab-construct site past the first 50:")
+                for h in extra:
+                    w(f"    {construct_past_cap_text(h)}")
         for line in cdna_scan_lines(d):
             w(f"  {line}")
         if d.get("cdna_scan") and d["cdna_scan"]["loci"]:
@@ -2726,6 +2745,8 @@ def html_report(s, index=None):
                 + ("<th>Call quality</th>" if call else "")
                 + ("<th>cDNA read check</th>" if reads else "") + "</tr>"]
                + ["      " + x for x in rows] + ["    </table>"]
+               + [small_note("Hit at a known lab-construct site past the first 50: " + construct_past_cap_text(h))
+                  for h in construct_past_cap(c["hits"], report_charts.HITS_SHOWN)]
                + viewer_links((h["chrom"], h["pos"], f"{h['gene']} {h['chrom']}:{h['pos']}") for h in c["hits"][:50]),
                full=True))
 

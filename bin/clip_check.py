@@ -310,10 +310,11 @@ def read_construct(path):
 def construct_line(r):
     """The KNOWN CONSTRUCT SITE line of one output row."""
     where = f"{r[10]} at {r[0]}:{r[1]} {r[2]}>{r[3]}"
+    counts = f"{r[5]} of {r[4]} alt reads and {r[7]} of {r[6]} ref reads clipped at an exon edge"
     if r[8] == "not_checked":
-        return f"  KNOWN CONSTRUCT SITE {where}: not checked ({r[9]})"
-    return (f"  KNOWN CONSTRUCT SITE {where}: {r[8]}, {r[5]} of {r[4]} alt reads and {r[7]} of {r[6]} ref reads "
-            "clipped at an exon edge")
+        # Too few alt reads still has its counts; no BAM or contig has none.
+        return f"  KNOWN CONSTRUCT SITE {where}: not checked ({r[9]})" + (f", {counts}" if r[4].isdigit() else "")
+    return f"  KNOWN CONSTRUCT SITE {where}: {r[8]}, {counts}"
 
 
 def bam_contig(chrom, references):

@@ -281,7 +281,10 @@ def clinvar_findings(path, genes, sex, par, aside=None):
                 continue
             if g in genes:
                 ident = "" if r[2] in (".", "") else ", ClinVar %s" % r[2]
-                text = "%s:%d %s>%s %s, %s, %s%s" % (h["chrom"], h["pos"], h["ref"], h["alt"], z,
+                # A split half call counts as het (one copy) but reads as the other reports word it.
+                words = ("one copy, other copy not called ref (%s)" % gt
+                         if z == "het" and re.fullmatch(r"[1-9][/|]\.|\.[/|][1-9]", gt) else z)
+                text = "%s:%d %s>%s %s, %s, %s%s" % (h["chrom"], h["pos"], h["ref"], h["alt"], words,
                                                      h["significance"], stars_text(h["stars"]), ident)
                 out.append(finding(g, text, 1 if z == "het" else 2))
     return out, total

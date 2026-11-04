@@ -166,6 +166,7 @@ Checks:
 
 Run: python3 tests/test_collect_summary.py
 """
+import copy
 import csv
 import gzip
 import json
@@ -490,11 +491,31 @@ def construct_scan_section(work, schema):
            "clipped at an exon edge)"
     check("construct site: counted, and both reports print the site with its counts though it is clear",
           cv.get("construct_sites") == 1 and f"reads: {site}" in txt and f"<td>{site}</td>" in html, cv.get("construct_sites"))
+    low = {"check": "not_checked", "note": "fewer than 2 reads carry the alt allele", "construct": "LRRK2 G2019S",
+           "alt_reads": 1, "alt_clipped": 0, "ref_reads": 6, "ref_clipped": 0}
+    check("construct site: a not-checked hit with measured reads still prints its counts; one with no BAM does not",
+          render_report.cdna_text({"cdna": low}).endswith("(0 of 1 alt reads and 0 of 6 ref reads clipped at an exon edge)")
+          and render_report.cdna_text({"cdna": dict(low, note="no BAM", alt_reads=None)})
+          == "known lab-construct site (LRRK2 G2019S): not checked: no BAM"
+          and render_report.cdna_text({"cdna": dict(low, construct="")})
+          == "not checked: fewer than 2 reads carry the alt allele", render_report.cdna_text({"cdna": low}))
+    # A construct-site hit below the first 50 listed hits still gets a line in both reports.
+    many = copy.deepcopy(summ)
+    mh = many["sections"]["clinvar"]["data"]["hits"]
+    app_hit = next(h for h in mh if h["gene"] == "APP")
+    pad = [dict(copy.deepcopy(next(h for h in mh if h["gene"] == "CFTR")), pos=100 + i) for i in range(60)]
+    many["sections"]["clinvar"]["data"]["hits"] = pad + [app_hit]
+    mt, mhtml = render_report.text_report(many), render_report.html_report(many)
+    past = "APP chr21:25897626 TC>GA het: " + site
+    check("construct site: a hit past the first 50 is still printed, with its counts, in both reports",
+          "Hits at a known lab-construct site past the first 50:" in mt and past in mt
+          and render_report.E("past the first 50: " + past) in mhtml, [l for l in mt.splitlines() if "APP" in l])
     check("construct site: the HTML card counts it",
           "Hits at a known lab-construct site (check the reads)</span><span class=\"value\"><span class=\"badge badge-yellow\">1<"
           in html)
     check("cDNA scan: the locus in both reports",
-          "cDNA scan of every exon: 1 loci with reads across two or more exon junctions" in txt
+          "cDNA scan of every exon: 1 loci with reads across two or more exon junctions "
+          "(read 3 exon regions on 1 contigs; 1 loci listed)" in txt
           and "chr21:25880551-25891785: 3 junctions, 24 reads" in txt
           and "<td>chr21:25880551-25891785</td><td>3</td><td>24</td>" in html
           and render_report.CDNA_SCAN_NOTE in txt, cv.get("cdna_scan"))

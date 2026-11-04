@@ -34,8 +34,9 @@ read or why nothing was, then one row per listed locus:
   chrom start end junctions reads junction_list
 
 start is the first junction's exon end and end the last junction's exon
-start (1-based, inclusive); junction_list is "end-start:reads" per junction,
-comma-separated. --skip writes the comment line with REASON and no rows.
+start (1-based, inclusive); reads counts the locus's distinct reads (a read
+across two junctions counts once); junction_list is "end-start:reads" per
+junction, comma-separated. --skip writes the comment line with REASON and no rows.
 Needs pysam (run it in PYPGX_IMAGE); the junction logic is plain Python.
 """
 import argparse
@@ -152,22 +153,24 @@ def scan(reads_by_contig, edges):
 
 def loci(found):
     """The listed loci: rows of COLUMNS, in genome order of their contig as
-    first seen and then position."""
-    kept = sorted((c, d, a, len(k)) for (c, d, a), k in found.items() if len(k) >= MIN_READS)
+    first seen and then position. A locus's reads are its distinct reads: a
+    read across two of its junctions counts once there, and on each junction."""
+    kept = sorted((c, d, a) for (c, d, a), k in found.items() if len(k) >= MIN_READS)
     groups, cur = [], None
-    for c, d, a, n in kept:
+    for c, d, a in kept:
         if cur and cur[0] == c and d <= cur[2] + LOCUS_GAP:
-            cur[1].append((d, a, n))
+            cur[1].append((d, a))
             cur[2] = max(cur[2], a)
         else:
-            cur = [c, [(d, a, n)], a]
+            cur = [c, [(d, a)], a]
             groups.append(cur)
     out = []
     for c, js, _ in groups:
         if len(js) < MIN_JUNCTIONS:
             continue
-        out.append([c, str(min(d for d, _, _ in js)), str(max(a for _, a, _ in js) + 1), str(len(js)),
-                    str(sum(n for _, _, n in js)), ",".join(f"{d}-{a + 1}:{n}" for d, a, n in js)])
+        reads = set().union(*(found[(c, d, a)] for d, a in js))
+        out.append([c, str(min(d for d, _ in js)), str(max(a for _, a in js) + 1), str(len(js)),
+                    str(len(reads)), ",".join(f"{d}-{a + 1}:{len(found[(c, d, a)])}" for d, a in js)])
     return out
 
 

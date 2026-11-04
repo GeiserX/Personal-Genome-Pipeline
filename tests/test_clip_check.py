@@ -199,6 +199,14 @@ def part1():
            cc.construct_line(["chrT", "1151", "A", "C", "8", "0", "6", "0", "clear", "", "GENET X1Y"]),
            "  KNOWN CONSTRUCT SITE GENET X1Y at chrT:1151 A>C: clear, 0 of 8 alt reads and 0 of 6 ref reads "
            "clipped at an exon edge")
+    expect("a construct line for a hit with too few alt reads still prints the counts",
+           cc.construct_line(["chrT", "1151", "A", "C", "1", "0", "6", "0", "not_checked",
+                              "fewer than 2 reads carry the alt allele", "GENET X1Y"]),
+           "  KNOWN CONSTRUCT SITE GENET X1Y at chrT:1151 A>C: not checked (fewer than 2 reads carry the alt "
+           "allele), 0 of 1 alt reads and 0 of 6 ref reads clipped at an exon edge")
+    expect("a construct line for a hit with no BAM has no counts",
+           cc.construct_line(["chrT", "1151", "A", "C", "", "", "", "", "not_checked", "no BAM", "GENET X1Y"]),
+           "  KNOWN CONSTRUCT SITE GENET X1Y at chrT:1151 A>C: not checked (no BAM)")
 
 
 def write_bam(pysam, path, kind):

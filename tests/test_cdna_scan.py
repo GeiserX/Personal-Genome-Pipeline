@@ -12,6 +12,8 @@ Part 1, plain Python (reads as small objects, no BAM):
             nothing listed (the red control of the spliced case)
   one       reads across E1-E2 only: one junction, not listed
   thin      one read per junction: no junction reaches MIN_READS
+  two       one read across two junctions counts on each, and once in the
+            locus total
   and duplicate, secondary, supplementary and repeated alignments that do
   not count twice, the MIN_INTRON bound, and a control: with MIN_CLIP
   above the read length the spliced fixture lists nothing, so the listed
@@ -128,6 +130,10 @@ def part1():
            Read("p", E2[0], "60S40M", f"chrT,{a[1] + 1},+,60M40S,60,0;", flag=2048)]  # a supplementary one
     expect("a repeated read, a duplicate, a secondary and a supplementary alignment do not count",
            listed("spliced", dup), [SPLICED_ROW])
+    two = Read("n1", E1[1] - 50, f"50M{E2[0] - E1[1]}N150M{E3[0] - E2[1]}N50M")
+    expect("a read across two junctions counts on each junction and once in the locus total",
+           [r[4:] for r in listed("spliced", [two])],
+           [["10", f"{E1[1]}-{E2[0] + 1}:5,{E1[1]}-{E3[0] + 1}:2,{E2[1]}-{E3[0] + 1}:4"]])
     expect(f"an intron of MIN_INTRON ({cs.MIN_INTRON}) bases counts, one base less does not",
            (cs.gap_ok(1200, 1200 + cs.MIN_INTRON), cs.gap_ok(1200, 1199 + cs.MIN_INTRON)), (True, False))
     keep = cs.MIN_CLIP

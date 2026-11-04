@@ -477,6 +477,11 @@ def main():
           cr.zygosity("./1", "chr7", "female", False) == "het"
           and cr.zygosity("1|.", "chr7", "male", False) == "het",
           (cr.zygosity("./1", "chr7", "female", False), cr.zygosity("1|.", "chr7", "male", False)))
+    with tempfile.TemporaryDirectory() as t:
+        v = put(f"{t}/half.vcf", HEAD + hit("CFTR", gt="./1"))
+        f, _ = cr.clinvar_findings(v, GENE_ROWS, "female", cr.family_report.read_par(PAR))
+        check("a ./1 CFTR hit is one copy, worded as the other reports word a half call",
+              len(f) == 1 and f[0]["copies"] == 1 and " one copy, other copy not called ref (./1), " in f[0]["text"], f)
     check("zygosity: 1/1 is hom, a haploid 1 on chrX is hemizygous, ./. and ./0 are no call",
           cr.zygosity("1/1", "chr7", "female", False) == "hom"
           and cr.zygosity("1", "chrX", "female", False) == "hemizygous"
