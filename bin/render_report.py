@@ -98,14 +98,44 @@ def combined_cell(h):
 
 
 def cdna_text(h):
-    """Step 06's cDNA read check of one ClinVar hit, as both reports print it."""
+    """Step 06's cDNA read check of one ClinVar hit, as both reports print it.
+    A hit at a known construct site always shows its read counts."""
     c = h["cdna"]
+    counts = (f"{c['alt_clipped']} of {c['alt_reads']} alt reads and {c['ref_clipped']} of "
+              f"{c['ref_reads']} ref reads clipped at an exon edge")
+    site = f"known lab-construct site ({c['construct']}): " if c.get("construct") else ""
     if c["check"] == "flagged":
-        return (f"{c['note']} ({c['alt_clipped']} of {c['alt_reads']} alt reads and {c['ref_clipped']} of "
-                f"{c['ref_reads']} ref reads clipped at an exon edge)")
+        return f"{site}{c['note']} ({counts})"
     if c["check"] == "clear":
-        return "clear"
-    return "not checked" + (f": {c['note']}" if c["note"] else "")
+        return f"{site}clear ({counts})" if site else "clear"
+    return site + "not checked" + (f": {c['note']}" if c["note"] else "")
+
+
+CDNA_SCAN_NOTE = ("A locus with reads that jump from one exon to the next is spliced DNA: cDNA or plasmid "
+                  "contamination, or a processed copy of the gene the person carries. Check the reads before "
+                  "trusting a variant call there.")
+DEEP_INTRONIC_NOTE = ("Known pathogenic deep intronic sites, reported on every run: they lie far from any exon, so "
+                      "most filters miss them. 'ref' with a GQ is a reference call; 'no call' says nothing either way.")
+
+
+def cdna_scan_lines(d):
+    """Step 06's genome-wide cDNA scan, as both reports print it ([] when it did not run)."""
+    scan = d.get("cdna_scan")
+    if scan is None:
+        return []
+    loci = scan["loci"]
+    if scan["note"].startswith("not run"):
+        return [f"cDNA scan of every exon: {scan['note']}"]
+    out = [f"cDNA scan of every exon: {len(loci)} loci with reads across two or more exon junctions"]
+    out += [f"  {x['chrom']}:{x['start']}-{x['end']}: {x['junctions']} junctions, {x['reads']} reads" for x in loci[:20]]
+    return out
+
+
+def deep_intronic_call(x):
+    """One always-report site's call: 'het, GQ 40, DP 30', 'ref, GQ 50 (gVCF block)', 'no call: why'."""
+    if x["call"] == "no call":
+        return "no call" + (f": {x['detail']}" if x["detail"] else "")
+    return x["call"] + (f", {x['detail']}" if x["detail"] else "")
 
 
 def af_text(h):
@@ -946,6 +976,15 @@ def text_report(s):
                     w(f"               call: {call_text(h)}")
                 if "cdna" in h:
                     w(f"               reads: {cdna_text(h)}")
+        for line in cdna_scan_lines(d):
+            w(f"  {line}")
+        if d.get("cdna_scan") and d["cdna_scan"]["loci"]:
+            w(f"  {CDNA_SCAN_NOTE}")
+        if "deep_intronic" in d:
+            w("  Known deep intronic sites (always reported): gene, variant, call")
+            for x in d["deep_intronic"]:
+                w(f"    {x['gene']:<10} {x['hgvs']} {x['chrom']}:{x['pos']} {x['ref']}>{x['alt']}  {deep_intronic_call(x)}")
+            w(f"  {DEEP_INTRONIC_NOTE}")
         w(f"  {CLINVAR_FREQ_NOTE}")
         w("")
 
@@ -2247,6 +2286,12 @@ def html_report(s, index=None):
     if "cdna_flagged" in c:
         cv_body.insert(2, stat("Flagged by the cDNA read check",
                                badge(c["cdna_flagged"], "red" if c["cdna_flagged"] else "gray")))
+    if c.get("construct_sites"):
+        cv_body.insert(2, stat("Hits at a known lab-construct site (check the reads)",
+                               badge(c["construct_sites"], "yellow")))
+    if c.get("cdna_scan") and not c["cdna_scan"]["note"].startswith("not run"):
+        nl = len(c["cdna_scan"]["loci"])
+        cv_body.insert(2, stat("Loci with spliced reads (cDNA scan)", badge(nl, "red" if nl else "gray")))
     if "low_confidence" in c:
         f = c.get("call_floor") or {}
         cv_body.insert(1, stat(f"Low-confidence calls (GQ below {f.get('GQ')} or DP below {f.get('DP')}), not counted",
@@ -2664,6 +2709,24 @@ def html_report(s, index=None):
                + ["      " + x for x in rows] + ["    </table>"]
                + viewer_links((h["chrom"], h["pos"], f"{h['gene']} {h['chrom']}:{h['pos']}") for h in c["hits"][:50]),
                full=True))
+
+    if S["clinvar"]["state"] in ("ok", "stale") and ("deep_intronic" in c or c.get("cdna_scan")):
+        body = []
+        if "deep_intronic" in c:
+            body += ["    <table>", "      <tr><th>Gene</th><th>Variant</th><th>Position</th><th>Call</th></tr>"]
+            body += [f"      <tr><td>{E(x['gene'])}</td><td>{E(x['hgvs'])}</td>"
+                     f"<td>{E(x['chrom'])}:{x['pos']} {E(x['ref'])}&gt;{E(x['alt'])}</td>"
+                     f"<td>{E(deep_intronic_call(x))}</td></tr>" for x in c["deep_intronic"]]
+            body += ["    </table>", small_note(DEEP_INTRONIC_NOTE)]
+        scan = cdna_scan_lines(c)
+        if scan:
+            body.append(f"    <p>{E(scan[0])}</p>")
+            if len(scan) > 1:
+                body += ["    <table>", "      <tr><th>Locus</th><th>Junctions</th><th>Reads</th></tr>"]
+                body += [f"      <tr><td>{E(x['chrom'])}:{x['start']}-{x['end']}</td><td>{x['junctions']}</td>"
+                         f"<td>{x['reads']}</td></tr>" for x in c["cdna_scan"]["loci"][:20]]
+                body += ["    </table>", small_note(CDNA_SCAN_NOTE)]
+        a("clinvar", card(S["clinvar"], "Known Deep Intronic Sites and the cDNA Scan", body, full=True))
 
     add_charts(parts, chart_specs(s))
     return html_page(s, parts, index if index is not None else results_index.build(s, anchors=SECTION_OF))

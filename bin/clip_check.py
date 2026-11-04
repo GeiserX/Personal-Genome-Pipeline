@@ -20,6 +20,7 @@ REF_SHARE_MAX of the ref reads are.
   clip_check.py --hits HITS.tsv --bam BAM --exons EXONS.bed --out OUT.tsv
   clip_check.py --cpsr CLASSIFICATION.tsv.gz --bam BAM --exons EXONS.bed --out OUT.tsv
   clip_check.py --hits HITS.tsv --skip REASON --out OUT.tsv
+  any of these with --construct assets/construct_variants.tsv
 
 HITS.tsv is step 06's hits table (columns chrom, pos, ref, alt are read by
 name). --cpsr reads step 17's CPSR classification table instead and checks
@@ -32,10 +33,18 @@ CPSR's name. EXONS.bed holds exon intervals, 0-based and half-open (chrom, start
 end), such as the GENCODE basic exons setup.sh installs. --skip writes every
 hit as not checked, with REASON. OUT.tsv has one row per hit:
 
-  chrom pos ref alt alt_reads alt_clipped ref_reads ref_clipped cdna_check cdna_note
+  chrom pos ref alt alt_reads alt_clipped ref_reads ref_clipped cdna_check cdna_note construct_site
 
-cdna_check is flagged, clear or not_checked; cdna_note says why. Needs pysam
-(run it in PYPGX_IMAGE); the counting itself is plain Python.
+cdna_check is flagged, clear or not_checked; cdna_note says why.
+
+--construct names a table of alleles lab constructs and transgenic models
+carry (chrom, pos, ref, alt, gene, name: assets/construct_variants.tsv). A
+hit at one of them gets the row's gene and name in a last column,
+construct_site, and the script prints a KNOWN CONSTRUCT SITE line for it
+with its counts, whatever the verdict: such a hit is the first place cDNA or
+plasmid contamination shows. Without --construct the column is empty.
+
+Needs pysam (run it in PYPGX_IMAGE); the counting itself is plain Python.
 """
 import argparse
 import bisect
@@ -53,7 +62,7 @@ REF_SHARE_MAX = 0.2
 
 FLAG_NOTE = "possible cDNA/transgene contamination: check the reads"
 COLUMNS = ["chrom", "pos", "ref", "alt", "alt_reads", "alt_clipped", "ref_reads", "ref_clipped",
-           "cdna_check", "cdna_note"]
+           "cdna_check", "cdna_note", "construct_site"]
 
 # CIGAR operation codes, as pysam and the BAM format number them.
 M, INS, DEL, SKIP, SOFT, HARD, PAD, EQ, DIFF = range(9)
@@ -274,6 +283,39 @@ def read_cpsr(path):
     return out
 
 
+def bare(chrom):
+    """A contig name without "chr", so CPSR's names meet the catalog's."""
+    return chrom[3:] if chrom.startswith("chr") else chrom
+
+
+def read_construct(path):
+    """{(contig without chr, pos, REF, ALT): "GENE name"} from a construct
+    catalog; lines starting with # are comments, the first other line names
+    the columns."""
+    out = {}
+    with open(path, newline="") as fh:
+        rows = list(csv.DictReader((l for l in fh if not l.startswith("#")), delimiter="\t"))
+    for r in rows:
+        missing = [k for k in ("chrom", "pos", "ref", "alt", "gene", "name") if k not in r]
+        if missing:
+            raise ValueError(f"{path} has no column {missing[0]}")
+        if not (r["pos"] or "").isdigit():
+            raise ValueError(f"{path}: position '{r['pos']}' is not a number")
+        out[(bare(r["chrom"]), int(r["pos"]), r["ref"].upper(), r["alt"].upper())] = f"{r['gene']} {r['name']}"
+    if not out:
+        raise ValueError(f"no rows in {path}")
+    return out
+
+
+def construct_line(r):
+    """The KNOWN CONSTRUCT SITE line of one output row."""
+    where = f"{r[10]} at {r[0]}:{r[1]} {r[2]}>{r[3]}"
+    if r[8] == "not_checked":
+        return f"  KNOWN CONSTRUCT SITE {where}: not checked ({r[9]})"
+    return (f"  KNOWN CONSTRUCT SITE {where}: {r[8]}, {r[5]} of {r[4]} alt reads and {r[7]} of {r[6]} ref reads "
+            "clipped at an exon edge")
+
+
 def bam_contig(chrom, references):
     """The BAM's name for chrom: itself, or with "chr" added or removed."""
     for c in (chrom, "chr" + chrom, chrom[3:] if chrom.startswith("chr") else None):
@@ -282,8 +324,14 @@ def bam_contig(chrom, references):
     return None
 
 
-def check(hits, bam_path, exons_path, skip):
-    """One output row per hit."""
+def check(hits, bam_path, exons_path, skip, construct=None):
+    """One output row per hit; the last column names a construct site."""
+    return [r + [(construct or {}).get((bare(r[0]), int(r[1]), r[2].upper(), r[3].upper()), "")]
+            for r in check_reads(hits, bam_path, exons_path, skip)]
+
+
+def check_reads(hits, bam_path, exons_path, skip):
+    """The read check of each hit: the ten columns before construct_site."""
     out = []
     bam = exons = None
     if not skip:
@@ -318,12 +366,14 @@ def main(argv=None):
     ap.add_argument("--bam")
     ap.add_argument("--exons")
     ap.add_argument("--skip", help="write every hit as not checked, with this reason")
+    ap.add_argument("--construct", help="construct catalog (assets/construct_variants.tsv)")
     a = ap.parse_args(argv)
     if not a.skip and not (a.bam and a.exons):
         ap.error("give --bam and --exons, or --skip REASON")
     try:
         hits = read_cpsr(a.cpsr) if a.cpsr else read_hits(a.hits)
-        rows = check(hits, a.bam, a.exons, a.skip)
+        construct = read_construct(a.construct) if a.construct else None
+        rows = check(hits, a.bam, a.exons, a.skip, construct)
     except (OSError, ValueError, EOFError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
@@ -339,6 +389,9 @@ def main(argv=None):
     for r in flagged:
         print(f"  FLAGGED {r[0]}:{r[1]} {r[2]}>{r[3]}: {r[5]} of {r[4]} alt reads and {r[7]} of {r[6]} ref reads "
               f"clipped at an exon edge ({FLAG_NOTE})")
+    for r in rows:
+        if r[10]:
+            print(construct_line(r))
     return 0
 
 
