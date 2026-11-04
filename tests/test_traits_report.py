@@ -184,6 +184,77 @@ def dbsnp_checks(rules):
         shutil.rmtree(work)
 
 
+# 11. The multi-SNP rules (APOL1, SERPINA1, HFE, GC, CAD9p21, MAPT): per rule, the
+# genotypes (ALT allele per site, "." for a reference block) of one positive case and
+# its label, and of one negative case, a copy of the positive with one allele flipped.
+MULTI_SNP = {
+    "APOL1": [(("G/G", "G/G"), "G1/G1"), (("A/G", "T/G"), "G0/G1")],
+    "SERPINA1": [(("T/T", "T/T"), "PiZZ"), (("T/A", "C/T"), "PiSZ"), (("A/A", "C/C"), "PiSS")],
+    "HFE": [(("A/A", "C/C"), "C282Y/C282Y"), (("G/A", "C/G"), "C282Y/H63D"), (("G/G", "G/G"), "H63D/H63D")],
+    "GC": [(("C/C", "G/G"), "Gc1S/Gc1S"), (("A/C", "G/T"), "Gc1S/Gc2"), (("A/A", "T/T"), "Gc2/Gc2")],
+    "CAD9p21": [(("G/G", "C/C"), "two risk copies"), (("A/G", "G/C"), "one risk copy")],
+    "MAPT": [(("G/G", "G/G"), "H2/H2"), (("A/G", "A/G"), "H1/H2")],
+}
+# The label of the reference blocks alone (every site homozygous for the GRCh38 base).
+MULTI_SNP_REF = {"APOL1": "G0/G0", "SERPINA1": "PiMM", "HFE": "wt/wt", "GC": "Gc1F/Gc1F",
+                 "CAD9p21": "no risk copy", "MAPT": "H1/H1"}
+
+
+def multi_snp_checks(rules):
+    """11. Each multi-SNP rule on synthetic records: every positive genotype gives its label,
+    reference blocks alone give the reference label, and the control: the first positive
+    case with one allele flipped at one site gives another result. Then the lines reach the
+    HTML report: collect_summary reads them from the rules table and render_report writes
+    one row per rule."""
+    import collect_summary as cs
+    import render_report as rr
+
+    def line(rid, gts):
+        sites = rules[rid]["sites"]
+        rows = []
+        for s, gt in zip(sites, gts):
+            a = [x for x in gt.split("/") if x != s["ref"]]
+            rows.append((s["chrom"], s["pos"], s["ref"], a[0] if a else ".", gt, "40"))
+        return next(x for x in tr.rule_lines(rules, recs(*rows)) if x["rule"] == rid)
+
+    check("11. every multi-SNP rule is in the rules table", set(MULTI_SNP) <= set(rules), sorted(rules))
+    for rid, cases in MULTI_SNP.items():
+        if rid not in rules:
+            continue
+        sites = rules[rid]["sites"]
+        for gts, want in cases:
+            ln = line(rid, gts)
+            check(f"{rid} {','.join(gts)}: {want}", (ln["status"], ln["result"]) == ("called", want), ln)
+        ref = tuple(f"{s['ref']}/{s['ref']}" for s in sites)
+        ln = line(rid, ref)
+        check(f"{rid}, reference blocks only: {MULTI_SNP_REF[rid]}",
+              (ln["status"], ln["result"]) == ("called", MULTI_SNP_REF[rid]), ln)
+        gts, want = cases[0]
+        a, b = gts[0].split("/")
+        s0 = sites[0]
+        flip = s0["ref"] if b == s0["alt"] else s0["alt"]
+        flipped = (f"{a}/{flip}",) + tuple(gts[1:])
+        ln = line(rid, flipped)
+        check(f"control: {rid} with one allele flipped at {s0['rsid']} ({','.join(flipped)}) is not {want}",
+              ln["result"] != want, ln)
+    apol1 = line("APOL1", ("A/G", "T/G"))["reading"]
+    check("APOL1 G0/G1 says G2 is not read and the other copy could carry it",
+          "G2 is not read" in apol1 and "G1/G2" in apol1, apol1)
+    work = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(work, "traits"))
+        lines = [line(rid, cases[0][0]) for rid, cases in MULTI_SNP.items() if rid in rules]
+        tr.write_tsv(os.path.join(work, "traits", "S_genotype_rules.tsv"), lines, tr.RULE_OUT_COLUMNS)
+        read = cs.genotype_rules(work, "S") or []
+        page = "\n".join(rr.rules_html({"rules": read}, "S"))
+        for rid, cases in MULTI_SNP.items():
+            if rid in rules:
+                check(f"HTML report: the {rid} rule row with its result {cases[0][1]}",
+                      rr.E(rules[rid]["trait"]) in page and rr.E(cases[0][1]) in page, page[:300])
+    finally:
+        shutil.rmtree(work)
+
+
 def main():
     rules = tr.read_rules(RULES)
     dbsnp_checks(rules)
@@ -407,6 +478,8 @@ def main():
 
     finally:
         shutil.rmtree(work)
+
+    multi_snp_checks(rules)
 
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
     return 1 if FAILS else 0
