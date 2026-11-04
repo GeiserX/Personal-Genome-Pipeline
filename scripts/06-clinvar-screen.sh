@@ -247,7 +247,7 @@ if [ -f "$GVCF" ] && [ -f "${GVCF}.tbi" ]; then
   bcftools_run bcftools query -R "$(cpath "$SITES_POS")" -f "$(query_format "$GVCF")" \
     -o "$(cpath "${DEEP_TSV}.gvcf")" "$(cpath "$GVCF")"
 fi
-awk -v mode=sites -v gvcf="$HAS_GVCF" -f "${PGP_ROOT}/bin/clinvar_hits.awk" "$SITES" "${DEEP_TSV}.vcf" "${DEEP_TSV}.gvcf" \
+awk -v mode=sites -v gvcf="$HAS_GVCF" -v min_gq="$MIN_GQ" -f "${PGP_ROOT}/bin/clinvar_hits.awk" "$SITES" "${DEEP_TSV}.vcf" "${DEEP_TSV}.gvcf" \
   > "${DEEP_TSV}.part"
 mv "${DEEP_TSV}.part" "$DEEP_TSV"
 rm -f "$SITES_POS" "${DEEP_TSV}.vcf" "${DEEP_TSV}.gvcf"

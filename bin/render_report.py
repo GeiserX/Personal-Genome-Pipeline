@@ -115,7 +115,8 @@ CDNA_SCAN_NOTE = ("A locus with reads that jump from one exon to the next is spl
                   "contamination, or a processed copy of the gene the person carries. Check the reads before "
                   "trusting a variant call there.")
 DEEP_INTRONIC_NOTE = ("Known pathogenic deep intronic sites, reported on every run: they lie far from any exon, so "
-                      "most filters miss them. 'ref' with a GQ is a reference call; 'no call' says nothing either way.")
+                      "most filters miss them. 'ref' with a GQ is a reference call, 'ref (low confidence)' "
+                      "one below the call floor; 'no call' says nothing either way.")
 
 
 def cdna_scan_lines(d):

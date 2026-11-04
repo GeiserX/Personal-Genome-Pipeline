@@ -38,7 +38,8 @@ Checks:
  10. genes: the list is rebuilt from a small Orphanet and GENCODE extract,
      keeping the ACMG rows, adding an autosomal and an X-linked Orphanet gene,
      a PAR gene as autosomal, leaving out chrY, and stopping on a panel gene
-     GENCODE does not have.
+     GENCODE does not have;
+ 11. a split half call (./1) is het with one copy, never hom.
 
 Run: python3 tests/test_couple_report.py
 """
@@ -412,6 +413,19 @@ def main():
         rc, log = run("genes", "--table", bad, "--orphanet-genes", p6, "--orphanet-inheritance", p9, "--gtf", gtf,
                       "--par-bed", PAR, "--out", f"{t}/bad_out.tsv")
         check("genes: a panel gene GENCODE does not have stops it", rc == 2 and "NOSUCH" in log, (rc, log))
+
+    # 11. a split half call (./1, the GT 1/2 record step 06 splits) is one copy:
+    #     the missing allele still counts in the ploidy, so it is never hom
+    check("zygosity: ./1 and 1|. on an autosome are het (one copy), not hom",
+          cr.zygosity("./1", "chr7", "female", False) == "het"
+          and cr.zygosity("1|.", "chr7", "male", False) == "het",
+          (cr.zygosity("./1", "chr7", "female", False), cr.zygosity("1|.", "chr7", "male", False)))
+    check("zygosity: 1/1 is hom, a haploid 1 on chrX is hemizygous, ./. and ./0 are no call",
+          cr.zygosity("1/1", "chr7", "female", False) == "hom"
+          and cr.zygosity("1", "chrX", "female", False) == "hemizygous"
+          and cr.zygosity("./1", "chrX", "male", False) == "hemizygous"
+          and cr.zygosity("./.", "chr7", "female", False) is None
+          and cr.zygosity("./0", "chr7", "female", False) is None)
 
     print("\nRESULT:", "ALL PASS" if not FAILS else "%d FAILED" % len(FAILS))
     return 1 if FAILS else 0

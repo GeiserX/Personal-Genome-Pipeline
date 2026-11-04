@@ -44,7 +44,7 @@
 #
 # The always-report list (the known deep intronic sites):
 #
-#   awk -v mode=sites -f clinvar_hits.awk SITES.tsv VCF_CALLS.txt GVCF_CALLS.txt
+#   awk -v mode=sites [-v min_gq=N] -f clinvar_hits.awk SITES.tsv VCF_CALLS.txt GVCF_CALLS.txt
 #
 # SITES.tsv is assets/deep_intronic_sites.tsv (comment lines start with #, then
 # a header: chrom pos ref alt gene hgvs clinvar_id). VCF_CALLS.txt holds step
@@ -55,11 +55,14 @@
 #   chrom pos ref alt gene hgvs clinvar_id call detail
 #   call    the genotype words above (het, hom, ...) when the sample carries
 #           the site's allele; "ref" for a reference call (a 0/0 record, or a
-#           gVCF reference block over the site); "other allele" when the
-#           sample carries another allele there; "no call" otherwise.
-#   detail  "GQ n, DP n" of the call ("GQ n (gVCF block)" for a block), the
+#           gVCF reference block over the site), "ref (low confidence)" when
+#           its GQ is below min_gq (step 6's call floor, default 30);
+#           "other allele" when the sample carries another allele there;
+#           "no call" otherwise.
+#   detail  "GQ n, DP n" of the call ("GQ n (gVCF block)" for a block, with
+#           "below the call floor of GQ n" for a low-confidence ref), the
 #           other allele, or why there is no call.
-BEGIN { FS = OFS = "\t"; min_gq = 30; min_dp = 10 }
+BEGIN { FS = OFS = "\t"; if (min_gq == "") min_gq = 30; if (min_dp == "") min_dp = 10 }
 
 # A GT in words: het, hom, one copy of an alt beside a missing allele, or as written.
 function zygosity(gt) {
@@ -68,6 +71,9 @@ function zygosity(gt) {
     if (gt ~ /^([1-9][\/|]\.|\.[\/|][1-9])$/) return "one copy, other copy not called ref (" gt ")"
     return gt
 }
+# A reference call in words: "ref", or "ref (low confidence)" below the GQ floor.
+function refcall(gq) { return (gq ~ /^[0-9]+$/ && gq + 0 < min_gq + 0) ? "ref (low confidence)" : "ref" }
+function floornote(gq) { return (gq ~ /^[0-9]+$/ && gq + 0 < min_gq + 0) ? ", below the call floor of GQ " min_gq : "" }
 function quality(gq, dp,    out) {
     out = (gq ~ /^[0-9]+$/) ? "GQ " gq : ""
     if (dp ~ /^[0-9]+$/) out = out (out != "" ? ", " : "") "DP " dp
@@ -92,7 +98,7 @@ END {
             if (vr[1] != st[1] || vr[2] != st[2]) continue
             if (vr[4] == st[3] && vr[5] == st[4]) {
                 if (vr[6] ~ /[1-9]/) { call = zygosity(vr[6]); detail = quality(vr[7], vr[8]) }
-                else if (vr[6] ~ /^0[\/|]0$/) { call = "ref"; detail = quality(vr[7], vr[8]) }
+                else if (vr[6] ~ /^0[\/|]0$/) { call = refcall(vr[7]); detail = quality(vr[7], vr[8]) floornote(vr[7]) }
             } else if (vr[6] ~ /[1-9]/ && other == "") {
                 other = vr[4] ">" vr[5] " " zygosity(vr[6])
             }
@@ -103,7 +109,8 @@ END {
                 split(gv[j], gr, "\t")
                 if (gr[1] != st[1] || gr[2] + 0 > st[2] + 0 || gr[3] + 0 < st[2] + 0) continue
                 if (gr[6] ~ /^0[\/|]0$/) {
-                    call = "ref"; detail = quality(gr[7], "") (gr[7] ~ /^[0-9]+$/ ? " " : "") "(gVCF block)"
+                    call = refcall(gr[7])
+                    detail = quality(gr[7], "") (gr[7] ~ /^[0-9]+$/ ? " " : "") "(gVCF block)" floornote(gr[7])
                 } else {
                     call = "no call"; detail = "the gVCF record over the site is not a PASS reference call (GT " gr[6] ")"
                 }

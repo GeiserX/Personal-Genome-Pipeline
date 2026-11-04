@@ -211,7 +211,7 @@ process CLINVAR_SCREEN {
     if [ "${has_gvcf}" = yes ]; then
         bcftools query -R sites_pos.tsv -f "\$(query_format sample.g.vcf.gz)" -o sites_gvcf.txt sample.g.vcf.gz
     fi
-    awk -v mode=sites -v gvcf=${has_gvcf} -f "\$(command -v clinvar_hits.awk)" ${sites} sites_vcf.txt sites_gvcf.txt \\
+    awk -v mode=sites -v gvcf=${has_gvcf} -v min_gq=${min_gq} -f "\$(command -v clinvar_hits.awk)" ${sites} sites_vcf.txt sites_gvcf.txt \\
         > ${meta.id}_clinvar_deep_intronic.tsv
     echo "Known deep intronic sites, always reported:"
     awk -F'\\t' 'NR > 1 { printf "  %s %s %s:%s %s>%s: %s%s\\n", \$5, \$6, \$1, \$2, \$3, \$4, \$8, (\$9 != "" ? ", " \$9 : "") }' \\

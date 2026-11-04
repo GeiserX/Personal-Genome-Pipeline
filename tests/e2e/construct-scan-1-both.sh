@@ -11,7 +11,8 @@
 #      reports print every row.
 #   2. The same copy with a list of its own (CLINVAR_ALWAYS_REPORT): the
 #      planted ClinVar SNV gives its genotype, a site inside a gVCF reference
-#      block gives "ref" with the block's GQ, a site no record covers "no call".
+#      block gives "ref" with the block's GQ ("ref (low confidence)" below
+#      the GQ floor), a site no record covers "no call".
 #   3. Red control: the real BAM alone with the same exon file lists nothing,
 #      and without the gVCF the block site is "no call" with that reason.
 #   4. Nextflow (--tools clinvar,html_report, the row's gvcf column, the same
@@ -94,7 +95,10 @@ check_step_exit 06-clinvar-screen.sh
 DEEP="${GENOME_DIR}/${T}/clinvar/${T}_clinvar_deep_intronic.tsv"
 call() { awk -F'\t' -v g="$1" '$5 == g {print $8 "|" $9}' "$DEEP" 2>/dev/null; }
 check "the planted SNV gives its genotype with GQ and DP" has '^(het|hom)\|GQ [0-9]+, DP [0-9]+$' "$(call PLANTED)"
-check_eq "the site inside a gVCF reference block gives ref with the block's GQ" "$(call BLOCK)" "ref|GQ ${BGQ} (gVCF block)"
+# Below step 6's call floor (CLINVAR_MIN_GQ, default 30) the block is a low-confidence ref.
+if [ "${BGQ:-0}" -ge 30 ] 2>/dev/null; then WANT="ref|GQ ${BGQ} (gVCF block)"
+else WANT="ref (low confidence)|GQ ${BGQ} (gVCF block), below the call floor of GQ 30"; fi
+check_eq "the site inside a gVCF reference block gives ref with the block's GQ" "$(call BLOCK)" "$WANT"
 check_eq "a site no record covers gives no call, and why" "$(call NOWHERE)" "no call|no record in the VCF or the gVCF covers the site"
 
 # --- 1. the default list and the scan -------------------------------------------------

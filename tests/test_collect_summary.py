@@ -161,7 +161,8 @@ Checks:
      loci and its "not run" note, and every row of the always-report list
      with its call ("ref, GQ 50 (gVCF block)", a genotype, "no call: why"),
      reach both reports; bin/clinvar_hits.awk's sites mode words the calls
-     the same way.
+     the same way, and a reference call below the GQ floor reads
+     "ref (low confidence)".
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -530,6 +531,21 @@ def construct_scan_section(work, schema):
         "G1": ("ref", "GQ 50 (gVCF block)"), "G2": ("hom", "GQ 60, DP 30"), "G3": ("ref", "GQ 35"),
         "G4": ("other allele", "G>C het"),
         "G5": ("no call", "the gVCF record over the site is not a PASS reference call (GT ./.)")}, calls)
+    # The call floor: a reference call below min_gq (step 6's CLINVAR_MIN_GQ) is no confident ref.
+    out = subprocess.run(["awk", "-v", "mode=sites", "-v", "min_gq=40", "-f",
+                          os.path.join(REPO, "bin", "clinvar_hits.awk"), sites, vcf_calls, gvcf_calls],
+                         capture_output=True, text=True).stdout.splitlines()
+    low = {r.split("\t")[4]: tuple(r.split("\t")[7:9]) for r in out[1:]}
+    check("sites mode: a ref below the GQ floor reads 'ref (low confidence)', one above it stays 'ref'",
+          low.get("G3") == ("ref (low confidence)", "GQ 35, below the call floor of GQ 40")
+          and low.get("G1") == ("ref", "GQ 50 (gVCF block)") and low.get("G2") == ("hom", "GQ 60, DP 30"), low)
+    put(gvcf_calls, "chr1\t1\t15\tA\t<*>\t0/0\t2\t.\n")
+    out = subprocess.run(["awk", "-v", "mode=sites", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"), sites,
+                          vcf_calls, gvcf_calls], capture_output=True, text=True).stdout.splitlines()
+    low = {r.split("\t")[4]: tuple(r.split("\t")[7:9]) for r in out[1:]}
+    check("sites mode: a GQ 2 gVCF block under the default floor of 30 is a low-confidence ref",
+          low.get("G1") == ("ref (low confidence)", "GQ 2 (gVCF block), below the call floor of GQ 30")
+          and low.get("G3") == ("ref", "GQ 35"), low)
     empty = os.path.join(work, "construct-scan", "empty.txt")
     put(empty, "")
     out = subprocess.run(["awk", "-v", "mode=sites", "-v", "gvcf=no", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"),
