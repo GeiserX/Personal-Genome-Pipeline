@@ -7,6 +7,7 @@ same command. Standard library only, so it runs in the plain python image.
                           --clinvar ID=HITS.vcf ... [--delly ID=SV.vcf.gz ...]
                           [--eh ID=EH.vcf ...] [--smn ID=SMN.tsv ...]
                           [--exons EXONS.bed] [--benign-sv BENIGN_LOSS.bed]
+                          [--cn-intervals ID=CN_INTERVALS.tsv ...] [--cnvpytor ID=CNVS.vcf.gz ...]
                           [--declared-sex ID=SEX ...] --out-dir D
       For every two samples the pedigree marks as partners and that both have
       a ClinVar screen (step 06's <id>_clinvar_hits.vcf), collects each
@@ -15,7 +16,13 @@ same command. Standard library only, so it runs in the plain python image.
       that remove an exon (with --exons) and do not match a common deletion
       of AnnotSV's benign set (with --benign-sv), SMN1 copy number
       (Parascopy, step 35) and the FMR1
-      and FXN repeats (ExpansionHunter, step 09). It writes, per couple A and
+      and FXN repeats (ExpansionHunter, step 09). With --cn-intervals (step
+      35's <id>_cn_intervals.tsv) the report lists, for each partner, every
+      carrier deletion allele of that table (del(GJB6-D13S1830), CFTRdele2,3,
+      the HBB exon 3 deletion) as present, absent or not assessable, and
+      a male partner's AZF deletions the same way; with --cnvpytor (step 18's
+      <id>_cnvs.vcf.gz) a CNVpytor call that disagrees is printed beside it.
+      It writes, per couple A and
       B (sorted by name):
         D/couple_A_B.tsv          one row per gene where either partner has a
                                   finding: shared (both carry, autosomal
@@ -385,6 +392,87 @@ def smn_finding(path, genes):
     return [finding("SMN1", text, 1 if p["cn"] == 1 else 2)], "SMN1 %d cop%s" % (p["cn"], "y" if p["cn"] == 1 else "ies")
 
 
+# --- carrier deletion alleles and AZF, from step 35's interval table ----------
+
+# The rows of bin/cn_loci.tsv the couple report reads, with their names here.
+CN_ALLELES = (("GJB6_D13S1830", "del(GJB6-D13S1830)"), ("CFTR_dele2_3", "CFTRdele2,3"),
+              ("HBB_exon3_del", "HBB exon 3 deletion"))
+# Named as deletions, so present reads as "the deletion is there" (as for CN_ALLELES).
+CN_AZF = (("AZFa", "AZFa deletion"), ("AZFb", "AZFb deletion"),
+          ("AZFc_DAZ", "AZFc deletion (DAZ copies; gr/gr and b2/b3 leave two of four)"))
+# A CNVpytor deletion counts for a row when it covers half of the row's span or more.
+CNV_COVER = 0.5
+
+
+def read_cn_intervals(path):
+    """{locus: row} of step 35's <id>_cn_intervals.tsv."""
+    with open(path, encoding="utf-8", errors="replace") as f:
+        lines = [ln.rstrip("\n").split("\t") for ln in f if ln.strip()]
+    if (not lines or lines[0][:6] != ["locus", "name", "chrom", "start", "end", "status"]
+            or not {"copies", "expected", "change", "reason"} <= set(lines[0])):
+        die(["%s: not step 35's interval table (bin/copy_number.py intervals)" % path])
+    head = lines[0]
+    return {r[0]: dict(zip(head, r)) for r in lines[1:] if len(r) == len(head)}
+
+
+def cnvpytor_deletions(path):
+    """[(chrom, start0, end)] of the deletions in step 18's CNVpytor VCF."""
+    out = []
+    for r in collect_summary.vcf_records(path):
+        if len(r) < 8:
+            continue
+        info = collect_summary.info_map(r[7])
+        kind = info.get("SVTYPE") or r[4].strip("<>")
+        if kind != "DEL" or not info.get("END", "").isdigit():
+            continue
+        out.append((r[0], int(r[1]) - 1, int(info["END"])))
+    return out
+
+
+def cn_state(row):
+    """(present | absent | not assessable, the depth call in words) of an interval row."""
+    if row is None:
+        return "not assessable", "no row in step 35's interval table"
+    if row["status"] != "called":
+        return "not assessable", "%s (%s)" % (row["status"], row["reason"])
+    text = "%s of %s copies" % (row["copies"], row["expected"])
+    if row["change"] == "deletion":
+        return "present", text
+    if row["change"] == "no change":
+        return "absent", text
+    return "not assessable", "%s, %s" % (text, row["change"])
+
+
+def cnv_note(row, dels):
+    """The CNVpytor cross-check of a row when it disagrees with the depth call, else ''."""
+    if dels is None or row is None:
+        return ""
+    s, e = int(row["start"]), int(row["end"])
+    hit = any(c == row["chrom"] and min(e, de) - max(s, ds) >= CNV_COVER * (e - s) for c, ds, de in dels)
+    state, _ = cn_state(row)
+    if state == "present" and not hit:
+        return "CNVpytor (step 18) calls no deletion here"
+    if state == "absent" and hit:
+        return "CNVpytor (step 18) calls a deletion here"
+    return ""
+
+
+def cn_lines(s, sex, intervals, dels):
+    """The report lines of a partner's carrier deletion alleles and AZF regions."""
+    out = []
+    rows = (CN_ALLELES + CN_AZF) if sex == "male" else CN_ALLELES
+    for locus, name in rows:
+        r = intervals.get(locus)
+        state, text = cn_state(r)
+        note = cnv_note(r, dels)
+        out.append("- %s, %s: **%s** (read depth, step 35: %s)%s" % (s, name, state, text,
+                                                                       "; " + note if note else ""))
+    if sex != "male":
+        out.append("- %s, AZF regions: not applicable (%s)" % (s, "no Y chromosome" if sex == "female" else
+                                                              "sex unknown"))
+    return out
+
+
 # --- the screen --------------------------------------------------------------
 
 def odds(p):
@@ -493,7 +581,7 @@ COUNSEL = ("This is a screen, not a diagnosis, and not medical advice. Before ac
            "can say what a negative screen leaves out for your ancestry.")
 
 
-def write_markdown(path, a, b, sexes, rows, assessed, gaps, ngenes, common):
+def write_markdown(path, a, b, sexes, rows, assessed, gaps, ngenes, common, cn=None):
     def sx(s):
         return sexes.get(s) or "sex unknown"
     out = ["# Couple carrier screen: %s and %s" % (a, b), "",
@@ -519,6 +607,12 @@ def write_markdown(path, a, b, sexes, rows, assessed, gaps, ngenes, common):
             "No gene of the list where both partners carry a change.")
     section("X-linked findings", "x_linked", "No change in an X-linked gene of the list.")
     section("Genes where only one partner carries a change", "one_partner", "None.")
+    if cn:
+        out.extend(["## Carrier deletion alleles and AZF regions (read depth, step 35)", "",
+                    "Each allele is present, absent or not assessable from the read depth over it. A present "
+                    "deletion needs a clinical test. The AZF regions are read on a male partner only.", ""])
+        out.extend(cn)
+        out.append("")
     out.extend(["## What was assessed", "", "| Partner | ClinVar hits (in listed genes / all) | Deletions | SMN1 | FMR1 and FXN repeats |",
                 "|---|---|---|---|---|"])
     for s in (a, b):
@@ -550,7 +644,10 @@ def cmd_screen(a):
     delly = kv_args(a.delly, "delly")
     eh = kv_args(a.eh, "eh")
     smn = kv_args(a.smn, "smn")
-    for what, d in (("clinvar", clinvar), ("delly", delly), ("eh", eh), ("smn", smn)):
+    cni = kv_args(a.cn_intervals, "cn-intervals")
+    cnv = kv_args(a.cnvpytor, "cnvpytor")
+    for what, d in (("clinvar", clinvar), ("delly", delly), ("eh", eh), ("smn", smn), ("cn-intervals", cni),
+                    ("cnvpytor", cnv)):
         for k, p in d.items():
             if k not in members:
                 die(["--%s %s: '%s' is not in the pedigree" % (what, k, k)])
@@ -583,8 +680,12 @@ def cmd_screen(a):
             print("%s and %s: not screened, %s %s no ClinVar screen (step 06's <sample>_clinvar_hits.vcf)"
                   % (x, y, " and ".join(lack), "has" if len(lack) == 1 else "have"))
             continue
-        found, assessed, gaps = {}, {}, []
+        found, assessed, gaps, cn = {}, {}, [], []
         for s in (x, y):
+            if s in cni:
+                cn += cn_lines(s, sexes[s], read_cn_intervals(cni[s]), cnvpytor_deletions(cnv[s]) if s in cnv else None)
+            elif cni:
+                gaps.append("Carrier deletion alleles of %s: no interval table (step 35)." % s)
             aside = []
             f, total = clinvar_findings(clinvar[s], genes, sexes[s], par, aside)
             info = {"clinvar": "%d / %d" % (len(f), total)}
@@ -632,7 +733,7 @@ def cmd_screen(a):
         write_table(base + ".tsv", rows)
         for s in (x, y):
             write_table(os.path.join(a.out_dir, "%s_couple_carrier.tsv" % s), rows)
-        write_markdown(base + ".md", x, y, sexes, rows, assessed, gaps, len(genes), common)
+        write_markdown(base + ".md", x, y, sexes, rows, assessed, gaps, len(genes), common, cn)
         n = {k: sum(1 for r in rows if r["result"] == k) for k in ("shared", "x_linked", "one_partner")}
         print("%s and %s: %d shared gene%s, %d X-linked, %d with one partner only (%s.tsv)" % (
             x, y, n["shared"], "" if n["shared"] == 1 else "s", n["x_linked"], n["one_partner"], base))
@@ -781,6 +882,8 @@ def main(argv=None):
     s.add_argument("--delly", action="append")
     s.add_argument("--eh", action="append")
     s.add_argument("--smn", action="append")
+    s.add_argument("--cn-intervals", action="append", help="ID=<id>_cn_intervals.tsv of step 35")
+    s.add_argument("--cnvpytor", action="append", help="ID=<id>_cnvs.vcf.gz of step 18 (the cross-check)")
     s.add_argument("--exons")
     s.add_argument("--benign-sv")
     s.add_argument("--par-bed")
