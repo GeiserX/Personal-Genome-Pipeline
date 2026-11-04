@@ -380,15 +380,16 @@ jobs:
           echo "$cpu"
           echo "Runner: ${cpu}" >> "$GITHUB_STEP_SUMMARY"
 
+      # Before anything is pulled or restored: the legs ran out of disk on
+      # 2026-11-04 with only part of the preinstalled software removed.
+      - uses: ./.github/actions/free-disk
+
       # Images go to /var/lib/docker on /; the work area goes to whichever of
       # / and /mnt has more room, so the two do not compete for one disk. The
       # base outputs unpack only under the work area they were packed in, so
       # a shard leg takes the base leg's choice when its artifact arrives.
-      - name: Free disk space and pick the work area
+      - name: Pick the work area
         run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
-            /opt/hostedtoolcache/CodeQL /usr/local/share/boost
-          df -h / /mnt
           work="${RUNNER_TEMP}/e2e-work"
           if [ "$(df --output=avail -k /mnt | tail -1)" -gt "$(df --output=avail -k / | tail -1)" ]; then
             work=/mnt/e2e-work
@@ -576,6 +577,32 @@ jobs:
           path: ${{ env.E2E_DATA_CACHE }}/archaic
           key: ${{ steps.data-keys.outputs.archaic }}
 
+      # The PGS Catalog's synthetic HAPNEST panel (prs-2-ancestry, 268 MB),
+      # from EBI's FTP server, keyed on the sha256 the case pins. The case
+      # takes it from E2E_DATA_CACHE/hapnest, checks it and then runs setup.sh
+      # with EBI unreachable; on a miss it downloads it and puts it there.
+      # Saved like the entries above: on main, or a run by hand with
+      # save_images, on a miss.
+      - name: Data cache, HAPNEST panel
+        id: hapnest
+        env:
+          LIST: ${{ steps.cases-list.outputs.list }}
+          SAVE: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && 'true' || 'false' }}
+        run: |
+          grep -qx prs-2-ancestry "$LIST" || exit 0
+          sha=$(sed -n 's/^HAPNEST_SHA256=//p' tests/e2e/prs-2-ancestry.sh)
+          [ "${#sha}" -eq 64 ] || { echo "::error::No HAPNEST_SHA256= line in tests/e2e/prs-2-ancestry.sh"; exit 1; }
+          { echo "run=true"; echo "key=e2e-data-hapnest-${sha:0:16}"; } | tee -a "$GITHUB_OUTPUT"
+          echo "E2E_HAPNEST_KEEP=${SAVE}" >> "$GITHUB_ENV"
+
+      - name: Restore cached data, HAPNEST panel
+        id: data-hapnest
+        if: steps.hapnest.outputs.run == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/hapnest
+          key: ${{ steps.hapnest.outputs.key }}
+
       - name: Run the e2e cases
         id: cases
         env:
@@ -630,6 +657,24 @@ jobs:
           path: ${{ env.E2E_DATA_CACHE }}/archaic
           key: ${{ steps.data-keys.outputs.archaic }}
 
+      # The case leaves the panel there only once its sha256 matched.
+      - name: Data cache, HAPNEST panel, what to save
+        id: hapnest-save
+        if: >-
+          always() && steps.hapnest.outputs.run == 'true' && env.E2E_HAPNEST_KEEP == 'true' &&
+          steps.data-hapnest.outputs.cache-hit != 'true'
+        run: |
+          if [ -s "${E2E_DATA_CACHE}/hapnest/GRCh38_HAPNEST_reference.tar.zst" ]; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          fi
+          du -sh "${E2E_DATA_CACHE}/hapnest" 2> /dev/null || echo "Data cache: no HAPNEST panel to save"
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.hapnest-save.outputs.save == 'true'
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/hapnest
+          key: ${{ steps.hapnest.outputs.key }}
+
       - name: Upload the base outputs
         if: matrix.job == 'base'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -639,7 +684,8 @@ jobs:
             ${{ runner.temp }}/base.tar.zst
             ${{ runner.temp }}/base.tar.zst.from
           compression-level: 0
-          retention-days: 1
+          # Three days, so "Re-run failed jobs" the next day still finds it.
+          retention-days: 3
           overwrite: true
 
       # The cases nextflow-from-fastq-1-bash and -2-nextflow ran the bash steps
@@ -703,8 +749,8 @@ jobs:
       # Each group keeps its smallest images up to GROUP_BUDGET_MB of zstd
       # output; the rest are pulled on every run. Four groups of 1500 MB are
       # 5.9 GB, and while main replaces one group the old and the new entry
-      # both count: 7.3 GB. With the two data entries above (2.0 GB) that is
-      # 9.3 GB, under the 10 GB limit. An image pinned by digest
+      # both count: 7.3 GB. With the three data entries above (2.0 GB and the
+      # 0.27 GB HAPNEST panel) that is 9.6 GB, under the 10 GB limit. An image pinned by digest
       # is never saved: docker load gives it back without its digest, so
       # e2e-run.sh would pull it again anyway.
       - name: Image sizes, and save images for the next run
