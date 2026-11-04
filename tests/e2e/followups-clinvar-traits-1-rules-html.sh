@@ -4,8 +4,8 @@
 #     a copy with SERPINA1 Z (rs28929474) written ref and alt the wrong way
 #     round, and APOL1 G1 S342G (rs73885319) written as its minus-strand bases,
 #     fails, naming each with its reason;
-#   - scripts/42-traits.sh on a copy of the HG002 VCF and gVCF case 21 wrote
-#     writes one rules line per rule, the APOL1 and SERPINA1 lines among them;
+#   - scripts/42-traits.sh, on a copy of the HG002 VCF and gVCF that case 21
+#     wrote, writes one rules line per rule, the APOL1 and SERPINA1 lines among them;
 #   - bin/render_report.py on that folder puts both rules in the HTML genotype
 #     rules table, each with its trait, gene and sites; control: the same
 #     folder with the SERPINA1 line taken out of the rules file renders a table

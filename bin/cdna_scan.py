@@ -128,8 +128,9 @@ def sa_pieces(sa, chrom):
 def junctions(chrom, ref_start, cigar, sa, edges, reverse=False):
     """The (exon end, exon start) junctions one read shows on chrom: from its
     pieces (the alignment and its SA alignments) and from its N gaps. Two
-    pieces pair only on the same strand and in read order: the one clipped at
-    the exon end comes first in the read, the other starts where it stops,
+    pieces pair only on the same strand and in read order, taken in the
+    reference's orientation of the read: the one clipped at the exon end comes
+    first along the read as aligned, the other starts where it stops,
     give or take EDGE_SLACK read bases (the bases an aligner can put on either
     side of a junction, or leave out of both)."""
     out = set()
