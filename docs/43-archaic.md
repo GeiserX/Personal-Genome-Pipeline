@@ -56,7 +56,7 @@ Chen et al. do not run IBDmix on every site. Each archaic genome comes with its 
 
 - a genome's call is read only inside that genome's FilterBed; outside it the site is unknown (9) for that genome, so IBDmix scores nothing there;
 - a table row outside the 1000 Genomes GRCh38 strict mask is dropped;
-- a table row inside a segmental duplication (UCSC's GRCh37 track), or within 5 bp of a 1000 Genomes indel, is dropped.
+- a table row inside a segmental duplication (UCSC's GRCh37 track), or inside the window of a 1000 Genomes indel, is dropped. The window is 5 bp on each side of the indel, reaching past the longer of its REF and ALT, as the published script writes it.
 
 One of their exclusions is not applied here: the CpG mask, which needs a GRCh37 reference and the chimpanzee, orangutan and macaque SNP sets, none of which this pipeline installs. What that leaves out is written down in the Notes below.
 
@@ -107,7 +107,7 @@ With the filters the step is comparable with the published figures again, and th
 - A segment counts when either of your two copies carries it. The share is of the analysed span, not of the whole genome.
 - The table has autosomes only: chrX and chrY are not assessed.
 - Sites the VCF has no record for are read as the reference allele. A VCF that holds only variants (no reference calls) cannot tell a reference call from a gap in coverage.
-- The share is of the analysed span, and after masking the span still runs from the first to the last table site of each chromosome. Masked sequence can hold no segment, so the share is a lower bound on archaic ancestry, not an estimate of it. Compare it with the published per-person figures, which come from masked data too.
+- The share is of the analysed span, and the span still runs from the first to the last table site of each chromosome whatever the masks remove. A segment runs from its first site to the site after its last, so it can cross masked sequence and count those bases; a wrong genotype at a site that was kept can raise the share as well. The number is an estimate in both directions, not a floor. Compare it with the published per-person figures, which come from masked data too.
 - The CpG sites Chen et al. exclude are kept here. A C to T change at a CpG site is the commonest ancient-DNA error, so a few of the archaic genotypes at those sites are wrong in both directions, and the sites are over-represented among the matches a method like this finds. Their own filter needs data this pipeline does not install, so the share carries that error; it is one of the reasons a number from this step is an estimate.
 - On the e2e fixture the case builds the table for GRCh37 chr22 and checks HG002's GIAB v4.2.1 genotypes against the published chr22 spread, a copy of HG002 with one chromosome over chr22:28-29 Mb taken from Vindija (a Neanderthal segment must cover it), a person built from the table who carries only the majority allele (a quarter of HG002's Neanderthal sequence at most), that no table row falls outside the strict mask, and that the filters took sites out.
 

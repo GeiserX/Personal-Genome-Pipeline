@@ -127,7 +127,10 @@ def read_mask(path, chrom):
             c = line.split()
             if len(c) < 3 or c[0] not in want:
                 continue
-            iv.append((int(c[1]), int(c[2])))
+            s, e = int(c[1]), int(c[2])
+            if e <= s:
+                continue          # an empty or reversed interval holds no position
+            iv.append((s, e))
     iv.sort()
     out = []
     for s, e in iv:

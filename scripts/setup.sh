@@ -1759,16 +1759,19 @@ install_archaic() {
           r=(-r "$2"); [ ! -s "$4" ] || r=(-R "$4")
           bcftools view "${r[@]}" -m2 -M2 -v snps -Ou "$1" \
             | bcftools query -f "%POS\t%REF\t%ALT\t%INFO/AF\t%INFO/AFR_AF\t%INFO/AMR_AF\t%INFO/EAS_AF\t%INFO/EUR_AF\t%INFO/SAS_AF\n" > "$3/modern.tsv"
-          bcftools view "${r[@]}" -v indels -Ou "$1" \
+          bcftools view -r "$2" -v indels -Ou "$1" \
             | bcftools query -f "%POS\t%REF\t%ALT\n" > "$3/indels.tsv"' \
           _ "$(cpath "$sites")" "$c" "$(cpath "$wk")" "$(cpath "${wk}/regions.bed")"; then
       echo "[WARN] Could not read chr${c} of the 1000 Genomes sites"; return 1
     fi
-    # The regions no genome is read at: UCSC's segmental duplications, and the
-    # 5 bp on each side of a 1000 Genomes indel (Chen et al.'s own excluded
-    # beds, minus the CpG one, which needs a GRCh37 reference and three
-    # primate SNP sets this pipeline does not install; docs/43-archaic.md
-    # says so).
+    # The regions no genome is read at: UCSC's segmental duplications, and
+    # each 1000 Genomes indel with 5 bp on each side, the window reaching past
+    # the longer of its REF and ALT as the published script writes it (Chen et
+    # al.'s own excluded beds, minus the CpG one, which needs a GRCh37
+    # reference and three primate SNP sets this pipeline does not install;
+    # docs/43-archaic.md says so). The indels are read from the whole
+    # chromosome even when ARCHAIC_REGIONS cuts the table down, so an indel
+    # just outside a region still excludes the sites next to it.
     { awk -v c="$c" 'BEGIN {OFS = "\t"} $2 == "chr" c {print c, $3, $4}' <(gzip -dc "${dir}/segdups_hg19.txt.gz")
       awk -F'\t' -v c="$c" 'BEGIN {OFS = "\t"}
         { n = length($2); m = split($3, a, ","); for (i = 1; i <= m; i++) if (length(a[i]) > n) n = length(a[i])
