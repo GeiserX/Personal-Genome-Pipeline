@@ -432,6 +432,11 @@ def main():
               "deletion here" in md
               and "- B, GJB6_D13S1830" not in md and "- B, del(GJB6-D13S1830): **absent** (read depth, step 35: 2 of 2 "
               "copies)\n" in md + "\n", lines)
+        check("cn alleles: no CNVpytor note under two of its 1 kb bins (B's 619 bp, 621 bp); the 13.4 kb Sicilian gets it",
+              "- B, HBB 619 bp deletion: **present** (read depth, step 35: 1 of 2 copies)\n" in md
+              and "- B, HBB exon 3 deletion: **present** (read depth, step 35: 1 of 2 copies)\n" in md
+              and "- B, Sicilian (delta-beta)0 deletion: **present** (read depth, step 35: 1 of 2 copies); "
+              "CNVpytor (step 18) calls no deletion here" in md, lines)
         check("cn alleles: the male partner's AZF regions, AZFc a deletion; the female's not applicable",
               "- B, AZFc deletion (DAZ copies; gr/gr and b2/b3 leave two of four): **present** (read depth, step 35: "
               "2 of 4 copies)" in md and "- B, AZFa deletion: **absent** (read depth, step 35: 1 of 1 copies)" in md

@@ -407,6 +407,9 @@ CN_AZF = (("AZFa", "AZFa deletion"), ("AZFb", "AZFb deletion"),
           ("AZFc_DAZ", "AZFc deletion (DAZ copies; gr/gr and b2/b3 leave two of four)"))
 # A CNVpytor deletion counts for a row when it covers half of the row's span or more.
 CNV_COVER = 0.5
+# Step 18 calls on 1 kb bins, so a deletion shorter than two bins (the 619 bp
+# and 621 bp HBB rows) is one it cannot see: its silence there is no evidence.
+CNV_MIN_SPAN = 2000
 
 
 def read_cn_intervals(path):
@@ -455,7 +458,7 @@ def cnv_note(row, dels):
     s, e = int(row["start"]), int(row["end"])
     hit = any(c == row["chrom"] and min(e, de) - max(s, ds) >= CNV_COVER * (e - s) for c, ds, de in dels)
     state, _ = cn_state(row)
-    if state == "present" and not hit:
+    if state == "present" and not hit and e - s >= CNV_MIN_SPAN:
         return "CNVpytor (step 18) calls no deletion here"
     if state == "absent" and hit:
         return "CNVpytor (step 18) calls a deletion here"
