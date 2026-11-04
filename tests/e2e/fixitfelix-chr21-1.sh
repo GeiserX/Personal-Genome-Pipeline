@@ -9,8 +9,9 @@
 #     and the file is byte for byte GIAB's maskedGRC_exclusions_v2 chr21;
 #   - control: the same run with another MASKED_REF_SHA256 fails and leaves
 #     no masked FASTA;
-#   - takes HG002's 60x read pairs from GIAB's BAM over both copies of each
-#     gene (the five masked stretches and the gene bodies with 5 kb flanks),
+#   - takes HG002's read pairs (Element AVITI, 81x) from GIAB's BAM over both
+#     copies of each gene (the five masked stretches and the gene bodies with
+#     5 kb flanks),
 #     aligns them with step 02 to the stock chr21 and to the masked chr21 and
 #     calls them with step 03 over the three gene bodies;
 #   - counts the CMRG v1.00 benchmark variants of each gene (inside its
@@ -28,7 +29,11 @@ RD="${G}/reference/ffx"           # this case's references and benchmark, under 
 GIAB_REF=https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/references/GRCh38
 STOCK_URL="${GIAB_REF}/GCA_000001405.15_GRCh38_no_alt_analysis_set.fasta.gz"
 GIAB_MASKED_URL="${GIAB_REF}/GCA_000001405.15_GRCh38_no_alt_analysis_set_maskedGRC_exclusions_v2.fasta.gz"
-BAM_URL=https://giab.s3.amazonaws.com/data/AshkenazimTrio/HG002_NA24385_son/NIST_HiSeq_HG002_Homogeneity-10953946/NHGRI_Illumina300X_AJtrio_novoalign_bams/HG002.GRCh38.60x.1.bam
+# HG002's Element AVITI 2x150 reads (81x), aligned by GIAB with bwa mem to GRCh38-GIABv3, a
+# reference with the same false duplications masked, so the reads of the three genes sit on
+# their real copy. The fixture's novoalign BAM leaves a read that fits two places unmapped:
+# from it this case got 26,569 pairs, too few to call the genes on either reference.
+BAM_URL=https://giab.s3.amazonaws.com/data/AshkenazimTrio/HG002_NA24385_son/Element_AVITI_20231018/HG002_GRCh38-GIABv3_Element-StdInsert_2X150_81x_20231018.bam
 CMRG=https://giab.s3.amazonaws.com/release/AshkenazimTrio/HG002_NA24385_son/CMRG_v1.00/GRCh38/SmallVariant/HG002_GRCh38_CMRG_smallvar_v1.00
 CMRG_VCF_SHA=80f18efa283d953cfc615d30dd01b1ff80debcc46f52042b942da783acd48da2
 CMRG_BED_SHA=dc77803bb474802fd3213d2f3649076dc14675d3b3c0ae3284036be09d2813f7
@@ -94,7 +99,7 @@ REGIONS="chr21:5010001-5166246 chr21:5966594-6161371 chr21:6427259-6580181 chr21
 dk "$SAMTOOLS_IMAGE" bash -euo pipefail -c "samtools view -u -M -F 2316 '${BAM_URL}' ${REGIONS//$'\n'/ } \
   | samtools sort -n -u -T /w/sortn - | samtools fastq -n -1 /w/R1.fastq.gz -2 /w/R2.fastq.gz -0 /dev/null -s /dev/null -"
 PAIRS=$(( $(gzip -dc "${RD}/R1.fastq.gz" 2>/dev/null | wc -l) / 4 ))
-check_ge "read pairs from GIAB's HG002 BAM" "$PAIRS" 100000
+check_ge "read pairs from GIAB's HG002 BAM (about 80x over 207 kb)" "$PAIRS" 40000
 check_eq "R2 holds as many reads" "$(( $(gzip -dc "${RD}/R2.fastq.gz" 2>/dev/null | wc -l) / 4 ))" "$PAIRS"
 
 INTERVALS=""
