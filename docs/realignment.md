@@ -187,7 +187,13 @@ Step 02 builds its own minimap2 index for it the first time, `GRCh38_no_alt_anal
 sam view -H "$BAM" | grep '^@PG' | grep -o 'GRCh38_no_alt_analysis_set[^ ]*\.sr\.mmi'   # ..._maskedGRC.sr.mmi on the masked reference
 ```
 
-What it changes was measured on chr21 by the CI case `tests/e2e/fixitfelix-chr21-1.sh`: HG002's read pairs over both copies of KCNE1, CBS and CRYAA (GIAB's Element AVITI 2x150 data, 81x), aligned with step 02 to chr21 with and without the mask, called with step 03 and compared with GIAB's CMRG v1.00 benchmark (Wagner et al., Nat Biotechnol 2022, PMID 35132260), alleles and genotype. For each of the three genes the case requires a recall of 0.9 or more on the masked chr21 and under 0.5 on the stock one, and fails otherwise.
+What it changes was measured on chr21 by the CI case `tests/e2e/fixitfelix-chr21-1.sh`: HG002's read pairs over both copies of KCNE1, CBS and CRYAA (GIAB's Element AVITI 2x150 data, 81x), aligned with step 02 to chr21 with and without the mask, called with step 03 and compared with GIAB's CMRG v1.00 benchmark (Wagner et al., Nat Biotechnol 2022, PMID 35132260), alleles and genotype. The case requires a recall of 0.9 or more on the masked chr21 and under 0.5 on the stock one for each gene. The run of 2026-11-04 gave:
+
+| Gene | Benchmark variants | Found, stock chr21 | Found, masked chr21 |
+|---|---|---|---|
+| KCNE1 | 104 | 17 (0.16) | 104 (1.00) |
+| CBS | 52 | 2 (0.04) | 51 (0.98) |
+| CRYAA | 9 | 0 (0.00) | 9 (1.00) |
 
 On the same reads, step 16b reads all four genes (KCNE1, CBS, U2AF1 and CRYAA) on the masked chr21 and none of them on the stock one. Only chr21 is measured: the other false duplications (on chr9, chr13, chr16, chrX and two unlocalized scaffolds) are masked the same way and not measured here.
 
