@@ -177,7 +177,7 @@ GOLDEN_TITLES = sorted([
     "SMN1/SMN2 Copy Number (Parascopy)", "Y-Chromosome Haplogroup", "Y-STR Markers (HipSTR)",
     "Raw-Data Export (23andMe v5 layout)", "Blood Groups (predicted)", "Archaic Ancestry (Neanderthal, Denisovan)",
     "Lp(a): LPA KIV-2 Repeat Count", "MUC1 VNTR Frameshifts (VNtyper)", "Viral DNA in the Unmapped Reads",
-    "Clonal Haematopoiesis (CHIP)", "Mosaic Chromosomal Alterations (MoChA)",
+    "Clonal Haematopoiesis (CHIP)", "Mosaic Chromosomal Alterations (MoChA)", "Mobile Element Insertions",
     "Telomere content (relative)", "Mitochondrial Analysis", "Clinical Variant Filter",
     "Variant Prioritization (slivar)", "Symptom-Driven Ranking (Exomiser)", "Polygenic Risk Scores", "Fine-Grained Ancestry", "Traits",
     "Ancient Populations", "ClinVar Hits (best-reviewed first, 3 of 3)", "Steps Not Run",

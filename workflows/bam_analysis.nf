@@ -27,6 +27,7 @@ include { TELOMERE_HUNTER  } from '../modules/local/telomere_hunter/main'
 include { MOSDEPTH         } from '../modules/local/mosdepth/main'
 include { MITO_VARIANTS    } from '../modules/local/mito_variants/main'
 include { MITO_VARIANTS_ANNOTATE } from '../modules/local/mito_variants/main'
+include { MITO_DELETIONS   } from '../modules/local/mito_variants/main'
 include { PARASCOPY        } from '../modules/local/parascopy/main'
 include { PARAPHASE_CHECK; PARAPHASE; PARAPHASE_REPORT } from '../modules/local/paraphase/main'
 include { SOMALIER         } from '../modules/local/somalier/main'
@@ -72,6 +73,8 @@ workflow BAM_ANALYSIS {
     ch_coverage         = Channel.empty()
     ch_mito_vcf         = Channel.empty()
     ch_mito_annotated   = Channel.empty()   // [meta, <id>_chrM_annotated.tsv]
+    ch_mito_deletions   = Channel.empty()   // [meta, <id>_chrM_deletions.tsv]
+    ch_mito_copies      = Channel.empty()   // [meta, <id>_mtdna_copies.tsv]
     ch_kir_genotype     = Channel.empty()
     ch_hla_optitype     = Channel.empty()   // [meta, <id>_optitype_result.tsv] with --hla_qc
     ch_hla_concordance  = Channel.empty()   // [meta, <id>_hla_concordance.tsv] when OptiType typed reads
@@ -217,6 +220,11 @@ workflow BAM_ANALYSIS {
         ch_mito_vcf       = MITO_VARIANTS.out.mito_vcf
         ch_mito_annotated = MITO_VARIANTS_ANNOTATE.out.annotated
         ch_versions       = ch_versions.mix(MITO_VARIANTS.out.versions, MITO_VARIANTS_ANNOTATE.out.versions)
+        // Step 20's large deletions (eKLIPse) and mtDNA copy number, from the same BAM
+        MITO_DELETIONS(ch_bam)
+        ch_mito_deletions = MITO_DELETIONS.out.deletions
+        ch_mito_copies    = MITO_DELETIONS.out.copies
+        ch_versions       = ch_versions.mix(MITO_DELETIONS.out.versions)
     }
 
     //
@@ -371,6 +379,8 @@ workflow BAM_ANALYSIS {
     callability      = ch_callability     // [meta, <id>_callability.bed.gz]
     mito_vcf         = ch_mito_vcf
     mito_annotated   = ch_mito_annotated  // [meta, <id>_chrM_annotated.tsv]
+    mito_deletions   = ch_mito_deletions  // [meta, <id>_chrM_deletions.tsv]
+    mito_copies      = ch_mito_copies     // [meta, <id>_mtdna_copies.tsv]
     kir_genotype     = ch_kir_genotype    // [meta, <id>_kir_genotype.tsv, database_release.txt]
     hla_optitype     = ch_hla_optitype    // [meta, <id>_optitype_result.tsv] (--hla_qc)
     hla_concordance  = ch_hla_concordance // [meta, <id>_hla_concordance.tsv] (--hla_qc, reads typed)
