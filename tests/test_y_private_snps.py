@@ -17,7 +17,11 @@ Checks:
      than one region piling up on one place), and --max-depth-factor 0
      turns that gate off;
   5. a gzipped VCF reads the same as a plain one;
-  6. a missing position table stops the tool and names setup.sh --yleaf-data.
+  6. a missing position table stops the tool and names setup.sh --yleaf-data;
+  7. a call outside the callable mask (a base not marked "P", or past the
+     mask's end) is dropped and counted as outside_callable, whatever its
+     quality; --callable-mask points at another mask; a missing mask stops
+     the tool.
 
 Run: python3 tests/test_y_private_snps.py
 """
@@ -68,7 +72,21 @@ RECORDS = [
     (7001000, "C", "T", "PASS", "1:0,30:30:5"),     # genotype quality below the gate
     (7001100, "C", "T", "PASS", "1:6,24:30:50"),    # ALT fraction 0.8
     (7001200, "C", "T", "PASS", "1:0,300:300:50"),  # ten times the median depth
+    (7001300, "C", "T", "PASS", "1:0,30:30:50"),    # outside the callable mask
 ]
+
+# The synthetic mask: every base passes ("P") up to MASK_LEN, except a run of
+# "Z" (too many zero mapping-quality reads) around 7001300.
+MASK_LEN = 7002000
+MASK_Z = (7001250, 7001350)
+
+
+def write_mask(path, z=MASK_Z):
+    seq = "P" * (z[0] - 1) + "Z" * (z[1] - z[0] + 1) + "P" * (MASK_LEN - z[1])
+    with gzip.open(path, "wt") as o:
+        o.write(">chrY\n")
+        for i in range(0, len(seq), 60):
+            o.write(seq[i:i + 60] + "\n")
 
 
 def write_tables(d):
@@ -105,6 +123,7 @@ def main():
     d = tempfile.mkdtemp()
     try:
         write_tables(d)
+        write_mask(os.path.join(d, "callable_mask_chrY.fasta.gz"))
         vcf = os.path.join(d, "sample.vcf")
         write_vcf(vcf)
         r, head, rows = run(d, vcf, "S")
@@ -124,10 +143,11 @@ def main():
                              ("depth=1", "the call below --min-depth"),
                              ("quality=1", "the call below --min-gq"),
                              ("alt_fraction=1", "the call below --min-fraction"),
-                             ("excess_depth=1", "the call far above the median depth")):
+                             ("excess_depth=1", "the call far above the median depth"),
+                             ("outside_callable=1", "the call outside the callable mask")):
             check(f"3. the header counts {count} ({label})", any(label in h for h in head), head)
-        check("3. the indel and the second-ALT record never reach the gates (2 of 14 records)",
-              any("12 chrY SNV records read" in line for line in r.stdout.splitlines()), r.stdout)
+        check("3. the indel and the second-ALT record never reach the gates (2 of 15 records)",
+              any("13 chrY SNV records read" in line for line in r.stdout.splitlines()), r.stdout)
         check("4. --max-depth-factor 0 keeps the deep call",
               "7001200" in [x[0] for x in run(d, vcf, "off", ("--max-depth-factor", "0"))[2]], None)
         gz = os.path.join(d, "s.vcf.gz")
@@ -136,6 +156,21 @@ def main():
               [x[0] for x in run(d, gz, "gz")[2]] == ["7000300", "7000400"], None)
         check("the step line says a private SNP is unconfirmed until another man carries it",
               "unconfirmed until another man" in r.stdout, r.stdout)
+
+        check("7. the call outside the callable mask is not listed", "7001300" not in pos, pos)
+        check("7. the header names the mask it used",
+              any("callable_mask=callable_mask_chrY.fasta.gz" in h for h in head), head)
+        other = os.path.join(d, "other_mask.fa.gz")
+        write_mask(other, z=(7000250, 7000350))
+        alt = [x[0] for x in run(d, vcf, "alt", ("--callable-mask", other))[2]]
+        check("7. --callable-mask reads another mask (7000300 masked there, 7001300 callable)",
+              alt == ["7000400", "7001300"], alt)
+        os.remove(os.path.join(d, "callable_mask_chrY.fasta.gz"))
+        r = subprocess.run([sys.executable, TOOL, "--vcf", vcf, "--tree-dir", d, "--sample", "S",
+                            "--out-prefix", os.path.join(d, "nomask")], capture_output=True, text=True)
+        check("7. a missing mask stops the tool and names setup.sh --yleaf-data",
+              r.returncode != 0 and "setup.sh --yleaf-data" in r.stderr, r.stderr)
+        write_mask(os.path.join(d, "callable_mask_chrY.fasta.gz"))
 
         os.remove(os.path.join(d, "positions_yfull_hg38.txt"))
         r = subprocess.run([sys.executable, TOOL, "--vcf", vcf, "--tree-dir", d, "--sample", "S",

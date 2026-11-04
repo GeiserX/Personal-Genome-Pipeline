@@ -26,7 +26,8 @@
                     its branch (bin/y_private_snps.py), published as
                     <id>_y_private_snps.tsv. It runs only with the tree
                     folder in place, because its tables are the public lists
-                    the scan subtracts.
+                    the scan subtracts and its chrY callable mask is where
+                    the scan looks.
 
     Equivalent to: scripts/37-y-haplogroup.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -194,7 +195,9 @@ process Y_PRIVATE {
 
     script:
     """
-    if [ -s ${yleaf_data}/ytree/version.txt ]; then
+    if [ -s ${yleaf_data}/ytree/version.txt ] && [ ! -s ${yleaf_data}/ytree/callable_mask_chrY.fasta.gz ]; then
+        echo "Private SNPs: skipped (${yleaf_data}/ytree has no chrY callable mask; run scripts/setup.sh --yleaf-data again)"
+    elif [ -s ${yleaf_data}/ytree/version.txt ]; then
         y_private_snps.py --vcf ${vcf} --tree-dir ${yleaf_data}/ytree \\
             --sample ${meta.id} --out-prefix ${meta.id}
     else

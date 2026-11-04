@@ -19,12 +19,23 @@ What goes in the list, and why each gate is there:
   * FILTER PASS (or `.`), depth at least --min-depth (10, Yleaf's -r
     default), genotype quality at least --min-gq (20), and at least
     --min-fraction (0.9, Yleaf's -b default) of the reads carrying ALT
+  * inside the accessible part of chrY: the position is "P" (passed) in
+    the 1000 Genomes Project's GRCh38 strict accessibility mask of chrY
+    (`callable_mask_chrY.fasta.gz`, which `setup.sh --yleaf-data` installs
+    into the tree folder, sha256-pinned in versions.env). About 8.0 Mb of
+    chrY pass it. The mask marks every base where short reads of 2,691
+    samples had too many zero mapping-quality reads, a low average mapping
+    quality, or depth outside a narrow band, so the ampliconic, palindromic,
+    X-transposed and heterochromatic sequence, where a call is mostly a
+    paralog difference rather than a mutation, is left out. The sample's own
+    reads cannot show that on their own: in near-identical copies the
+    aligner gives reads mapping quality 0, the caller drops them, and the
+    calls left look normal.
   * depth no more than --max-depth-factor (2.0) times the median depth of
-    the sample's own chrY calls: where reads from more than one place in the
-    genome pile up, depth runs high and the call is not single-copy. Reads
-    are what this pipeline has, so the repetitive part of the Y is found in
-    the sample's own depth, not from a region list of another study. 0 turns
-    the gate off.
+    the sample's own callable chrY calls: a second gate for a collapsed
+    repeat this sample has more copies of than the mask's samples had,
+    where reads pile up on one place. It removes only that kind of repeat.
+    0 turns the gate off.
   * not on a public SNP list: every position in the two GRCh38 SNP tables
     the current-tree folder installs (`positions_ftdna_hg38.txt`, made for
     FamilyTreeDNA's tree, and `positions_yfull_hg38.txt`, the one Yleaf 4
@@ -34,8 +45,10 @@ What goes in the list, and why each gate is there:
 
 Usage:
   y_private_snps.py --vcf VCF --tree-dir DIR --sample S --out-prefix P
-                    [--min-depth N] [--min-gq N] [--min-fraction F]
-                    [--max-depth-factor F]
+                    [--callable-mask FASTA] [--min-depth N] [--min-gq N]
+                    [--min-fraction F] [--max-depth-factor F]
+
+--callable-mask defaults to DIR/callable_mask_chrY.fasta.gz.
 
 Output: P_y_private_snps.tsv, one row per SNV (Pos, Ref, Alt, Depth,
 Alt_fraction, GQ, Genotype), and a count on stdout.
@@ -56,6 +69,7 @@ MIN_GQ = 20
 MIN_FRACTION = 0.9     # Yleaf's -b default (90%)
 MAX_DEPTH_FACTOR = 2.0
 TABLES = ("positions_ftdna_hg38.txt", "positions_yfull_hg38.txt")
+MASK = "callable_mask_chrY.fasta.gz"
 BASES = set("ACGT")
 CHRY = ("chrY", "Y")
 
@@ -86,6 +100,24 @@ def public_positions(tree_dir):
     return pos
 
 
+def callable_mask(path):
+    """The chrY accessibility mask as bytes, one per base (index pos - 1):
+    b"P" is a base that passed. A FASTA, gzipped or not, with one record."""
+    import os
+    if not os.path.isfile(path):
+        sys.exit(f"ERROR: no chrY callable mask at {path}: install the current Y tree "
+                 "with scripts/setup.sh --yleaf-data <genome_dir>")
+    parts = []
+    with opener(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                parts.append(line.strip())
+    mask = "".join(parts).encode()
+    if mask.count(b"P") == 0:
+        sys.exit(f"ERROR: the chrY callable mask {path} passes no base")
+    return mask
+
+
 def opener(path):
     return gzip.open(path, "rt") if str(path).endswith(".gz") else open(path)
 
@@ -109,7 +141,7 @@ def carries_alt(gt):
     return bool(alleles) and all(a == "1" for a in alleles)
 
 
-def depth_and_fraction(fmt, sample, ref_alt_ad_only=True):
+def depth_and_fraction(fmt, sample):
     """(depth, alt fraction) from AD when the record has it, else from DP and
     VAF. (None, None) when neither is usable."""
     ad = fmt_field(fmt, sample, "AD")
@@ -161,17 +193,22 @@ def median(values):
 
 
 def private_snps(vcf_path, tree_dir, min_depth=MIN_DEPTH, min_gq=MIN_GQ,
-                 min_fraction=MIN_FRACTION, max_depth_factor=MAX_DEPTH_FACTOR):
+                 min_fraction=MIN_FRACTION, max_depth_factor=MAX_DEPTH_FACTOR, mask_path=None):
     """(rows, counts): the private SNVs, and how many records each gate dropped."""
+    import os
     public = public_positions(tree_dir)
+    mask = callable_mask(mask_path or os.path.join(tree_dir, MASK))
     rows = []
-    counts = dict.fromkeys(("records", "par", "filtered", "genotype", "depth", "quality",
+    counts = dict.fromkeys(("records", "par", "outside_callable", "filtered", "genotype", "depth", "quality",
                             "fraction", "excess_depth", "public"), 0)
     kept = []
     for r in candidates(vcf_path):
         counts["records"] += 1
         if r["pos"] <= PAR1_END or r["pos"] >= PAR2_START:
             counts["par"] += 1
+            continue
+        if r["pos"] > len(mask) or mask[r["pos"] - 1] != ord("P"):
+            counts["outside_callable"] += 1
             continue
         if r["filt"] not in ("PASS", ".", ""):
             counts["filtered"] += 1
@@ -207,12 +244,13 @@ def private_snps(vcf_path, tree_dir, min_depth=MIN_DEPTH, min_gq=MIN_GQ,
     return rows, counts
 
 
-def write(rows, counts, sample, prefix, min_depth, min_gq, min_fraction, max_depth_factor):
+def write(rows, counts, sample, prefix, min_depth, min_gq, min_fraction, max_depth_factor, mask_name):
     with open(f"{prefix}_y_private_snps.tsv", "w") as o:
         o.write(f"# sample\t{sample}\n")
         o.write(f"# gates\tmin_depth={min_depth} min_gq={min_gq} min_fraction={min_fraction} "
-                f"max_depth_factor={max_depth_factor} median_chrY_depth={counts['median_depth']}\n")
-        o.write(f"# dropped\tPAR={counts['par']} not_PASS={counts['filtered']} genotype={counts['genotype']} "
+                f"max_depth_factor={max_depth_factor} median_chrY_depth={counts['median_depth']} "
+                f"callable_mask={mask_name}\n")
+        o.write(f"# dropped\tPAR={counts['par']} outside_callable={counts['outside_callable']} not_PASS={counts['filtered']} genotype={counts['genotype']} "
                 f"depth={counts['depth']} quality={counts['quality']} alt_fraction={counts['fraction']} "
                 f"excess_depth={counts['excess_depth']} on_public_lists={counts['public']}\n")
         o.write("Pos\tRef\tAlt\tDepth\tAlt_fraction\tGQ\tGenotype\n")
@@ -226,6 +264,7 @@ def main(argv):
     ap = argparse.ArgumentParser(prog="y_private_snps.py", description=__doc__.split("\n\n")[0])
     for a in ("--vcf", "--tree-dir", "--sample", "--out-prefix"):
         ap.add_argument(a, required=True)
+    ap.add_argument("--callable-mask", default=None)
     ap.add_argument("--min-depth", type=int, default=MIN_DEPTH)
     ap.add_argument("--min-gq", type=int, default=MIN_GQ)
     ap.add_argument("--min-fraction", type=float, default=MIN_FRACTION)
@@ -238,11 +277,13 @@ def main(argv):
     if a.max_depth_factor < 0:
         sys.exit("ERROR: --max-depth-factor must be 0 or more")
     rows, counts = private_snps(a.vcf, a.tree_dir, a.min_depth, a.min_gq, a.min_fraction,
-                                a.max_depth_factor)
+                                a.max_depth_factor, a.callable_mask)
+    import os
     write(rows, counts, a.sample, a.out_prefix, a.min_depth, a.min_gq, a.min_fraction,
-          a.max_depth_factor)
+          a.max_depth_factor, os.path.basename(a.callable_mask or MASK))
     print(f"Private chrY SNVs: {len(rows)} past the public lists "
-          f"({counts['records']} chrY SNV records read, {counts['public']} already named by a public list, "
+          f"({counts['records']} chrY SNV records read, {counts['outside_callable']} outside the callable mask, "
+          f"{counts['public']} already named by a public list, "
           f"median chrY depth {counts['median_depth']})")
     print("  Each one is unconfirmed until another man is found who carries it; some are read errors "
           "(docs/37-y-haplogroup.md).")

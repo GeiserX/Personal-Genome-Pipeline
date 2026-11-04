@@ -106,10 +106,13 @@ fi
 
 # The SNVs past the deepest branch the public trees have: the sample's own
 # chrY calls minus every position the installed SNP tables name
-# (bin/y_private_snps.py). Needs step 03's VCF and the tree folder's tables.
+# (bin/y_private_snps.py), inside the chrY callable mask. Needs step 03's VCF
+# and the tree folder's tables and mask.
 PRIVATE_LINE="Private SNPs: skipped (the current tree's SNP tables are not installed)"
 if $TREE; then
-  if [ -s "$VCF" ]; then
+  if [ ! -s "${YTREE}/callable_mask_chrY.fasta.gz" ]; then
+    PRIVATE_LINE="Private SNPs: skipped (${YTREE} has no chrY callable mask: run scripts/setup.sh --yleaf-data again)"
+  elif [ -s "$VCF" ]; then
     PRIVATE_LINE=$(run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 2g "$YLEAF_IMAGE" \
       python3 /pgp-bin/y_private_snps.py --vcf "$(cpath "$VCF")" --tree-dir "$(cpath "$YTREE")" \
         --sample "$SAMPLE" --out-prefix "${O}/${SAMPLE}")
