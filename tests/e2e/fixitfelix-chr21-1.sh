@@ -39,7 +39,11 @@ GENES="KCNE1:34446687:34512214 CBS:43050899:43076943 CRYAA:43169007:43172810"
 
 rm -rf "$RD" "${G}/ffx-stock" "${G}/ffx-masked"
 mkdir -p "$RD"
-dk() { docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "${RD}:/w" -w /w "$@"; }
+# SAMTOOLS_IMAGE's libcurl has no CA bundle: lend it the host's (htslib reads CURL_CA_BUNDLE).
+dk() {
+  docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v /etc/ssl/certs:/etc/ssl/certs:ro \
+    -e CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt -v "${RD}:/w" -w /w "$@"
+}
 sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # --- chr21, stock and masked ----------------------------------------------------------
