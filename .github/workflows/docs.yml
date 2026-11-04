@@ -20,6 +20,12 @@ on:
       - 'docs/**'
       - 'mkdocs.yml'
       - '.github/workflows/docs.yml'
+      # The live-site demo at /demo/ is built from these (tests/demo/build_live_demo.py).
+      - 'assets/live/**'
+      - 'assets/steps.tsv'
+      - 'bin/**'
+      - 'tests/demo/**'
+      - 'tests/fixtures/live/**'
   # No paths filter on pull requests, on purpose: a check skipped by a path
   # filter stays Pending and blocks the merge once it is a required check
   # (repos.md step 5 makes green checks required). The build takes seconds.
@@ -64,6 +70,15 @@ jobs:
       # even if someone removes that line.
       - name: Build
         run: mkdocs build --strict
+
+      # /demo/: the live site replaying an invented run of DEMO-001, the invented
+      # sample of the docs pictures, through the real page and plugin code
+      # (tests/demo/build_live_demo.py; standard library only). It is a static
+      # folder beside the pages, not a page of the nav.
+      - name: Add the live-site demo
+        run: |
+          python3 tests/demo/build_live_demo.py --out site/demo
+          test -s site/demo/runs/DEMO-001/frames.json
 
       - name: Upload the site
         if: github.event_name != 'pull_request'
