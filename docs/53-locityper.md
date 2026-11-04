@@ -91,7 +91,9 @@ The image test (`tests/smoke/locityper.sh`, the `LOCITYPER_IMAGE` row of `tests/
 
 The red control takes out of the panel HG002's haplotypes and every other haplotype within QV 20 of them, rebuilds the database and genotypes again; the same check must then fail at every locus. Leaving HG002 out with `--leave-out` is not enough: other people in the panel carry near copies of HG002's haplotypes, and the call stays close.
 
-On the fixture, run under emulation before the image test existed: CYP2D6 and HLA-DQB1 came back as HG002's own two haplotypes, and HLA-DRB1 as one of them plus a haplotype one base in 98 kb from the other (QV 49.9). HLA-DQB1 and HLA-DRB1 had low qualities (7.3 and 3.1): near-identical haplotypes compete there.
+The same row runs the shipped `bin/locityper_report.py` in the image on that run's own `res.json.gz` files: every locus must come back called, with a quality, its reads and a weighted distance. Its red control removes CYP2D6's `success` file, and CYP2D6 must then read "not called".
+
+On the fixture in CI: CYP2D6 and HLA-DQB1 came back as HG002's own two haplotypes, and HLA-DRB1 as one of them plus a haplotype one base in 98 kb from the other (QV 49.9). Locityper's own quality was below 20 at all three loci (HLA-DQB1 7.8, HLA-DRB1 8.5, CYP2D6 18.7) even where the call is exact. That quality is the chance another genotype is right, and near-identical panel haplotypes compete for it; a low value there does not mean a wrong call.
 
 ## Runtime
 
