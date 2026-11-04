@@ -61,10 +61,12 @@ check "only chr22 was built" bash -c '[ "$(cd "$1" && ls chr*.tsv.gz)" = chr22.t
 TABLE="${DATA}/chr22.tsv.gz"
 ROWS=$(gzip -dc "$TABLE" 2>/dev/null | awk 'END {print NR - 1}')
 check_ge "table rows on chr22" "$ROWS" 100000
-# The masks and the excluded regions must take sites out. The same build
-# without them gave 672,659 rows on chr22 (data version snpad2016-1kgp3-v1,
-# run 41621716972), so a build that keeps that many has lost its filtering.
-check "the masks and the exclusions dropped sites (fewer than 630,000 rows)" test "${ROWS:-0}" -lt 630000
+# The masks and the excluded regions must take sites out. Measured on this
+# chromosome: 672,659 rows with neither (data version snpad2016-1kgp3-v1, run
+# 41621716972), 648,493 with the masks alone (run 41847280046). A build that
+# keeps 645,000 or more has lost the exclusions, and one that keeps 650,000 or
+# more has lost both.
+check "the masks and the exclusions dropped sites (fewer than 645,000 rows)" test "${ROWS:-0}" -lt 645000
 check "every row is on GRCh38 chr22" \
   bash -c 'gzip -dc "$1" | awk -F"\t" "NR > 1 && \$1 != \"chr22\" {bad = 1} END {exit bad}"' _ "$TABLE"
 check_ge "rows where Vindija carries the ALT inside the plant window" \
