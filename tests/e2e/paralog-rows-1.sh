@@ -142,8 +142,11 @@ check "the HTML report lists the GBA locus" grep -q '<td>GBA1, GBAP1</td>' "${RE
 # --- 3. a catalog without the SMN1 row ----------------------------------------------
 Q=HG002nosmn
 mkdir -p "${GENOME_DIR}/${Q}/aligned"
-ln -f "${GENOME_DIR}/${P}/aligned/${P}_sorted.bam" "${GENOME_DIR}/${Q}/aligned/${Q}_sorted.bam"
-ln -f "${GENOME_DIR}/${P}/aligned/${P}_sorted.bam.bai" "${GENOME_DIR}/${Q}/aligned/${Q}_sorted.bam.bai"
+# A copy, not a hard link: the first sample's BAM belongs to the container's user, and the
+# kernel refuses a hard link to another user's file (protected_hardlinks).
+cp "${GENOME_DIR}/${P}/aligned/${P}_sorted.bam" "${GENOME_DIR}/${Q}/aligned/${Q}_sorted.bam"
+cp "${GENOME_DIR}/${P}/aligned/${P}_sorted.bam.bai" "${GENOME_DIR}/${Q}/aligned/${Q}_sorted.bam.bai"
+check "the second sample has the BAM" test -s "${GENOME_DIR}/${Q}/aligned/${Q}_sorted.bam"
 LOCI_GBA="${GENOME_DIR}/${Q}/paralog_loci.tsv"
 awk -F'\t' '/^#/ || !NF {next} !h {print; h = 1; next} $1 == "GBA.gz"' "$LOCI_ALL" > "$LOCI_GBA"
 check_eq "the override catalog: header and the GBA row" "$(grep -c . "$LOCI_GBA")" 2
@@ -162,6 +165,7 @@ check "no SMN1 row: the HTML report has the HBA line" has 'HBA1 and HBA2 togethe
 check "no SMN1 row: the HTML report has the GBA locus" has '<td>GBA1, GBAP1</td>' "$H"
 check "no SMN1 row: SMN1 says it has no table" has "no SMN1 table \(step 35&#x27;s catalog had no SMN1 row\)|no SMN1 table \(step 35's catalog had no SMN1 row\)" "$H"
 mv "${GENOME_DIR}/${Q}/paralogs/${Q}_hba_copy_number.tsv" "${CASE_TMP}/hba.tsv"
+check "control: the HBA table is set aside" test -s "${CASE_TMP}/hba.tsv"
 render_q "${CASE_TMP}/report_nohba"
 check "control: without the HBA table the HBA line is gone" \
   lacks 'HBA1 and HBA2 together \(alpha-globin genes, from depth\)' "$(cat "${CASE_TMP}/report_nohba/report.html" 2>/dev/null || echo 'HBA1 and HBA2 together (alpha-globin genes, from depth)')"
