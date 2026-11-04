@@ -1635,7 +1635,7 @@ def sf_rows(sf):
     the same in both reports: ClinVar hits, rare HIGH-impact records, then
     class 4 and 5 SVs."""
     def extra(x):
-        return "".join(f"; {v}" for v in (x.get("severity"), x.get("rule_note")) if v)
+        return "".join(f"; {v}" for v in (x.get("severity"), x.get("rule_note"), x.get("two_hit")) if v)
     rows = [(x["gene"], x["variant"], x["genotype"],
              "ClinVar " + x["significance"] + ("; low-confidence call: check the reads" if x.get("low_confidence") else "")
              + extra(x)) for x in sf["clinvar_hits"]]
@@ -1665,12 +1665,31 @@ def carrier_lines(c):
         return [f"Carrier list: not made, {c['unavailable']}"]
     lines = [f"Carrier list ({c['genes_on_list']} genes): {len(c['carriers'])} finding(s)"
              + (f", {len(c['set_aside'])} set aside" if c["set_aside"] else "")]
+    def hemi(x):
+        return f" ({x['hemizygous']})" if x.get("hemizygous") else ""
     for x in c["carriers"]:
-        lines.append(f"{x['gene']} ({x['condition']}; {x['inheritance']}): {x['variant']} {x['genotype']}, "
+        lines.append(f"{x['gene']} ({x['condition']}; {x['inheritance']}): {x['variant']} {x['genotype']}{hemi(x)}, "
                      f"ClinVar {x['significance']}")
     for x in c["set_aside"]:
-        lines.append(f"Set aside: {x['gene']} {x['variant']} {x['genotype']}: {x['name']} is a {x['kind']} allele, "
-                     "not a carrier finding on its own")
+        lines.append(f"Set aside: {x['gene']} {x['variant']} {x['genotype']}{hemi(x)}: {x['name']} is a {x['kind']} "
+                     "allele, not a carrier finding on its own")
+    return lines + two_hit_lines(c.get("two_hits"))
+
+
+def two_hit_lines(t):
+    """The genes a called deletion and a ClinVar hit both reach (collect_summary.two_hits), and which deletion
+    callers were read; none for a summary written before the rule."""
+    if not t:
+        return []
+    lines = []
+    for x in t["genes"]:
+        allele = f" ({x['allele']})" if x.get("allele") else ""
+        lines.append(f"{x['verdict'].capitalize()}: {x['gene']} ({x['condition']}; AR), both copies may be hit: "
+                     f"{x['deletion']} and {x['variant']} {x['genotype']}{allele}; {x['why']}")
+    lines.append("Two hits across callers (a deletion plus a variant on the other copy): "
+                 + (f"{len(t['genes'])} gene(s); " if t["genes"] else "none found; ")
+                 + "deletions read from " + ("; ".join(t["deletions_read"]) or "no caller")
+                 + (f"; not read: {'; '.join(t['deletions_not_read'])}" if t["deletions_not_read"] else ""))
     return lines
 
 

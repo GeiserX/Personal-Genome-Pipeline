@@ -860,7 +860,8 @@ def cmd_genes(a):
         "# severity: alleles of the gene that are not a full loss of function, separated by \";\": each is",
         "#   hypomorph or pseudodeficiency, then chrom:pos:ref:alt (GRCh38), then a name; \".\" for none. Such",
         "#   an allele never makes a carrier finding on its own (the couple screen, step 39, and the",
-        "#   carrier list of the sample report).",
+        "#   carrier list of the sample report). With a called deletion of the gene it is a second hit (the",
+        "#   two-hit lines of the sample report, bin/collect_summary.py two_hits).",
         "# Rebuilt with: couple_report.py genes (docs/39-couple.md says how).",
     ]
     with open(a.out, "w", encoding="utf-8") as f:
