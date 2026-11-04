@@ -1652,6 +1652,7 @@ ARCHAIC_URL=https://cdna.eva.mpg.de/neandertal/Vindija/VCF
 ARCHAIC_FILTERBED_URL=https://cdna.eva.mpg.de/neandertal/Vindija/FilterBed
 ARCHAIC_1KG_SITES_URL=https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.wgs.phase3_shapeit2_mvncall_integrated_v5c.20130502.sites.vcf.gz
 ARCHAIC_STRICT_MASK_URL=https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/working/20160622_genome_mask_GRCh38/StrictMask/20160622.allChr.mask.bed
+ARCHAIC_SEGDUPS_URL=https://hgdownload.soe.ucsc.edu/goldenPath/hg19/database/genomicSuperDups.txt.gz
 ARCHAIC_CHAIN_URL=https://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz
 
 # archaic_filterbed_sha NAME CHROM: the sha256 versions.env pins for one
@@ -1696,7 +1697,7 @@ install_archaic() {
   echo "Installing the archaic data ${ARCHAIC_DATA_VERSION} (step 43) in ${dir}"
   for v in BCFTOOLS_IMAGE PICARD_IMAGE PYTHON_IMAGE IBDMIX_IMAGE; do ensure_image "$v" 43 || return 1; done
   [ -s "$REF_DICT" ] || { echo "[WARN] ${REF_DICT} is missing: run $0 ${GENOME_DIR} first (it writes the sequence dictionary)"; return 1; }
-  mkdir -p "${dir}/md5" "${dir}/download" "${dir}/work" "${dir}/mask"
+  mkdir -p "${dir}/md5" "${dir}/download" "${dir}/work" "${dir}/mask" "${dir}/exclude"
   for v in "Altai|${ARCHAIC_ALTAI_MD5SUMS_SHA256}" "Vindija33.19|${ARCHAIC_VINDIJA_MD5SUMS_SHA256}" "Denisova|${ARCHAIC_DENISOVA_MD5SUMS_SHA256}"; do
     IFS='|' read -r g k <<< "$v"
     [ -s "${dir}/md5/${g}.txt" ] && [ "$(_digest sha256 "${dir}/md5/${g}.txt")" = "$k" ] && continue
@@ -1715,6 +1716,11 @@ install_archaic() {
     echo "[WARN] Could not download the 1000 Genomes GRCh38 strict mask; run: $0 --archaic ${GENOME_DIR}"
     return 1
   fi
+  if ! { [ -s "${dir}/segdups_hg19.txt.gz" ] && [ "$(_digest sha256 "${dir}/segdups_hg19.txt.gz")" = "$ARCHAIC_SEGDUPS_SHA256" ]; } \
+     && ! fetch "$ARCHAIC_SEGDUPS_URL" "${dir}/segdups_hg19.txt.gz" sha256 "$ARCHAIC_SEGDUPS_SHA256"; then
+    echo "[WARN] Could not download UCSC's segmental duplications; run: $0 --archaic ${GENOME_DIR}"
+    return 1
+  fi
   if [ -n "$regions" ]; then
     [ -s "$regions" ] || { echo "[WARN] ARCHAIC_REGIONS=${regions} is not a file"; return 1; }
     cp "$regions" "${dir}/regions.bed"
@@ -1725,7 +1731,7 @@ install_archaic() {
     chroms=$(seq 1 22 | tr '\n' ' ')
   fi
   [ -n "${chroms// /}" ] || { echo "[WARN] ARCHAIC_REGIONS=${regions} names no autosome (1 to 22)"; return 1; }
-  stamp="data=${ARCHAIC_DATA_VERSION} regions=${rstamp} bcftools=${BCFTOOLS_IMAGE} picard=${PICARD_IMAGE} masks=$(_digest sha256 <(printf '%s\n%s\n%s\n%s\n' "$ARCHAIC_STRICT_MASK_SHA256" "$ARCHAIC_FILTERBED_SHA256_ALTAI" "$ARCHAIC_FILTERBED_SHA256_VINDIJA" "$ARCHAIC_FILTERBED_SHA256_DENISOVA")) code=$(_digest sha256 <(sed '/^# --- genotypes (step 43)/,$d' "${PGP_ROOT}/bin/archaic_report.py"))"
+  stamp="data=${ARCHAIC_DATA_VERSION} regions=${rstamp} bcftools=${BCFTOOLS_IMAGE} picard=${PICARD_IMAGE} masks=$(_digest sha256 <(printf '%s\n%s\n%s\n%s\n%s\n' "$ARCHAIC_STRICT_MASK_SHA256" "$ARCHAIC_SEGDUPS_SHA256" "$ARCHAIC_FILTERBED_SHA256_ALTAI" "$ARCHAIC_FILTERBED_SHA256_VINDIJA" "$ARCHAIC_FILTERBED_SHA256_DENISOVA")) code=$(_digest sha256 <(sed '/^# --- genotypes (step 43)/,$d' "${PGP_ROOT}/bin/archaic_report.py"))"
   local have=1
   for c in $chroms; do [ -s "${dir}/chr${c}.tsv.gz" ] || have=0; done
   if [ "$have" = 1 ] && [ "$(cat "${dir}/DONE" 2>/dev/null)" = "$stamp" ]; then
@@ -1752,10 +1758,28 @@ install_archaic() {
     if ! run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c '
           r=(-r "$2"); [ ! -s "$4" ] || r=(-R "$4")
           bcftools view "${r[@]}" -m2 -M2 -v snps -Ou "$1" \
-            | bcftools query -f "%POS\t%REF\t%ALT\t%INFO/AF\t%INFO/AFR_AF\t%INFO/AMR_AF\t%INFO/EAS_AF\t%INFO/EUR_AF\t%INFO/SAS_AF\n" > "$3/modern.tsv"' \
+            | bcftools query -f "%POS\t%REF\t%ALT\t%INFO/AF\t%INFO/AFR_AF\t%INFO/AMR_AF\t%INFO/EAS_AF\t%INFO/EUR_AF\t%INFO/SAS_AF\n" > "$3/modern.tsv"
+          bcftools view "${r[@]}" -v indels -Ou "$1" \
+            | bcftools query -f "%POS\t%REF\t%ALT\n" > "$3/indels.tsv"' \
           _ "$(cpath "$sites")" "$c" "$(cpath "$wk")" "$(cpath "${wk}/regions.bed")"; then
       echo "[WARN] Could not read chr${c} of the 1000 Genomes sites"; return 1
     fi
+    # The regions no genome is read at: UCSC's segmental duplications, and the
+    # 5 bp on each side of a 1000 Genomes indel (Chen et al.'s own excluded
+    # beds, minus the CpG one, which needs a GRCh37 reference and three
+    # primate SNP sets this pipeline does not install; docs/43-archaic.md
+    # says so).
+    { awk -v c="$c" 'BEGIN {OFS = "\t"} $2 == "chr" c {print c, $3, $4}' <(gzip -dc "${dir}/segdups_hg19.txt.gz")
+      awk -F'\t' -v c="$c" 'BEGIN {OFS = "\t"}
+        { n = length($2); m = split($3, a, ","); for (i = 1; i <= m; i++) if (length(a[i]) > n) n = length(a[i])
+          s = $1 - 6; if (s < 0) s = 0
+          print c, s, $1 + 5 + n }' "${wk}/indels.tsv"
+    } | sort -k2,2n -k3,3n | gzip -c > "${dir}/exclude/chr${c}.bed.gz"
+    n=$(gzip -dc "${dir}/exclude/chr${c}.bed.gz" | awk 'END {print NR + 0}')
+    if [ "$n" -lt 100 ]; then
+      echo "[WARN] the exclusion list of chr${c} has ${n} regions: the segmental duplications or the 1000 Genomes indels did not arrive"; return 1
+    fi
+    echo "  chr${c}: ${n} excluded regions (segmental duplications and indel neighbourhoods)"
     for v in $genomes; do
       g=${v%%:*}
       fetch "${ARCHAIC_URL}/${g}/chr${c}_mq25_mapab100.vcf.gz" "${dir}/download/${g}.chr${c}.vcf.gz" md5 "file://${dir}/md5/${g}.txt" \
@@ -1792,6 +1816,7 @@ install_archaic() {
             --mask "Altai=$(cpath "${dir}/mask/Altai.chr${c}.bed.gz")" \
             --mask "Vindija=$(cpath "${dir}/mask/Vindija33.19.chr${c}.bed.gz")" \
             --mask "Denisova=$(cpath "${dir}/mask/Denisova.chr${c}.bed.gz")" \
+            --exclude "$(cpath "${dir}/exclude/chr${c}.bed.gz")" \
             --out "$(cpath "${wk}/hg19.vcf")"; then
       echo "[WARN] Could not merge chr${c}"; return 1
     fi
@@ -1831,7 +1856,7 @@ install_archaic() {
   for v in "${dir}"/chr*.tsv.gz; do
     [ -e "$v" ] || continue
     c=$(basename "$v" .tsv.gz); c=${c#chr}
-    [[ " ${chroms} " == *" ${c} "* ]] || rm -f "$v" "${dir}/chr${c}.stamp" "${dir}/mask/"*".chr${c}.bed.gz"
+    [[ " ${chroms} " == *" ${c} "* ]] || rm -f "$v" "${dir}/chr${c}.stamp" "${dir}/mask/"*".chr${c}.bed.gz" "${dir}/exclude/chr${c}.bed.gz"
   done
   rm -rf "${dir}/download" "${dir}/work"
   echo "$stamp" > "${dir}/DONE"

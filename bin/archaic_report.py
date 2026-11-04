@@ -25,8 +25,11 @@ Subcommands:
              three carries a non-reference allele, as a sites-only VCF that
              Picard lifts to GRCh38. Each archaic genome is read only inside
              its own mask (--mask NAME=BED, the MPI-EVA FilterBed of that
-             genome): a site outside it is unknown (9) for that genome, the
-             filtering Chen et al. apply before IBDmix.
+             genome): a site outside it is unknown (9) for that genome. A
+             site inside an excluded region (--exclude BED: segmental
+             duplications, the 5 bp around a modern indel) is left out
+             altogether. Both are the filtering Chen et al. apply before
+             IBDmix.
   genotypes  (step 43) IBDmix's genotype file of each chromosome: the three
              archaic columns, SAMPLE (yours, from the VCF) and the stand-ins;
              and spans.tsv, the span and site count of each chromosome.
@@ -217,6 +220,13 @@ def cmd_table(a):
             die(f"{path} holds no interval on chromosome {a.chrom}: a mask that matches nothing "
                 "would make every site unknown")
         masks[name] = Mask(iv)
+    excluded = []
+    for path in a.exclude:
+        iv = read_mask(path, a.chrom)
+        if not iv:
+            die(f"{path} holds no interval on chromosome {a.chrom}: an empty exclusion list is a "
+                "download that went wrong, not a chromosome without segmental duplications")
+        excluded.append(Mask(iv))
     chrom = a.chrom if a.chrom.startswith("chr") else f"chr{a.chrom}"
     out = open(a.out, "w")
     out.write("##fileformat=VCFv4.2\n")
@@ -232,6 +242,11 @@ def cmd_table(a):
     def flush():
         nonlocal rows
         if cur is None:
+            return
+        # Every Mask is walked for every position, before any early return,
+        # because the walk only goes forward.
+        drop = [m.holds(cur) for m in excluded]
+        if any(drop):
             return
         # A genome is read only inside its own mask: outside it the record is
         # dropped, so the row gets code 9 for that genome and the site cannot
@@ -618,6 +633,8 @@ def main(argv=None):
     t.add_argument("--archaic", action="append", default=[], help="NAME=FILE, once each for Altai, Vindija, Denisova")
     t.add_argument("--mask", action="append", default=[],
                    help="NAME=BED: read that archaic genome only inside this mask (its MPI-EVA FilterBed)")
+    t.add_argument("--exclude", action="append", default=[],
+                   help="BED: leave out every site inside these regions (segmental duplications, indel neighbourhoods)")
     t.add_argument("--out", required=True)
     g = sub.add_parser("genotypes", help="IBDmix's genotype files for one sample (step 43)")
     g.add_argument("--table-dir", required=True)

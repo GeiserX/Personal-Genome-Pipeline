@@ -129,6 +129,15 @@ check("a row that only a masked-out reference call kept is dropped (200 goes, an
 check("an archaic-only site inside its mask stays, with that genome's ALT",
       m_rows[500][4] == "C" and mi[500]["Altai"] == "1" and mi[500]["Vindija"] == "9", (m_rows.get(500), mi.get(500)))
 check("a mask file is read with and without the chr prefix", mi[100]["Denisova"] == "1", mi.get(100))
+# The excluded regions: a site inside one is left out whatever the genomes say.
+write(f"{TMP}/excl.bed", "22\t90\t120\tsegdup\n")
+ex_rows, _ = table_info(f"{TMP}/excl.vcf", ("--exclude", f"{TMP}/excl.bed"))
+check("a site inside an excluded region is left out, and the rest stay",
+      sorted(ex_rows) == [200, 500] and 100 in nm_rows, (sorted(ex_rows), sorted(nm_rows)))
+write(f"{TMP}/excl_other.bed", "7\t90\t120\tsegdup\n")
+r = run(*common, "--exclude", f"{TMP}/excl_other.bed", "--out", f"{TMP}/x.vcf")
+check("an exclusion list with no interval on the chromosome stops the build",
+      r.returncode == 1 and "no interval" in r.stderr, r.stderr)
 r = run(*common, "--mask", f"Altai={TMP}/altai.bed", "--mask", f"Altai={TMP}/altai.bed", "--out", f"{TMP}/x.vcf")
 check("--mask twice for one genome stops the build", r.returncode == 2 and "twice" in r.stderr, r.stderr)
 r = run(*common, "--mask", f"Nobody={TMP}/altai.bed", "--out", f"{TMP}/x.vcf")
