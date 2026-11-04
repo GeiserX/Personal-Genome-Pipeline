@@ -724,6 +724,7 @@ def sec_parascopy(d, s):
     na = next((r["agCN_filter"] for r in rows if (r.get("agCN_filter") or "").startswith("not assessed")), None)
     hp = os.path.join(os.path.dirname(p), f"{s}_hba_copy_number.tsv")
     ip = os.path.join(os.path.dirname(p), f"{s}_cn_intervals.tsv")
+    cp = os.path.join(os.path.dirname(p), f"{s}_cyp21a2_psv.tsv")
     return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
                "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
                "rows": len(rows),
@@ -733,6 +734,9 @@ def sec_parascopy(d, s):
                # the interval rows of bin/cn_loci.tsv (recurrent CNV regions,
                # carrier deletions, AZF); None without step 35's table
                "cn_intervals": read_cn_intervals(ip) if os.path.isfile(ip) else None,
+               # CYP21A2 from depth and PSV sites (bin/copy_number.py, the
+               # CYP21A2 row): copies, module total, finding; None without it
+               "cyp21a2": read_hba(cp) if os.path.isfile(cp) else None,
                "reading": (f"SMN1 and SMN2 {na}: no carrier reading" if na
                            else "no row of step 35's table covers SMN1 exon 7: no carrier reading"
                            if smn1["text"] == "no row covers exon 7" else smn_reading(smn1["cn"]))}
@@ -753,8 +757,9 @@ def read_cn_intervals(path):
 
 
 def read_hba(path):
-    """Step 35's HBA table (metric, value) as a dict; a table without a
-    status row reads as not assessed, with that reason."""
+    """Step 35's HBA table (metric, value) as a dict, and its CYP21A2 table
+    the same way; a table without a status row reads as not assessed, with
+    that reason."""
     out = {}
     with open(path, errors="replace") as f:
         for line in f:

@@ -8,6 +8,7 @@ same command. Standard library only, so it runs in the plain python image.
                           [--eh ID=EH.vcf ...] [--smn ID=SMN.tsv ...]
                           [--exons EXONS.bed] [--benign-sv BENIGN_LOSS.bed]
                           [--cn-intervals ID=CN_INTERVALS.tsv ...] [--cnvpytor ID=CNVS.vcf.gz ...]
+                          [--cyp21a2 ID=CYP21A2_PSV.tsv ...]
                           [--declared-sex ID=SEX ...] --out-dir D
       For every two samples the pedigree marks as partners and that both have
       a ClinVar screen (step 06's <id>_clinvar_hits.vcf), collects each
@@ -22,6 +23,11 @@ same command. Standard library only, so it runs in the plain python image.
       the HBB exon 3 deletion) as present, absent or not assessable, and
       a male partner's AZF deletions the same way; with --cnvpytor (step 18's
       <id>_cnvs.vcf.gz) a CNVpytor call that disagrees is printed beside it.
+      With --cyp21a2 (step 35's <id>_cyp21a2_psv.tsv, short reads) a
+      CYP21A2 deletion (the 30 kb chimeric deletion pattern) or a possible
+      conversion counts as a carrier finding in CYP21A2, on one copy unless
+      no CYP21A2 copy is left at a site; which chromosome carries it is not
+      known.
       It writes, per couple A and
       B (sorted by name):
         D/couple_A_B.tsv          one row per gene where either partner has a
@@ -390,6 +396,35 @@ def smn_finding(path, genes):
     return [finding("SMN1", text, 1 if p["cn"] == 1 else 2)], "SMN1 %d cop%s" % (p["cn"], "y" if p["cn"] == 1 else "ies")
 
 
+def cyp21a2_finding(path, genes):
+    """CYP21A2 from depth and PSV sites (step 35's <id>_cyp21a2_psv.tsv):
+    ([findings], text of what was read). A deletion or a possible
+    conversion is a finding on one copy, on two when a site has no CYP21A2
+    copy left."""
+    t = {}
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            c = line.rstrip("\n").split("\t", 1)
+            if len(c) == 2 and c[0] != "metric":
+                t[c[0]] = c[1]
+    if t.get("status") not in ("called", "not assessed"):
+        die(["%s: not step 35's CYP21A2 table (bin/copy_number.py call --locus CYP21A2)" % path])
+    if t["status"] != "called":
+        return [], "CYP21A2 not assessed (%s)" % t.get("reason", ".")
+    what = "CYP21A2 %s copies, RCCX module total %s of %s" % (t.get("cyp21a2_copies", "."), t.get("module_total", "."),
+                                                             t.get("expected_total", "."))
+    kind = t.get("finding")
+    if kind not in ("deletion", "conversion") or "CYP21A2" not in genes:
+        return [], what
+    two = t.get("cyp21a2_copies") == "0"
+    if kind == "deletion":
+        text = "CYP21A2 deletion from depth and PSV sites (%s): the 30 kb chimeric deletion pattern" % what
+    else:
+        text = "possible CYP21A2 conversion at %s (%s, PSV sites)" % (
+            t.get("conversion_sites", ".").replace("PSV_", ""), what)
+    return [finding("CYP21A2", text + "; unconfirmed, short reads", 2 if two else 1)], what
+
+
 # --- carrier deletion alleles and AZF, from step 35's interval table ----------
 
 # The rows of bin/cn_loci.tsv the couple report reads, with their names here.
@@ -563,7 +598,9 @@ RESIDUAL = [
     "Genes outside the carrier list (assets/carrier_genes.tsv).",
     "SMN1 silent carriers: two copies on one chromosome and none on the other read as two copies.",
     "Changes in genes with a near-identical copy (HBA1 and HBA2, CYP21A2, GBA1, SMN1): short reads place them "
-    "poorly, and a gene conversion is not seen. A deletion there counts only when Delly calls it.",
+    "poorly, and a gene conversion is not seen. A deletion there counts only when Delly calls it; for CYP21A2, "
+    "step 35's table (--cyp21a2) adds the 30 kb chimeric deletion and conversions at six of its pseudogene "
+    "variant sites, nothing else.",
     "Repeat expansions other than FMR1 and FXN, and the exact size of a long FMR1 or FXN allele: short reads do "
     "not span it.",
     "Deletions Delly does not call, deletions longer than %d bp that read depth (Delly's RDCN) does not confirm, "
@@ -644,8 +681,9 @@ def cmd_screen(a):
     smn = kv_args(a.smn, "smn")
     cni = kv_args(a.cn_intervals, "cn-intervals")
     cnv = kv_args(a.cnvpytor, "cnvpytor")
+    cyp = kv_args(a.cyp21a2, "cyp21a2")
     for what, d in (("clinvar", clinvar), ("delly", delly), ("eh", eh), ("smn", smn), ("cn-intervals", cni),
-                    ("cnvpytor", cnv)):
+                    ("cnvpytor", cnv), ("cyp21a2", cyp)):
         for k, p in d.items():
             if k not in members:
                 die(["--%s %s: '%s' is not in the pedigree" % (what, k, k)])
@@ -718,6 +756,13 @@ def cmd_screen(a):
             else:
                 info["smn"] = "not assessed (no Parascopy, step 35)"
                 gaps.append("SMN1 copy number of %s: no Parascopy (step 35)." % s)
+            if s in cyp:
+                m, txt = cyp21a2_finding(cyp[s], genes)
+                f += m
+                if txt.startswith("CYP21A2 not assessed"):
+                    gaps.append("CYP21A2 deletion and conversions of %s: %s." % (s, txt))
+            elif cyp:
+                gaps.append("CYP21A2 deletion and conversions of %s: no CYP21A2 table (step 35)." % s)
             if s in eh:
                 r = eh_findings(eh[s], genes)
                 info["eh"] = "%d expanded" % len(r)
@@ -881,6 +926,7 @@ def main(argv=None):
     s.add_argument("--eh", action="append")
     s.add_argument("--smn", action="append")
     s.add_argument("--cn-intervals", action="append", help="ID=<id>_cn_intervals.tsv of step 35")
+    s.add_argument("--cyp21a2", action="append", help="ID=<id>_cyp21a2_psv.tsv of step 35")
     s.add_argument("--cnvpytor", action="append", help="ID=<id>_cnvs.vcf.gz of step 18 (the cross-check)")
     s.add_argument("--exons")
     s.add_argument("--benign-sv")
