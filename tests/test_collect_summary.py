@@ -1919,6 +1919,43 @@ def main():
         check("no haplocheck file: the report says it was not checked",
               "Contamination (haplocheck): not checked" in render(h)[1])
 
+        # 9a. step 37's second placement, on the current public tree
+        put(f"{h}/y_haplogroup/S_y_tree.txt", "Sample_name\tHg\tLevel\tPath_derived\tPath_ancestral\t"
+            "Path_no_call\tAncestral_in_terminal\tSNPs_called\tMin_depth\tTree\tPositions\t"
+            "Outvoted_ancestral\nS\tR-FT12345\t24\t61\t2\t310\tFT999\t4210\t10\tYFull YTree 14.06.0\t"
+            "Yleaf 4.1.6 tables\tFT777\n")
+        put(f"{h}/y_haplogroup/S_y_tree_path.tsv", "Level\tBranch\tSNPs\tOn_tables\tDerived\tAncestral\t"
+            "No_call\tAncestral_SNPs\n1\tA0-T\t4\t4\t3\t0\t1\t.\n24\tR-FT12345\t6\t5\t2\t1\t2\tFT999\n")
+        summ_t, txt_t, html_t = render(h)
+        yt = summ_t["sections"]["y_tree"]["data"]
+        check("Y tree: the branch, its level and the tree release are read",
+              yt.get("haplogroup") == "R-FT12345" and yt.get("level") == "24"
+              and yt.get("tree") == "YFull YTree 14.06.0", yt)
+        check("Y tree: every level of the path is read",
+              [x["Branch"] for x in yt.get("path", [])] == ["A0-T", "R-FT12345"], yt.get("path"))
+        check("Y tree: the text report shows the branch, the path counts and the levels",
+              "Branch: R-FT12345 (level 24, YFull YTree 14.06.0)" in txt_t
+              and "61 derived, 2 ancestral, 310 no call" in txt_t and "A0-T" in txt_t, txt_t)
+        check("Y tree: the text report names the ancestral SNP inside the branch and the outvoted one",
+              "Ancestral inside the terminal branch: FT999" in txt_t
+              and "outvoted by the SNPs below it: FT777" in txt_t, txt_t)
+        check("Y tree: the HTML report has its own card with the level table",
+              "Y Placement on the Current Public Tree" in html_t and "<td>R-FT12345</td>" in html_t
+              and "<td>A0-T</td>" in html_t, None)
+        check("Y tree: Yleaf's own card is still there, so the two results stand side by side",
+              "Y-Chromosome Haplogroup" in html_t, None)
+        put(f"{h}/y_haplogroup/S_y_tree.txt", "Sample_name\tHg\tLevel\tPath_derived\tPath_ancestral\t"
+            "Path_no_call\tAncestral_in_terminal\tSNPs_called\tMin_depth\tTree\tPositions\t"
+            "Outvoted_ancestral\nS\tNA\t0\t0\t0\t0\t.\t12\t10\tYFull YTree 14.06.0\t"
+            "Yleaf 4.1.6 tables\t.\n")
+        summ_na, txt_na, _ = render(h)
+        check("Y tree: Hg NA reads as no derived call, and nothing ancestral is printed",
+              summ_na["sections"]["y_tree"]["data"].get("haplogroup") == "no branch has a derived call"
+              and "Ancestral inside the terminal branch" not in txt_na,
+              summ_na["sections"]["y_tree"]["data"])
+        os.remove(f"{h}/y_haplogroup/S_y_tree.txt")
+        os.remove(f"{h}/y_haplogroup/S_y_tree_path.tsv")
+
         # 9b. step 41: the blood group table
         b = os.path.join(work, "blood", "S")
         put(f"{b}/bloodtype/S_bloodtype.tsv", "system\tphenotype\tgenotype\tconfidence\tnote\n"

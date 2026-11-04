@@ -797,7 +797,7 @@ CHAPTERS = (
     ("ancestry", "Ancestry", "Where do my ancestors come from?", (
         ("ancestry-fine", "Fine-grained ancestry", ("ancestry_fine",)),
         ("mt-haplogroup", "Mitochondrial haplogroup", ("haplogroup",)),
-        ("y-chromosome", "Y chromosome", ("y_haplogroup", "y_str")),
+        ("y-chromosome", "Y chromosome", ("y_haplogroup", "y_tree", "y_str")),
         ("archaic", "Archaic ancestry", ("archaic",)),
         ("ancient", "Ancient populations", ("ancient",)),
         ("roh", "Runs of homozygosity", ("roh",)),
@@ -1192,6 +1192,20 @@ def text_report(s):
         w(f"  Haplogroup: {d['haplogroup']} ({d['valid_markers']} markers, QC-score {d['qc_score']})")
         for line in explore_lines(d):
             w(f"  {line}")
+        w("")
+
+    if head("y_tree", "Y Placement on the Current Public Tree"):
+        d = S["y_tree"]["data"]
+        w(f"  Branch: {d['haplogroup']} (level {d['level']}, {d['tree']})")
+        w(f"  Path SNPs: {d['path_derived']} derived, {d['path_ancestral']} ancestral, "
+          f"{d['path_no_call']} no call; {d['snps_called']} SNPs called at depth {d['min_depth']} or more")
+        for label, key in (("Ancestral inside the terminal branch", "ancestral_in_terminal"),
+                           ("Ancestral on the path, outvoted by the SNPs below it", "outvoted_ancestral")):
+            if d.get(key, ".") not in (".", ""):
+                w(f"  {label}: {d[key]}")
+        for x in d.get("path", []):
+            w(f"  {x['Level']:>3}  {x['Branch']:<22} {x['Derived']:>3}D {x['Ancestral']:>3}A {x['No_call']:>4}N")
+        w(f"  {Y_TREE_NOTE}")
         w("")
 
     if head("y_str", "Y-STR Markers (HipSTR)"):
@@ -1663,6 +1677,35 @@ def contamination_text(d):
     word = {"YES": "YES, two mtDNA haplogroups in the reads (another person's DNA?)", "NO": "no",
             "ND": "not determined"}.get(s, s)
     return f"{word} (level {d.get('contamination_level', '.')})"
+
+
+Y_TREE_NOTE = ("A second placement, on a public tree release newer than the one Yleaf carries, walked from the "
+               "reads by bin/y_tree_place.py. The two can differ in depth and in name: branches get renamed and "
+               "split between releases, and the position tables differ. A branch is taken when it has more "
+               "derived than ancestral SNPs, and an ancestral call above it blocks the branches below unless the "
+               "SNPs below outvote that one site. Every level is in y_haplogroup/<sample>_y_tree_path.tsv; "
+               "docs/37-y-haplogroup.md says how the walk works.")
+
+
+def y_tree_body(d):
+    """The Y tree card: the branch, the path counts, then one row per level."""
+    rows = "".join(f"<tr><td>{E(x['Level'])}</td><td>{E(x['Branch'])}</td><td>{E(x['Derived'])}</td>"
+                   f"<td>{E(x['Ancestral'])}</td><td>{E(x['No_call'])}</td>"
+                   f"<td>{E(x['Ancestral_SNPs'])}</td></tr>" for x in d.get("path", []))
+    out = [stat("Branch", E(d.get("haplogroup", "."))), stat("Level", E(str(d.get("level", ".")))),
+           stat("Tree", E(str(d.get("tree", "."))))]
+    out.append(f"    <p>Path SNPs: {E(str(d.get('path_derived', '.')))} derived, "
+               f"{E(str(d.get('path_ancestral', '.')))} ancestral, {E(str(d.get('path_no_call', '.')))} no call; "
+               f"{E(str(d.get('snps_called', '.')))} SNPs called at depth {E(str(d.get('min_depth', '.')))} "
+               "or more</p>")
+    for label, key in (("Ancestral inside the terminal branch", "ancestral_in_terminal"),
+                       ("Ancestral on the path, outvoted by the SNPs below it", "outvoted_ancestral")):
+        if d.get(key, ".") not in (".", ""):
+            out.append(f"    <p>{label}: {E(str(d[key]))}</p>")
+    if rows:
+        out.append("    <table><tr><th>Level</th><th>Branch</th><th>Derived</th><th>Ancestral</th>"
+                   "<th>No call</th><th>Ancestral SNPs</th></tr>" + rows + "</table>")
+    return out + explore_html(d) + [small_note(Y_TREE_NOTE)]
 
 
 YSTR_NOTE = ("Repeat counts read from the genome with HipSTR, in FamilyTreeDNA's Y-111 order. A count can "
@@ -2440,6 +2483,10 @@ def html_report(s, index=None):
         a("y_haplogroup", card(S["y_haplogroup"], "Y-Chromosome Haplogroup",
                [stat("Haplogroup", E(yh.get("haplogroup", "."))), stat("Markers", E(str(yh.get("valid_markers", ".")))),
                 stat("QC-score", E(str(yh.get("qc_score", "."))))] + explore_html(yh)))
+    if S.get("y_tree", MISSING)["state"] != "missing":
+        yt = S["y_tree"]
+        a("y_tree", card(yt, "Y Placement on the Current Public Tree",
+               y_tree_body(yt["data"]) if yt["state"] in ("ok", "stale") else [], full=True))
     if S.get("y_str", MISSING)["state"] != "missing":
         ys = S["y_str"]
         a("y_str", card(ys, "Y-STR Markers (HipSTR)", ystr_body(ys["data"]) if ys["state"] in ("ok", "stale") else [],

@@ -1105,6 +1105,8 @@ workflow {
         .join(CLINICAL.out.haplogroup.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.haplocheck.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.y_haplogroup.map   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.y_tree.map         { meta, tree, _path -> [meta.id, tree] }, remainder: true)
+        .join(BAM_ANALYSIS.out.y_tree.map         { meta, _tree, path -> [meta.id, path] }, remainder: true)
         .join(BAM_ANALYSIS.out.y_str.map          { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.paraphase_cn.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.paraphase_vars.map { meta, f -> [meta.id, f] }, remainder: true)
