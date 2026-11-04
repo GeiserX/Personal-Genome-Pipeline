@@ -801,6 +801,11 @@ def intervals(cat, read):
         ci = data.get("cn_intervals") or {}
         check("collect_summary: step 35's section lists the interval rows with a change (AZFc) and counts the rest",
               [c["locus"] for c in ci.get("changes", [])] == ["AZFc_DAZ"] and ci.get("rows") == len(iv), ci)
+        os.remove(os.path.join(sd, "paralogs", "S_smn_copy_number.tsv"))
+        _, data = cs.sec_parascopy(sd, "S")
+        ci = (data or {}).get("cn_intervals") or {}
+        check("collect_summary: the interval rows stay when step 35 wrote no other table",
+              [c["locus"] for c in ci.get("changes", [])] == ["AZFc_DAZ"] and ci.get("rows") == len(iv), ci)
         check("PARASCOPY module: the samplesheet sex goes to the interval rows",
               "def sex = meta.sex in ['male', 'female'] ? meta.sex : 'unknown'" in module and "--sex ${sex}" in module)
 

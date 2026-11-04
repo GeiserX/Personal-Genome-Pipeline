@@ -842,7 +842,9 @@ def sec_parascopy(d, s):
     the other loci."""
     tables = parascopy_tables(d, s)
     hp = os.path.join(d, "paralogs", f"{s}_hba_copy_number.tsv")
-    p = tables.get("smn") or next(iter(tables.values()), None) or (hp if os.path.isfile(hp) else None)
+    ip = os.path.join(d, "paralogs", f"{s}_cn_intervals.tsv")
+    p = (tables.get("smn") or next(iter(tables.values()), None) or (hp if os.path.isfile(hp) else None)
+         or (ip if os.path.isfile(ip) else None))
     if not p:
         return None, {}
     if "smn" in tables:
@@ -865,7 +867,6 @@ def sec_parascopy(d, s):
         reading = f"{NO_SMN_TABLE}: no carrier reading"
     others = {n: t for n, t in tables.items() if n != "smn"}
     catalog = {r["table"]: r for r in asset_rows("paralog_loci.tsv")} if others else {}
-    ip = os.path.join(d, "paralogs", f"{s}_cn_intervals.tsv")
     return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
                "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
                "rows": len(rows),
