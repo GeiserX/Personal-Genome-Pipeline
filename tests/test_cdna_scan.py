@@ -14,8 +14,11 @@ Part 1, plain Python (reads as small objects, no BAM):
   thin      one read per junction: no junction reaches MIN_READS
   two       one read across two junctions counts on each, and once in the
             locus total
-  and duplicate, secondary, supplementary and repeated alignments that do
-  not count twice, the MIN_INTRON bound, and a control: with MIN_CLIP
+  and duplicate, secondary and repeated alignments that do not count, a
+  supplementary record of a counted read that does not count it twice, a
+  read whose primary lies on another contig that counts from its
+  supplementary records alone, SA pieces on the other strand or out of read
+  order that do not pair, the MIN_INTRON bound, and a control: with MIN_CLIP
   above the read length the spliced fixture lists nothing, so the listed
   check depends on the clip test.
 
@@ -58,6 +61,7 @@ class Read:
         self.is_read1 = read1
         self.is_unmapped = self.is_qcfail = False
         self.is_secondary, self.is_supplementary, self.is_duplicate = bool(flag & 256), bool(flag & 2048), bool(flag & 1024)
+        self.is_reverse = bool(flag & 16)
         self._sa = sa
 
     def has_tag(self, t):
@@ -127,9 +131,28 @@ def part1():
     dup = [Read(a[0], a[1], a[2], a[3]),                      # the same read again (another region fetched it)
            Read("d", a[1], a[2], a[3], flag=1024),            # a duplicate
            Read("s", a[1], a[2], a[3], flag=256),             # a secondary alignment
-           Read("p", E2[0], "60S40M", f"chrT,{a[1] + 1},+,60M40S,60,0;", flag=2048)]  # a supplementary one
-    expect("a repeated read, a duplicate, a secondary and a supplementary alignment do not count",
-           listed("spliced", dup), [SPLICED_ROW])
+           Read(a[0], E2[0], "60S40M", f"chrT,{a[1] + 1},+,60M40S,60,0;", flag=2048)]  # its supplementary record
+    expect("a repeated read, a duplicate, a secondary alignment and the supplementary record of a counted read "
+           "do not count", listed("spliced", dup), [SPLICED_ROW])
+    # A 150 bp read: bases 0-50 on a vector contig (the primary), 50-100 at
+    # E1's end, 100-150 at E2's start. Only its two supplementary records sit
+    # in an exon region of chrT.
+    vec = [Read("v", E1[1] - 50, "50S50M50S", f"chrV,1,+,50M100S,60,0;chrT,{E2[0] + 1},+,100S50M,60,0;", flag=2048),
+           Read("v", E2[0], "100S50M", f"chrV,1,+,50M100S,60,0;chrT,{E1[1] - 49},+,50S50M50S,60,0;", flag=2048)]
+    expect("a read whose primary is on another contig counts from its supplementary records, once",
+           cs.scan([("chrT", vec)], ex), {("chrT", E1[1], E2[0]): {("v", True)}})
+    p = (E1[1] - 60, cc.parse_cigar("60M40S"))
+    expect("SA pieces on the same strand in read order pair",
+           cs.junctions("chrT", *p, f"chrT,{E2[0] + 1},+,60S40M,60,0;", ex), {(E1[1], E2[0])})
+    expect(f"{cc.EDGE_SLACK} read bases of overlap at the junction still pair",
+           cs.junctions("chrT", *p, f"chrT,{E2[0] + 1},+,{60 - cc.EDGE_SLACK}S{40 + cc.EDGE_SLACK}M,60,0;", ex),
+           {(E1[1], E2[0])})
+    expect("an SA piece on the other strand does not pair",
+           cs.junctions("chrT", *p, f"chrT,{E2[0] + 1},-,60S40M,60,0;", ex), set())
+    expect("an SA piece earlier in the read than the exon-end piece does not pair",
+           cs.junctions("chrT", *p, f"chrT,{E2[0] + 1},+,10S40M50S,60,0;", ex), set())
+    expect("both reversed, in read order: they pair",
+           cs.junctions("chrT", *p, f"chrT,{E2[0] + 1},-,60S40M,60,0;", ex, True), {(E1[1], E2[0])})
     two = Read("n1", E1[1] - 50, f"50M{E2[0] - E1[1]}N150M{E3[0] - E2[1]}N50M")
     expect("a read across two junctions counts on each junction and once in the locus total",
            [r[4:] for r in listed("spliced", [two])],
