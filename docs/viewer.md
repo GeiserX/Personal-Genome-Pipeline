@@ -9,7 +9,9 @@
 - its small variants (the VCF from step 3),
 - its structural variants (step 22's consensus, else Manta's VCF from step 4).
 
-It opens at the locus you give. The HTML report (step 24) links to the viewer under the ClinVar hits, the secondary-findings genes and the mitochondrial variants. With the viewer running, a click on one of those links opens the reads at that position.
+It opens at the locus you give. Every findings table of the HTML report (step 24) ends with a Viewer column: the ClinVar hits, the secondary-findings genes, the mitochondrial variants, the deep intronic sites, the cDNA scan, the AnnotSV class 4 and 5 SVs, slivar's pairs in trans and the mosaic alterations. With the viewer running, a click on a row's link opens the reads at that row.
+
+The [live site](live-site.md) serves the same viewer for each run, behind its password, so the report's links work from any device that can reach the site (see "From the live site" below).
 
 ## Why
 
@@ -17,7 +19,7 @@ A variant call is a summary of the reads. Before you act on a finding, look at t
 
 ## Tool
 
-- **igv.js** 3.8.10 (`IGV_JS_VERSION` in `scripts/owngenome-view.sh`, checked against a pinned sha256) draws the reads and variants in the browser.
+- **igv.js** 3.8.10 (`IGV_JS_VERSION` and `IGV_JS_SHA256` in `versions.env`, shared with the live site) draws the reads and variants in the browser.
 - **`assets/viewer/serve.py`** (Python standard library) serves the page and the sample's files on `127.0.0.1`.
 
 ## Docker Image
@@ -49,7 +51,7 @@ Open it in a browser. To jump somewhere else, type a locus in igv.js's search bo
 
 The script leaves out a file it does not find, and says so. A BAM or CRAM needs its index (`.bai`, `.crai`) beside it. A VCF with a `.tbi` is read in pieces. One without a `.tbi` is read whole, which is fine for an SV VCF.
 
-The command needs `python3` on the host, but no Docker. The first run downloads igv.js (version 3.8.10, the `IGV_JS_VERSION` line in the script) into `GENOME_DIR/tools/igv.js-3.8.10/` and checks its sha256. After that it needs no network.
+The command needs `python3` on the host, but no Docker. The first run downloads igv.js (version 3.8.10, the `IGV_JS_VERSION` line in `versions.env`) into `GENOME_DIR/tools/igv.js-3.8.10/` and checks its sha256. After that it needs no network.
 
 ## Privacy
 
@@ -76,6 +78,12 @@ GENOME_DIR=/path/to/data ./scripts/owngenome-view.sh your_name chr17:43045000
 
 Then open `http://127.0.0.1:8765/` on your computer. The report's links work the same way. The reads travel inside the ssh connection, and only the ranges igv.js asks for. Do not expose the port any other way: the server has no login, so anyone who can reach it can read the sample.
 
+## From the live site
+
+`scripts/owngenome-live.sh` starts the [live site](live-site.md) with the viewer: each run has it at `/runs/<run>/viewer/`, behind the site's password, and the report the site serves points its Viewer links there. `bin/owngenome_live_viewer.py` does it with the same page, the same Content-Security-Policy and the same files as `owngenome-view.sh` picks by default (the run folder's BAM or CRAM, its VCF and its SV VCF, each with its index, and `REF_FASTA`). The `READS`, `VCF` and `SV_VCF` overrides do not apply there, and a file that is a symlink out of `GENOME_DIR` is left out. The first start downloads igv.js the same way. `OWNGENOME_LIVE_VIEWER=off` starts the site without it.
+
+This differs from the local viewer in one way that matters: the reads now cross the network, to whatever browser logged in. Only the byte ranges igv.js asks for travel, and only after the login, but they are the sample's reads. Off loopback, use TLS (`--tls-cert` and `--tls-key`, or a proxy that ends TLS), or keep the site on loopback and forward it over ssh. Opening the viewer writes one row in the site's access log; the byte ranges write none.
+
 ## Output
 
 Nothing is written apart from igv.js in `GENOME_DIR/tools/` on the first run. Stop the viewer with Ctrl-C.
@@ -92,11 +100,14 @@ The server starts at once. How fast a view loads depends on the disk and the rea
 - the server listens on 127.0.0.1 and not on the machine's other address;
 - it answers byte ranges of the BAM exactly, and refuses unknown paths and a foreign `Host`;
 - in headless Chrome, igv.js starts on the config, the policy blocks nothing it needs, and it reads the BAM, its index, the reference and the VCF;
-- the report links a ClinVar hit to the viewer at its position.
+- every findings table of the report ends with a Viewer cell that links each row to its position, with the note under it; a control with the links taken out must fail that check for every table;
+- igv.js is the release `versions.env` pins, with its sha256, and the script sets no pin of its own.
+
+`tests/test_live_viewer.py` checks the live site's viewer on the same sample: the login, the policy, the byte ranges, the files it refuses, the report's links pointed at the site, the access log, a BAM symlinked out of `GENOME_DIR`, a site started without the viewer, and the page in headless Chrome.
 
 ## Notes
 
-- **The report links assume port 8765.** With another `OWNGENOME_VIEW_PORT`, type the locus into the viewer yourself.
+- **The report links assume port 8765.** With another `OWNGENOME_VIEW_PORT`, type the locus into the viewer yourself. On the live site the links go to the site's viewer, whatever its port.
 - **CRAM** is decoded in the browser against the same reference. It must be the FASTA the CRAM was written with.
 - **Gene names** are not searchable (see Privacy). Use the coordinates the report shows.
 - igv.js is MIT-licensed. Reference: Robinson JT, Thorvaldsdottir H, Turner D, Mesirov JP. igv.js: an embeddable JavaScript implementation of the Integrative Genomics Viewer (IGV). *Bioinformatics* 39(1), btac830 (2023). https://doi.org/10.1093/bioinformatics/btac830
