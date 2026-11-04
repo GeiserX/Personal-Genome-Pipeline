@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Reads your genotype at a small set of well-replicated variants and prints what each genotype means in plain words: lactase persistence (digesting milk as an adult), caffeine metabolism and coffee intake, alcohol flush, bitter taste, earwax type, the photic sneeze reflex, smelling asparagus in urine, muscle fibre type, eye, hair and skin pigmentation, red hair, hair thickness, folate metabolism, secretor status, vitamin D level, bilirubin (the Gilbert syndrome genotype), nicotine breakdown, two variants linked to a high Lp(a) level, and the APOE ε2/ε3/ε4 alleles. A rule table reads several sites together: the APOE pair, the TAS2R38 bitter-taste haplotypes (PAV, AVI), phased from the reads when that is needed, the APOL1 G1 kidney risk variant, the alpha-1 antitrypsin Pi type (SERPINA1 M, S, Z), the HFE haemochromatosis genotype (C282Y, H63D), the vitamin D-binding protein type (GC), the chromosome 9p21 heart disease haplotype and the 17q21.31 H1/H2 lineage. Each row names the primary paper it comes from. On by default.
+Reads your genotype at a small set of well-replicated variants and prints what each genotype means in plain words: lactase persistence (digesting milk as an adult), caffeine metabolism and coffee intake, alcohol flush, bitter taste, earwax type, the photic sneeze reflex, smelling asparagus in urine, muscle fibre type, eye, hair and skin pigmentation, red hair, hair thickness, folate metabolism, secretor status, vitamin D level, bilirubin (the Gilbert syndrome genotype), nicotine breakdown, two variants linked to a high Lp(a) level, CFTR R117H (read with the CFTR poly-T tract of [step 9](09-str-expansions.md)), and the APOE ε2/ε3/ε4 alleles. A rule table reads several sites together: the APOE pair, the TAS2R38 bitter-taste haplotypes (PAV, AVI), phased from the reads when that is needed, the APOL1 G1 kidney risk variant, the alpha-1 antitrypsin Pi type (SERPINA1 M, S, Z), the HFE haemochromatosis genotype (C282Y, H63D), the vitamin D-binding protein type (GC), the chromosome 9p21 heart disease haplotype and the 17q21.31 H1/H2 lineage. Each row names the primary paper it comes from. On by default.
 
 ## Why
 
@@ -135,7 +135,7 @@ The APOE line is the APOE rule of `assets/genotype_rules.tsv`, written into the 
 
 ## Runtime
 
-Seconds: bcftools reads the gVCF at the table's positions through its index (35 rows and 17 rule sites), and WhatsHap, when a rule needs it, reads the BAM over three sites within 741 bases.
+Seconds: bcftools reads the gVCF at the table's positions through its index (36 rows and 17 rule sites), and WhatsHap, when a rule needs it, reads the BAM over three sites within 741 bases.
 
 ## Notes
 
