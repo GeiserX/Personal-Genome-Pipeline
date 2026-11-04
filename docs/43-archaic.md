@@ -37,15 +37,26 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tags.
 
 ## Data
 
-`scripts/setup.sh --archaic <genome_dir>` builds `reference/archaic/snpad2016-1kgp3-v1/`, one `chrN.tsv.gz` per autosome on GRCh38: position, REF, ALT, the ALT count of each archaic genome (9 when it was not called there) and the 1000 Genomes ALT frequency of all and of each continental group. The rows are the 1000 Genomes biallelic SNVs where an archaic genome was called, plus every site where one of the three carries a non-reference allele. Those are the sites IBDmix's own `generate_gt` keeps from the same files.
+`scripts/setup.sh --archaic <genome_dir>` builds `reference/archaic/snpad2016-1kgp3-v2/`, one `chrN.tsv.gz` per autosome on GRCh38: position, REF, ALT, the ALT count of each archaic genome (9 when it was not called there) and the 1000 Genomes ALT frequency of all and of each continental group. The rows are the 1000 Genomes biallelic SNVs where an archaic genome was called, plus every site where one of the three carries a non-reference allele. Those are the sites IBDmix's own `generate_gt` keeps from the same files.
 
 | Source | What | Pin |
 |---|---|---|
 | MPI-EVA, https://cdna.eva.mpg.de/neandertal/Vindija/VCF/ | the snpAD genotypes of Altai, Vindija33.19 and Denisova, GRCh37, `chrN_mq25_mapab100.vcf.gz` | each file against the folder's `md5sums.txt`, whose sha256 `versions.env` pins |
+| MPI-EVA, https://cdna.eva.mpg.de/neandertal/Vindija/FilterBed/ | the mask of each archaic genome, GRCh37, `<genome>/chrN_mask.bed.gz` | the sha256 of each of the 66 files, in `versions.env` |
 | 1000 Genomes phase 3 | `ALL.wgs.phase3_shapeit2_mvncall_integrated_v5c.20130502.sites.vcf.gz` (1.5 GB) | md5 from the release's `current.tree` |
+| 1000 Genomes | the GRCh38 strict mask, `20160622.allChr.mask.bed` (128 MB) | sha256 |
 | UCSC | `hg19ToHg38.over.chain.gz` | sha256 |
 
-MPI-EVA publishes md5 lists, not sha256 sums, for 66 files of about 2.5 GB each. Pinning the sha256 of the three lists pins every file's md5 without downloading 150 GB to hash it.
+MPI-EVA publishes md5 lists, not sha256 sums, for 66 genotype files of about 2.5 GB each. Pinning the sha256 of the three lists pins every file's md5 without downloading 150 GB to hash it. The FilterBed files have no checksum file beside them and are about 1.5 MB each, so each one's sha256 is pinned directly.
+
+### The masks
+
+Chen et al. do not run IBDmix on every site. Each archaic genome comes with its own mask from the same project: the positions that pass its coverage, mapability 35, MQ25, tandem-repeat and indel filters. The modern side is kept to the 1000 Genomes strict mask. The step does the same:
+
+- a genome's call is read only inside that genome's FilterBed; outside it the site is unknown (9) for that genome, so IBDmix scores nothing there;
+- a table row outside the 1000 Genomes GRCh38 strict mask is dropped altogether.
+
+Both masks cut the table hard: on chr22 the strict mask covers 25.2 Mb of 50.8, and the Vindija FilterBed 19.6 Mb. Without them the step called sequence from positions the archaic genomes cannot be read at, and HG002's Neanderthal total came out about twice the published figure (see Runtime below). The masks are part of the data version: a change to a pin or to a mask means `snpad2016-1kgp3-v3` and a rebuild.
 
 The table is built on GRCh37 and lifted once to GRCh38 with Picard `LiftoverVcf`. A site that does not lift, or lifts to another chromosome, is dropped. The archaic files are downloaded one chromosome at a time (150 GB in all, at most 13.8 GB at once, for chromosome 2) and deleted once the chromosome is built, so an interrupted install resumes at the chromosome it stopped in. `ARCHAIC_REGIONS` (a GRCh37 BED, chromosomes named 1 to 22) builds only those regions.
 
@@ -81,7 +92,9 @@ Measured on public HG002 by the `archaic-hg002` jobs of `public-evidence.yml`, o
 - Install: the archaic files were 150.5 GB in all, from 1.8 GB (chromosome 22) to 13.8 GB (chromosome 2). Downloading them took 2 h 32 min summed over the 22 chromosomes, from 3 to 32 minutes each, at the speed MPI-EVA served that day. Building the table took 3 h 15 min summed, from 2 to 20 minutes per chromosome. The finished table is 0.44 GB with 51,812,908 sites.
 - Step 43, one population: 19 to 88 seconds per chromosome, 18 minutes summed over the 22. IBDmix runs once per chromosome and archaic genome, `THREADS` chromosomes at a time.
 
-The same run gave HG002 a Neanderthal share of 4.13% with the 1000 Genomes ALL frequencies and 4.26% with EUR, over 51,810,955 sites of the 22 autosomes, and a Denisovan share of 0.40% and 0.42%. That is about twice what Chen et al. report with the same method and cutoffs for Europeans (about 51 Mb per person; HG002 got 115.2 Mb here), and the cause is not yet known. Until it is, compare your share with other shares from this step, not with published figures.
+That run was made before the masks, from a table that held every lifted site. It gave HG002 115.2 Mb of Neanderthal sequence over the 22 autosomes, about twice what Chen et al. report for Europeans with the same method and cutoffs (about 51 Mb per person, and 49.9 to 82.9 Mb across their released per-person calls). The cause was the missing masks: the table carried the positions each archaic genome's own filters exclude, and IBDmix scored them. On chr22, 43% of that run's Neanderthal sequence lay outside the 1000 Genomes GRCh38 strict mask alone.
+
+With the masks the step is comparable with the published figures again, and the e2e case holds it there: HG002's chr22 Neanderthal total must land between the 5th and the 95th percentile of Chen et al.'s own released calls for the 497 Europeans of CEU, TSI, GBR, FIN and IBS (153 kb and 1,132 kb; median 541 kb). The pre-mask run gave 1,748 kb on chr22, above all 497 of them. The whole-genome figure for a masked table is measured by a `public-evidence.yml` run, which installs the 150 GB of archaic data once per release.
 
 ## Notes
 
@@ -90,7 +103,8 @@ The same run gave HG002 a Neanderthal share of 4.13% with the 1000 Genomes ALL f
 - A segment counts when either of your two copies carries it. The share is of the analysed span, not of the whole genome.
 - The table has autosomes only: chrX and chrY are not assessed.
 - Sites the VCF has no record for are read as the reference allele. A VCF that holds only variants (no reference calls) cannot tell a reference call from a gap in coverage.
-- On the e2e fixture the case builds the table for GRCh37 chr22:25-35 Mb. It checks HG002's GIAB v4.2.1 genotypes there, a copy of HG002 with one chromosome over chr22:28-29 Mb taken from Vindija (a Neanderthal segment must cover it), and a person built from the table who carries only the majority allele (no segment).
+- The share is of the analysed span, and after masking the span still runs from the first to the last table site of each chromosome. Masked sequence can hold no segment, so the share is a lower bound on archaic ancestry, not an estimate of it. Compare it with the published per-person figures, which come from masked data too.
+- On the e2e fixture the case builds the table for GRCh37 chr22 and checks HG002's GIAB v4.2.1 genotypes against the published chr22 range, a copy of HG002 with one chromosome over chr22:28-29 Mb taken from Vindija (a Neanderthal segment must cover it), a person built from the table who carries only the majority allele (no segment), and that no table row falls outside the strict mask.
 
 ## References
 

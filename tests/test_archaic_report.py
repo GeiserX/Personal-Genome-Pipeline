@@ -96,6 +96,48 @@ check("an archaic-only site takes the first non-reference ALT and frequency 0",
       and info[500]["AF_ALL"] == "0", (recs.get(500), info.get(500)))
 check("chrom gets its chr prefix for the liftover", recs[100][0] == "chr22", recs[100][0])
 
+# The masks: each archaic genome is read only inside its own FilterBed. The
+# first run is the control: without --mask the same inputs keep every call,
+# so the codes below come from the mask and nothing else.
+write(f"{TMP}/altai.bed", "22\t50\t150\n22\t450\t550\n")   # 1-based 51-150 and 451-550: 100 and 500, not 200
+write(f"{TMP}/vindija.bed", "22\t150\t250\n")       # holds 200, not 100
+write(f"{TMP}/denisova.bed.gz", "")
+with gzip.open(f"{TMP}/denisova.bed.gz", "wt") as f:
+    f.write("chr22\t99\t100\n")                     # 1-based 100 only, and named chr22
+common = ["table", "--chrom", "22", "--modern", f"{TMP}/modern.tsv", "--archaic", f"Altai={TMP}/altai.tsv",
+          "--archaic", f"Vindija={TMP}/vindija.tsv", "--archaic", f"Denisova={TMP}/denisova.tsv"]
+
+
+def table_info(out, extra=()):
+    r = run(*common, *extra, "--out", out)
+    check(f"table exits 0 ({'masked' if extra else 'no mask'})", r.returncode == 0, r.stderr)
+    rows = {int(l.split("\t")[1]): l.rstrip("\n").split("\t") for l in open(out) if not l.startswith("#")}
+    return rows, {p: dict(kv.split("=") for kv in c[7].split(";")) for p, c in rows.items()}
+
+
+nm_rows, nm = table_info(f"{TMP}/nomask.vcf")
+check("control, no mask: the Altai call at 100 is read, and 200 and 500 are rows",
+      nm[100]["Altai"] == "2" and sorted(nm_rows) == [100, 200, 500], (sorted(nm_rows), nm.get(100)))
+m_rows, mi = table_info(f"{TMP}/masked.vcf", ("--mask", f"Altai={TMP}/altai.bed",
+                                              "--mask", f"Vindija={TMP}/vindija.bed",
+                                              "--mask", f"Denisova={TMP}/denisova.bed.gz"))
+check("inside its mask a genome keeps its call", mi[100]["Altai"] == "2" and mi[100]["Denisova"] == "1", mi.get(100))
+check("outside its mask a genome is unknown (9), where the control read 0",
+      mi[100]["Vindija"] == "9" and nm[100]["Vindija"] == "0", (mi.get(100), nm.get(100)))
+check("a row that only a masked-out reference call kept is dropped (200 goes, and the control kept it)",
+      sorted(m_rows) == [100, 500] and 200 in nm_rows, (sorted(m_rows), sorted(nm_rows)))
+check("an archaic-only site inside its mask stays, with that genome's ALT",
+      m_rows[500][4] == "C" and mi[500]["Altai"] == "1" and mi[500]["Vindija"] == "9", (m_rows.get(500), mi.get(500)))
+check("a mask file is read with and without the chr prefix", mi[100]["Denisova"] == "1", mi.get(100))
+r = run(*common, "--mask", f"Altai={TMP}/altai.bed", "--mask", f"Altai={TMP}/altai.bed", "--out", f"{TMP}/x.vcf")
+check("--mask twice for one genome stops the build", r.returncode == 2 and "twice" in r.stderr, r.stderr)
+r = run(*common, "--mask", f"Nobody={TMP}/altai.bed", "--out", f"{TMP}/x.vcf")
+check("--mask with an unknown genome stops the build", r.returncode == 2, r.stderr)
+write(f"{TMP}/other.bed", "7\t50\t150\n")
+r = run(*common, "--mask", f"Altai={TMP}/other.bed", "--out", f"{TMP}/x.vcf")
+check("a mask with no interval on the chromosome stops the build, instead of emptying the table",
+      r.returncode == 1 and "no interval" in r.stderr, r.stderr)
+
 # --- 2. genotypes ------------------------------------------------------------------
 tdir = f"{TMP}/table"
 os.makedirs(tdir)

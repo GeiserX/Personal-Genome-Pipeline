@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Step 43 (archaic ancestry, IBDmix) on a 10 Mb slice of chr22.
+# Step 43 (archaic ancestry, IBDmix) on the whole of chr22.
 #   - without the archaic data, step 43 says so in one line and exits 0;
-#   - setup.sh --archaic builds the table for GRCh37 chr22:25-35 Mb only
+#   - setup.sh --archaic builds the table for GRCh37 chr22 only
 #     (ARCHAIC_REGIONS): the three archaic chr22 files from MPI-EVA, checked
 #     against their pinned md5 lists, and the 1000 Genomes sites, lifted to
-#     GRCh38;
-#   - HG002 (GIAB's v4.2.1 genotypes on the lifted slice): the step runs, the
-#     shares are numbers and the analysed span is most of the slice;
+#     GRCh38, with each archaic genome read only inside its own FilterBed and
+#     every row inside the 1000 Genomes GRCh38 strict mask;
+#   - HG002 (GIAB's v4.2.1 genotypes on chr22): the step runs, the shares are
+#     numbers, the analysed span is most of the chromosome, and the
+#     Neanderthal total sits inside the range Chen et al.'s own released
+#     calls give Europeans on chr22 (the check that found the unmasked table
+#     calling about three times too much);
 #   - PLANT, HG002 with one chromosome over chr22:28-29 Mb (GRCh38) copied
 #     from Vindija 33.19 (0/1 wherever Vindija carries the ALT, no record
 #     where it does not): a Neanderthal segment covers 80% of that window or
@@ -44,8 +48,8 @@ check_step_exit "43-archaic.sh (no data)"
 check_eq "step 43 without data prints one line" "$(grep -c . "$STEP_LOG")" 1
 check "that line says it was skipped and how to install the data" has '^Step 43 skipped: .*setup\.sh --archaic' "$(cat "$STEP_LOG")"
 
-# --- the archaic table of the slice ----------------------------------------------------
-printf '22\t25000000\t35000000\n' > "${T}/regions37.bed"
+# --- the archaic table of chr22 --------------------------------------------------------
+printf '22\t1\t51304566\n' > "${T}/regions37.bed"
 echo "+ ARCHAIC_REGIONS=... scripts/setup.sh --archaic"
 T0=$(date +%s)
 ARCHAIC_REGIONS="${T}/regions37.bed" "${REPO}/scripts/setup.sh" --archaic "$G" 2>&1 | tee "$STEP_LOG"
@@ -54,23 +58,48 @@ T_SETUP=$(( $(date +%s) - T0 ))
 check "the table is finished (DONE)" test -s "${DATA}/DONE"
 check "only chr22 was built" bash -c '[ "$(cd "$1" && ls chr*.tsv.gz)" = chr22.tsv.gz ]' _ "$DATA"
 TABLE="${DATA}/chr22.tsv.gz"
-check_ge "table rows on the slice" "$(gzip -dc "$TABLE" 2>/dev/null | awk 'END {print NR - 1}')" 50000
-check "every row is on GRCh38 chr22 between 24 and 36 Mb" \
-  bash -c 'gzip -dc "$1" | awk -F"\t" "NR > 1 && (\$1 != \"chr22\" || \$2 < 24000000 || \$2 > 36000000) {bad = 1} END {exit bad}"' _ "$TABLE"
+check_ge "table rows on chr22" "$(gzip -dc "$TABLE" 2>/dev/null | awk 'END {print NR - 1}')" 100000
+check "every row is on GRCh38 chr22" \
+  bash -c 'gzip -dc "$1" | awk -F"\t" "NR > 1 && \$1 != \"chr22\" {bad = 1} END {exit bad}"' _ "$TABLE"
 check_ge "rows where Vindija carries the ALT inside the plant window" \
-  "$(gzip -dc "$TABLE" | awk -F'\t' -v f="$W_FROM" -v t="$W_TO" 'NR > 1 && $2 >= f && $2 < t && ($6 == 1 || $6 == 2) {n++} END {print n + 0}')" 300
-printf '#### Step 43 archaic table (GRCh37 chr22:25-35 Mb)\n\n%s s to install, %s on disk, %s rows\n\n' \
+  "$(gzip -dc "$TABLE" | awk -F'\t' -v f="$W_FROM" -v t="$W_TO" 'NR > 1 && $2 >= f && $2 < t && ($6 == 1 || $6 == 2) {n++} END {print n + 0}')" 100
+# The masks: every FilterBed of the chromosome is installed, and no table row
+# sits outside the 1000 Genomes GRCh38 strict mask. Without the masks the
+# table carries the sites the method cannot read, and this check goes red.
+for f in Altai Vindija33.19 Denisova; do
+  check "the FilterBed of ${f} chr22 is installed" test -s "${DATA}/mask/${f}.chr22.bed.gz"
+done
+check "the GRCh38 strict mask is installed" test -s "${DATA}/strict_GRCh38.bed"
+OUTSIDE=$(gzip -dc "$TABLE" | awk -F'\t' -v m="${DATA}/strict_GRCh38.bed" '
+  BEGIN { while ((getline l < m) > 0) { split(l, c, "\t"); if (c[1] == "chr22") { s[++n] = c[2]; e[n] = c[3] } } }
+  NR > 1 { p = $2 - 1
+           while (i < n && e[i + 1] <= p) i++
+           if (!(i < n && s[i + 1] <= p && p < e[i + 1])) bad++ }
+  END { print bad + 0 }')
+check_eq "no table row is outside the GRCh38 strict mask" "$OUTSIDE" 0
+printf '#### Step 43 archaic table (GRCh37 chr22)\n\n%s s to install, %s on disk, %s rows\n\n' \
   "$T_SETUP" "$(du -sh "$DATA" | cut -f1)" "$(gzip -dc "$TABLE" | awk 'END {print NR - 1}')" >> "$E2E_NOTES"
 
 # --- HG002 ------------------------------------------------------------------------------
-dk "$BCFTOOLS_IMAGE" bcftools view -r chr22:24000000-36000000 -Oz -o "${T}/hg002.vcf.gz" "$TRUTH"
+dk "$BCFTOOLS_IMAGE" bcftools view -r chr22 -Oz -o "${T}/hg002.vcf.gz" "$TRUTH"
 H="${SAMPLE}ar"
 sample "$H" "${T}/hg002.vcf.gz"
 step "$H"
 cat "${G}/${H}/archaic/${H}_archaic.txt" 2>/dev/null
 check "Neanderthal share is a number" has '^[0-9]+\.[0-9]+$' "$(kv "$H" neanderthal_percent)"
 check "Denisovan share is a number" has '^[0-9]+\.[0-9]+$' "$(kv "$H" denisovan_percent)"
-check_ge "analysed span (bp) covers most of the slice" "$(kv "$H" analysed_bp)" 8000000
+check_ge "analysed span (bp) covers most of chr22" "$(kv "$H" analysed_bp)" 30000000
+# The published range for chr22. Chen et al. 2020 released their IBDmix calls
+# on the 1000 Genomes phase 3 genomes (LOD 4, union of the Altai and Vindija
+# segments of 50 kb or more). Over the 497 people of CEU, TSI, GBR, FIN and
+# IBS, chr22 gives 51 kb at the lowest, 541 kb at the median and 1,716 kb at
+# the highest, with the 5th and 95th percentiles at 153 kb and 1,132 kb. A
+# whole-genome run of this step before the masks landed gave HG002 1,748 kb
+# on chr22, above every one of those 497 people.
+NEA=$(kv "$H" neanderthal_bp)
+check_ge "HG002's chr22 Neanderthal total is not under the published 5th percentile" "${NEA:-0}" 153000
+check "and not over the published 95th percentile (1,132 kb)" test "${NEA:-0}" -le 1132000
+echo "  chr22 Neanderthal bp: ${NEA} (published EUR p5 153000, median 541000, p95 1132000)"
 check "the segments file has its header" has '^chrom	start	end	length_bp	ancestry	matched	lod	genes$' \
   "$(head -n 1 "${G}/${H}/archaic/${H}_archaic_segments.tsv" 2>/dev/null)"
 
@@ -85,7 +114,7 @@ P="${SAMPLE}arp"
 sample "$P" "${T}/plant.vcf.gz"
 step "$P"
 cat "${G}/${P}/archaic/${P}_archaic_segments.tsv" 2>/dev/null | head -20
-check_ge "a Neanderthal segment covers 80% of the planted window (bp)" "$(covered "$P" Neanderthal "$W_FROM" "$W_TO")" 800000
+check_ge "a Neanderthal segment covers 70% of the planted window (bp)" "$(covered "$P" Neanderthal "$W_FROM" "$W_TO")" 700000
 check "and it names Vindija among the genomes it matches" \
   awk -F'\t' -v f="$W_FROM" -v t="$W_TO" 'NR > 1 && $5 == "Neanderthal" && $2 < t && $3 > f && $6 ~ /Vindija/ {ok = 1} END {exit !ok}' \
   "${G}/${P}/archaic/${P}_archaic_segments.tsv"
