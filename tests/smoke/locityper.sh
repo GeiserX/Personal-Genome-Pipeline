@@ -89,10 +89,11 @@ python3 qv.py gt qv.tsv
 echo "== 5. red control: the panel without HG002 and every haplotype within QV 20 of it"
 : > red.bed
 for l in HLA-DRB1 HLA-DQB1 CYP2D6; do
-  # Every panel haplotype against each of HG002's; pairs whose minimizer
-  # divergence is 0.05 or more (far below QV 20) are skipped and stay in.
+  # Every panel haplotype against each of HG002's, all aligned: a minimizer
+  # divergence cut-off would skip near copies (one base in 250 changes about
+  # 6% of the minimizers, so -D 0.05 kept a QV 24 copy of HG002.2's HLA-DQB1).
   gzip -dc "db/loci/${l}/haplotypes.fa.gz" | awk '/^>/ {n = substr($1, 2); if (n !~ /^HG002\./) print n "\tHG002.1\n" n "\tHG002.2"}' > "pairs.${l}.txt"
-  locityper align -i "db/loci/${l}/haplotypes.fa.gz" -o "near.${l}.paf" -P "pairs.${l}.txt" -D 0.05 -@ "$T" > "near.${l}.log" 2>&1 \
+  locityper align -i "db/loci/${l}/haplotypes.fa.gz" -o "near.${l}.paf" -P "pairs.${l}.txt" -@ "$T" > "near.${l}.log" 2>&1 \
     || { tail -n 20 "near.${l}.log"; exit 1; }
   python3 - "$l" <<'PY'
 import gzip, sys
