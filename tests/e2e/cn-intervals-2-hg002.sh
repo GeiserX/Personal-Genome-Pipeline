@@ -4,14 +4,17 @@
 # of four rows (AZFa, AZFb, AZFc_DAZ and 22q11.2 A-B, targets and controls).
 #   - the interval block of step 35 (cut from scripts/35-paralogs.sh, run
 #     with scripts/lib/common.sh's run_in) on the sample read as male: AZFa
-#     and AZFb 1 copy of 1, 22q11.2 A-B 2 of 2, no change; every row off
+#     and AZFb 1 copy of 1, 22q11.2 A-B 2 of 2, no change; AZFc_DAZ not
+#     assessed (between_counts: HG002's DAZ depth gives an estimate between
+#     3.3 and 3.9, no whole count of the four copies); every row off
 #     chrY and chr22 has no read and is not assessed, never a call (the
 #     chr22 rows share A-B's fetched control window, so they are left out);
 #   - the interval block of modules/local/parascopy/main.nf, cut from the
 #     file, in PARASCOPY_IMAGE on the same BAM: the same table, byte for byte;
 #   - the same reads read as female: the three AZF rows not applicable,
 #     22q11.2 A-B still 2 copies.
-# Control: the male table and the female table differ.
+# Control: the male table and the female table differ, and the AZFc check
+# fails on the female table.
 . "$(dirname "$0")/lib.sh"
 
 SRC="https://storage.googleapis.com/deepvariant/case-study-testdata/HG002.novaseq.pcr-free.35x.dedup.grch38_no_alt.bam"
@@ -62,6 +65,13 @@ for r in AZFa AZFb; do
   check_eq "male: ${r} 1 copy of 1, no change" "$(col "$T" "$r" copies)/$(col "$T" "$r" expected)/$(col "$T" "$r" change)" \
     "1/1/no change"
 done
+# azfc TABLE: "status/reason/in" when AZFc_DAZ's estimate is in 3.3 to 3.9, else ".../out"
+azfc() {
+  echo "$(col "$1" AZFc_DAZ status)/$(col "$1" AZFc_DAZ reason)/$(col "$1" AZFc_DAZ estimate \
+    | awk '{print ($1 ~ /^[0-9.]+$/ && $1 >= 3.3 && $1 <= 3.9) ? "in" : "out"}')"
+}
+check_eq "male: AZFc_DAZ not assessed, between two whole counts, estimate 3.3 to 3.9 ($(col "$T" AZFc_DAZ estimate))" \
+  "$(azfc "$T")" "not assessed/between_counts/in"
 check_eq "male: 22q11.2 A-B 2 copies of 2, no change" \
   "$(col "$T" 22q11.2_DGS_proximal_A-B copies)/$(col "$T" 22q11.2_DGS_proximal_A-B expected)/$(col "$T" 22q11.2_DGS_proximal_A-B change)" \
   "2/2/no change"
@@ -90,6 +100,8 @@ for r in AZFa AZFb AZFc_DAZ; do
 done
 check_eq "female: 22q11.2 A-B still 2 copies" "$(col "$T" 22q11.2_DGS_proximal_A-B copies)" 2
 check "control: the male and the female tables differ" bash -c '! cmp -s "$1" "$2"' _ "$T" "${CASE_TMP}/male.tsv"
+check "control: the AZFc check fails on the female table ($(azfc "$T"))" \
+  test "$(azfc "$T")" != "not assessed/between_counts/in"
 
 rm -rf "$W"
 finish
