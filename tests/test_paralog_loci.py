@@ -14,8 +14,15 @@ compares the two names lists for the five populations).
      name used once, a source; the SMN1 row writes the table `smn` the reports
      read;
   3. controls: a catalog naming a model not on the list (GBA1.gz, where the
-     model file is GBA.gz), a bad region, a repeated table name and a catalog
-     without the SMN1 row are each refused;
+     model file is GBA.gz; CYP21A2.gz, which the data has no model for), a bad
+     region, a region outside its model's main region, a repeated table name
+     and a catalog without the SMN1 row are each refused;
+  5. one owner per locus: no catalog model's regions (main or copy) overlap
+     the targets or controls of a bin/cn_loci.tsv row the depth engine owns
+     (owner cn-depth), except RHCE, whose model covers RHD as a cross-check
+     of the RHD row (the exemption is needed: without it RHCE is refused);
+     every catalog gene assets/callability_genes.tsv lists has the owner
+     parascopy there (a planted '.' owner is refused);
   4. the report readers: the not-assessed row step 35 writes (its own lines,
      cut from scripts/35-paralogs.sh and run) gives a reading that names the
      reason in bin/collect_summary.py, and in bin/paraphase_report.py and
@@ -35,7 +42,13 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS = os.path.join(REPO, "assets", "parascopy_models_v1.7.txt")
 CATALOG = os.path.join(REPO, "assets", "paralog_loci.tsv")
 COLUMNS = ["model", "genes", "region", "reading", "pscn_reliable", "tag", "cross_check", "table", "source"]
-TAGS = {"carrier", "SF", "PGx", "trait"}
+TAGS = {"carrier", "SF", "disease", "PGx", "trait"}
+CROSS_CHECKS = {"paraphase", "cn-depth", "none"}
+CN_LOCI = os.path.join(REPO, "bin", "cn_loci.tsv")
+CALLABILITY = os.path.join(REPO, "assets", "callability_genes.tsv")
+# The one catalog model allowed to overlap a cn-depth row of bin/cn_loci.tsv:
+# RHCE's model covers most of RHD, and the catalog reads it as a cross-check.
+CN_DEPTH_EXEMPT = {("RHCE.gz", "RHD")}
 CONTIGS = {f"chr{c}" for c in list(range(1, 23)) + ["X", "Y"]}
 
 FAILS = 0
@@ -55,7 +68,64 @@ def read_models(path):
     return [r[0] + ".gz" for r in rows if len(r) == 3 and r[2] == "main"]
 
 
-def problems(lines, models):
+def span(text):
+    """'chr1:10-20' -> ('chr1', 10, 20), 1-based and inclusive; None if it is not one."""
+    m = re.fullmatch(r"(chr[0-9XY]+):(\d+)-(\d+)", text)
+    return (m.group(1), int(m.group(2)), int(m.group(3))) if m else None
+
+
+def model_regions(path):
+    """<gene>.gz -> [(chrom, start, end, kind)] of every region of the model, 1-based."""
+    out = {}
+    with open(path) as f:
+        for line in f:
+            if line.strip() and not line.startswith("#"):
+                g, r, kind = line.rstrip("\n").split("\t")
+                m = re.fullmatch(r"([^:]+):(\d+)-(\d+)", r)
+                out.setdefault(g + ".gz", []).append((m.group(1), int(m.group(2)), int(m.group(3)), kind))
+    return out
+
+
+def table_rows(path):
+    with open(path) as f:
+        lines = [x.rstrip("\n").split("\t") for x in f if x.strip() and not x.startswith("#")]
+    return [dict(zip(lines[0], r)) for r in lines[1:]]
+
+
+def cn_depth_parts(path):
+    """[(locus, chrom, start, end)] of every target and control of the cn_loci rows
+    the depth engine owns, 1-based inclusive (the file is BED: 0-based, end exclusive)."""
+    out = []
+    for r in table_rows(path):
+        if r["owner"] != "cn-depth":
+            continue
+        for part in (r["targets"] + ";" + r["controls"]).split(";"):
+            c = part.split(":")
+            if len(c) >= 2 and "-" in c[1]:
+                s, e = c[1].split("-")
+                out.append((r["locus"], r["chrom"], int(s) + 1, int(e)))
+    return out
+
+
+def owner_problems(catalog_models, regions, cn_parts, exempt):
+    """Every overlap of a catalog model's region with a cn-depth row's target or
+    control that the exemptions do not name."""
+    out = []
+    for model in catalog_models:
+        for c, s, e, kind in regions.get(model, []):
+            for locus, cc, cs, ce in cn_parts:
+                if c == cc and s <= ce and cs <= e and (model, locus) not in exempt:
+                    out.append(f"{model} ({kind} {c}:{s}-{e}) overlaps cn_loci row {locus} ({cc}:{cs}-{ce})")
+    return out
+
+
+def callability_problems(catalog_genes, rows):
+    """Every catalog gene the callability catalog lists without the owner parascopy."""
+    return [f"{r['gene']} has owner {r['owner']}" for r in rows
+            if r["gene"] in catalog_genes and r["owner"] != "parascopy"]
+
+
+def problems(lines, models, regions=None):
     """Every problem of a catalog (its lines, comments included), as text."""
     out = []
     rows = [line.rstrip("\n").split("\t") for line in lines if line.strip() and not line.startswith("#")]
@@ -72,6 +142,12 @@ def problems(lines, models):
         m = re.fullmatch(r"(chr[0-9XY]+):(\d+)-(\d+)", c["region"])
         if not m or m.group(1) not in CONTIGS or int(m.group(2)) < 1 or int(m.group(2)) > int(m.group(3)):
             out.append(f"row {n}: region {c['region']} is not chrom:start-end on GRCh38")
+        elif regions is not None and c["model"] in regions:
+            r = span(c["region"])
+            if not any(k == "main" and ch == r[0] and s <= r[1] and r[2] <= e for ch, s, e, k in regions[c["model"]]):
+                out.append(f"row {n}: region {c['region']} is not inside the main region of {c['model']}")
+        if c["cross_check"] not in CROSS_CHECKS:
+            out.append(f"row {n}: cross_check {c['cross_check']}")
         if c["pscn_reliable"] not in ("yes", "no"):
             out.append(f"row {n}: pscn_reliable {c['pscn_reliable']}")
         if c["tag"] not in TAGS:
@@ -85,7 +161,7 @@ def problems(lines, models):
         if c["table"] in tables or c["table"] in ("hba", "paraphase"):
             out.append(f"row {n}: table {c['table']} is used twice")
         tables.add(c["table"])
-        for k in ("genes", "reading", "cross_check", "source"):
+        for k in ("genes", "reading", "source"):
             if not c[k].strip():
                 out.append(f"row {n}: empty {k}")
     if not any(r[:1] == ["SMN1.gz"] and len(r) == len(COLUMNS) and r[7] == "smn" for r in rows[1:]):
@@ -105,12 +181,15 @@ def main():
           [m for m in models if not m.endswith(".gz")])
     check("SMN1.gz and GBA.gz are on the list", {"SMN1.gz", "GBA.gz"} <= set(models))
     models = set(models)
+    regions = model_regions(MODELS)
 
     # 2. the catalog
     with open(CATALOG) as f:
         lines = f.readlines()
-    found = problems(lines, models)
+    found = problems(lines, models, regions)
     check("assets/paralog_loci.tsv: every row is valid", not found, "; ".join(found))
+    rows = table_rows(CATALOG)
+    check("the catalog has the SMN1 row and 36 more", len(rows) == 37, len(rows))
 
     # 3. controls: each planted fault is refused
     head = "\t".join(COLUMNS) + "\n"
@@ -118,6 +197,10 @@ def main():
     check("control: the SMN1 row alone is valid", not problems([head, smn], models), problems([head, smn], models))
     planted = {
         "a model not on the list (GBA1.gz)": "GBA1.gz\tGBA1\tchr1:155234452-155244699\tx\tno\tcarrier\tnone\tgba\ts\n",
+        "a model the data does not have (CYP21A2.gz)":
+            "CYP21A2.gz\tCYP21A2\tchr6:32038265-32041670\tx\tno\tcarrier\tnone\tcyp21a2\ts\n",
+        "a region outside its model's main region": "GBA.gz\tGBA1\tchr5:70951946-70951946\tx\tno\tcarrier\tnone\tgba\ts\n",
+        "an unknown cross_check": "GBA.gz\tGBA1\tchr1:155234452-155244699\tx\tno\tcarrier\tgauchian\tgba\ts\n",
         "a region on no GRCh38 contig": "GBA.gz\tGBA1\tchr1_alt:1-2\tx\tno\tcarrier\tnone\tgba\ts\n",
         "a region that ends before it starts": "GBA.gz\tGBA1\tchr1:20-10\tx\tno\tcarrier\tnone\tgba\ts\n",
         "a repeated table name": "GBA.gz\tGBA1\tchr1:155234452-155244699\tx\tno\tcarrier\tnone\tsmn\ts\n",
@@ -127,9 +210,35 @@ def main():
         "an unknown tag": "GBA.gz\tGBA1\tchr1:155234452-155244699\tx\tno\tcancer\tnone\tgba\ts\n",
     }
     for desc, row in planted.items():
-        check(f"control: {desc} is refused", bool(problems([head, smn, row], models)))
+        check(f"control: {desc} is refused", bool(problems([head, smn, row], models, regions)))
     check("control: a catalog without the SMN1 row is refused",
           bool(problems([head, "GBA.gz\tGBA1\tchr1:155234452-155244699\tx\tno\tcarrier\tnone\tgba\ts\n"], models)))
+
+    # 5. one owner per locus
+    cn_parts = cn_depth_parts(CN_LOCI)
+    check("bin/cn_loci.tsv has cn-depth rows to compare with (HBA, RHD among them)",
+          {"HBA", "RHD"} <= {x[0] for x in cn_parts}, sorted({x[0] for x in cn_parts}))
+    catalog_models = [r["model"] for r in rows]
+    found = owner_problems(catalog_models, regions, cn_parts, CN_DEPTH_EXEMPT)
+    check("no catalog model overlaps a cn-depth row of bin/cn_loci.tsv but the RHCE cross-check", not found,
+          "; ".join(found[:5]))
+    check("control: without the exemption RHCE's model is refused (it covers RHD)",
+          any("RHCE.gz" in x and "RHD" in x for x in owner_problems(catalog_models, regions, cn_parts, set())))
+    planted_regions = dict(regions, **{"HBAX.gz": [("chr16", 172000, 178000, "main")]})
+    check("control: a model over HBA1 and HBA2 is refused",
+          bool(owner_problems(["HBAX.gz"], planted_regions, cn_parts, CN_DEPTH_EXEMPT)))
+    rhce = next((r for r in rows if r["model"] == "RHCE.gz"), {})
+    check("the RHCE row says it cross-checks the depth engine, and does not list RHD",
+          rhce.get("cross_check") == "cn-depth" and "RHD" not in rhce.get("genes", "").split(","), rhce)
+    catalog_genes = {g for r in rows for g in r["genes"].split(",")}
+    cal = table_rows(CALLABILITY)
+    found = callability_problems(catalog_genes, cal)
+    check("every catalog gene assets/callability_genes.tsv lists has the owner parascopy", not found, "; ".join(found))
+    check("the callability catalog lists catalog genes (GBA1, C4A, AMY1C, SMN1 among them)",
+          {"GBA1", "C4A", "AMY1C", "SMN1"} <= {r["gene"] for r in cal if r["gene"] in catalog_genes})
+    planted_cal = [dict(r, owner=".") if r["gene"] == "C4A" else r for r in cal]
+    check("control: a catalog gene without the owner parascopy is refused",
+          bool(callability_problems(catalog_genes, planted_cal)))
 
     # 4. the report reader on step 35's tables
     sys.path.insert(0, os.path.join(REPO, "bin"))
