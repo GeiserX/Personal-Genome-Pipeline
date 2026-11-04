@@ -527,13 +527,15 @@ def psv_assess(row, b, counts):
     """A psv row's block (from assess) with its sites read. With the module
     total called, each site of PSV_MIN_READS reads or more gets the copies
     carrying the gene's base there (total x gene reads / gene and pseudogene
-    reads) and its ratio to the median of the sites. cyp21a2 copies is the
-    least of the sites. finding: deletion when the module total and the gene
-    copies are both under the usual (the 30 kb chimeric deletion leaves one
-    module and one gene copy fewer); conversion at the sites whose estimate
-    lies PSV_MARGIN or more under the others' count or under the usual; pseudogene_deletion when the module
-    total is under the usual with the gene kept everywhere; else none. Which
-    chromosome carries a change is never said."""
+    reads) and its ratio to the median of the sites. A site is low when its
+    estimate is more than PSV_MARGIN under the larger of the median's count
+    and the usual. cyp21a2 copies is the least count over the low sites, or
+    the median's count when none is low. finding: deletion when a site is low
+    and the module total under the usual (the 30 kb chimeric deletion leaves
+    one module and one gene copy fewer); conversion at the low sites when the
+    module total is kept; pseudogene_deletion when the module total is under
+    the usual with no low site; else none. Which chromosome carries a change
+    is never said."""
     sites = {}
     for name, *_ in row["_psv"]:
         g, p, o = counts.get(name, (0, 0, 0))
@@ -559,10 +561,12 @@ def psv_assess(row, b, counts):
     median = est[mid] if len(est) % 2 else (est[mid - 1] + est[mid]) / 2
     for s in read:
         s["ratio"] = s["estimate"] / median if median > 0 else None
-    b["copies"] = least = min(s["copies"] for s in read)
     floor = max(round(median), usual)
     conv = [name for name, s in sites.items() if s["estimate"] is not None and s["estimate"] < floor - PSV_MARGIN]
-    if least < usual and b["module_total"] < b["expected"]:
+    # Only a site past the margin lowers the count, so one noisy site never
+    # gives fewer copies than the finding says.
+    b["copies"] = min(sites[n]["copies"] for n in conv) if conv else round(median)
+    if conv and b["module_total"] < b["expected"]:
         b["finding"] = "deletion"
     elif conv:
         b.update(finding="conversion", conversion_sites=conv)

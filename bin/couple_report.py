@@ -764,7 +764,7 @@ def cmd_screen(a):
                 f += m
                 if txt.startswith("CYP21A2 not assessed"):
                     gaps.append("CYP21A2 deletion and conversions of %s: %s." % (s, txt))
-            elif cyp:
+            else:
                 gaps.append("CYP21A2 deletion and conversions of %s: no CYP21A2 table (step 35)." % s)
             if s in eh:
                 r = eh_findings(eh[s], genes)

@@ -960,6 +960,14 @@ def psv(cat, read):
     b = cyp_call(r, bed, pile)
     check("CYP21A2: a module fewer with CYP21A2 kept at every site is a pseudogene deletion, 2 copies",
           (b["copies"], b["finding"]) == (2, "pseudogene_deletion"), b)
+    # One noisy 3' site (V281L at 1.47, rounds to 1) is inside the 0.6 margin: it never
+    # makes a deletion of a pseudogene deletion, nor a lower count than the finding says.
+    for total, want in ((3, "pseudogene_deletion"), (4, "none")):
+        bed, pile = cyp_fixture(r, total, {"PSV_V281L": 1.47})
+        b = cyp_call(r, bed, pile)
+        est = b["sites"]["PSV_V281L"]["estimate"]
+        check(f"CYP21A2: module total {total}, one site at {est:.2f} (inside the margin): {want}, 2 copies",
+              1.4 < est < 1.5 and (b["copies"], b["finding"]) == (2, want), b)
     bed, pile = cyp_fixture(r, 4, {n: 1 for n in names})
     b = cyp_call(r, bed, pile)
     check("CYP21A2: one copy converted at every site, the module total kept: a conversion at all six",
@@ -1034,6 +1042,21 @@ def psv(cat, read):
             check("couple screen: a called table with an unknown finding stops the screen (exit 2)", got == "exit 2", got)
         check("couple screen: a CYP21A2 finding needs CYP21A2 in the carrier list",
               couple_report.cyp21a2_finding(tabs["deletion"], {})[0] == [] if os.path.exists(tabs["deletion"]) else False)
+        # A partner without a CYP21A2 table gets a gap line, also when no partner has one (step 39).
+        ped = os.path.join(t, "ped.tsv")
+        open(ped, "w").write("sample\tsex\tfather\tmother\tpartner\nA\tfemale\t.\t.\tB\nB\tmale\t.\t.\tA\n")
+        vcf = os.path.join(t, "none.vcf")
+        open(vcf, "w").write("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n")
+        for desc, extra, want in (("no partner has one", [], {"A", "B"}),
+                                  ("one partner has one", ["--cyp21a2", f"A={tabs['normal']}"], {"B"})):
+            od = os.path.join(t, "couple-" + str(len(extra)))
+            out = subprocess.run([sys.executable, os.path.join(REPO, "bin", "couple_report.py"), "screen",
+                                  "--pedigree", ped, "--genes", os.path.join(REPO, "assets", "carrier_genes.tsv"),
+                                  "--clinvar", f"A={vcf}", "--clinvar", f"B={vcf}", "--out-dir", od] + extra,
+                                 capture_output=True, text=True)
+            md = open(os.path.join(od, "couple_A_B.md")).read() if out.returncode == 0 else out.stderr
+            got = {s for s in "AB" if f"CYP21A2 deletion and conversions of {s}: no CYP21A2 table (step 35)." in md}
+            check(f"couple screen, {desc}: a gap line for each partner without a CYP21A2 table", got == want, (got, md[-600:]))
 
         # collect_summary: step 35's section carries the CYP21A2 table
         import collect_summary as cs

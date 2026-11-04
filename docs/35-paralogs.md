@@ -76,7 +76,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/paralogs/`.
 | `${SAMPLE}_smn_copy_number.tsv` | One row per region: `chrom`, `start`, `end`, `locus`, `agCN_filter`, `agCN`, `agCN_qual`, `psCN_filter`, `psCN`, `psCN_qual`, `homologous_regions`. A locus that was not assessed has one row over the catalog region (`chrom`, `start`, `end`), with `locus` (the model name), `agCN_filter` and `psCN_filter` (both `not assessed: <reason>`) and `.` in every other column |
 | `${SAMPLE}_<table>_copy_number.tsv` | The same, for every other catalog row (none in the catalog today) |
 | `${SAMPLE}_hba_copy_number.tsv` | `metric`, `value`: `status` (`called` or `not assessed`), `alpha_globin_genes`, `estimate`, `hba2_depth`, `hba1_depth`, `flank_left_depth`, `flank_right_depth`, `mapq0_share` (the part of the depth over the two genes from reads of mapping quality 0), `message` |
-| `${SAMPLE}_cyp21a2_psv.tsv` | `metric`, `value`: `status`, `cyp21a2_copies` (the least CYP21A2 copies over the sites read), `module_total` (CYP21A2 plus CYP21A1P copies), `expected_total` (4), `estimate`, `finding` (`none`, `deletion`, `conversion`, `pseudogene_deletion`), `conversion_sites`, one `psv_<site>` row per site (gene, pseudogene and other reads, copies, ratio to the other sites), `target_depth`, `control_depth`, `reason`, `reading` |
+| `${SAMPLE}_cyp21a2_psv.tsv` | `metric`, `value`: `status`, `cyp21a2_copies` (the least CYP21A2 copies over the low sites, else the median site's), `module_total` (CYP21A2 plus CYP21A1P copies), `expected_total` (4), `estimate`, `finding` (`none`, `deletion`, `conversion`, `pseudogene_deletion`), `conversion_sites`, one `psv_<site>` row per site (gene, pseudogene and other reads, copies, ratio to the other sites), `target_depth`, `control_depth`, `reason`, `reading` |
 | `${SAMPLE}_parascopy/<table>/` | Parascopy's own output for each catalog row (`smn/` for SMN1): `res.samples.bed.gz`, `res.paralog.bed.gz`, `psvs.vcf.gz` and the rest ([described upstream](https://github.com/tprodanov/parascopy/blob/main/docs/cn_output.md)) |
 
 ## Runtime
@@ -158,10 +158,10 @@ The `finding`:
 
 | Finding | When | Reading |
 |---|---|---|
-| `none` | the module total is 4 or more and every site has the copies of the others, 2 or more | no sign of the deletion or of a conversion at the six sites |
-| `deletion` | the module total is under 4 and the least site count under 2 | the pattern of the 30 kb chimeric deletion, or of a CYP21A2 deletion |
-| `conversion` | a site's estimate lies 0.6 copies or more under the others' count (or under 2) | a possible conversion at that site; `conversion_sites` names it |
-| `pseudogene_deletion` | the module total is under 4 with CYP21A2 kept at every site | a CYP21A1P deletion, common and not a carrier finding |
+| `none` | the module total is 4 or more and no site is low | no sign of the deletion or of a conversion at the six sites |
+| `deletion` | the module total is under 4 and a site is low | the pattern of the 30 kb chimeric deletion, or of a CYP21A2 deletion |
+| `conversion` | the module total is 4 or more and a site is low: its estimate is more than 0.6 copies under the larger of the median site's count and 2 | a possible conversion at that site; `conversion_sites` names it |
+| `pseudogene_deletion` | the module total is under 4 and no site is low | a CYP21A1P deletion, common and not a carrier finding |
 
 The ratio of a site is its estimate over the median of the sites, so one copy converted out of two reads 0.5. A site needs 30 reads (CYP21A2 and CYP21A1P bases together); with no site there the row is not assessed (`psv_low_depth`). Which chromosome carries a change is never said, and a change away from the six sites is not seen. The row has no mapping quality 0 check yet, as HBA has: a BAM from an aligner that leaves out the reads fitting both genes (novoalign by default) would give a low module total, which can read as a deletion. Use minimap2 or BWA-MEM. A PacBio HiFi BAM gets CYP21A2 from Paraphase (step 35b) instead, which phases the copies.
 
