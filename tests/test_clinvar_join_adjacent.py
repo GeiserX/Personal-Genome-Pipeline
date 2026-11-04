@@ -9,8 +9,10 @@ awk, mawk):
      0/1 and 1/0 are the same het call;
   2. phased records are joined only in the same phase set (FORMAT/PS) with
      the same GT: other phase sets and the other haplotype are not joined;
-  3. a het next to a hom, a half call (./1), overlapping records and records
-     11 bp apart are not joined; 10 bp apart are;
+  3. a het next to a hom, an unphased half call (./1), overlapping records
+     and records 11 bp apart are not joined; 10 bp apart are; a phased half
+     call (1|.) joins a record with its ALT on the same haplotype and keeps
+     "." on the other;
   4. a single SNV gives no combined record;
   5. finish drops a combined record whose part disagrees with the reference;
   6. the combined records come out in POS order;
@@ -154,7 +156,15 @@ def awk_checks(name, awk, work):
     out, raw = join(awk, [rec(30000203, "T", "A", "0/1"), rec(30000208, "T", "C", "1/1")])
     check(f"{name}: a het next to a hom: not joined", out == [], raw)
     out, raw = join(awk, [rec(30000203, "T", "A", "./1"), rec(30000208, "T", "C", "./1")])
-    check(f"{name}: half calls (./1): not joined", out == [], raw)
+    check(f"{name}: unphased half calls (./1): not joined", out == [], raw)
+    out, raw = join(awk, [rec(30000203, "T", "A", "1|.", 100), rec(30000208, "T", "C", "1|0", 100)])
+    check(f"{name}: a phased half call (1|.) and 1|0 in one phase set: joined, '.' kept on the other haplotype",
+          out is not None and [core(r) for r in out] == [("30000203", "TGTAAT", "AGTAAC", "GT:PS", "1|.:100")], raw)
+    out, raw = join(awk, [rec(30000203, "T", "A", ".|1", 100), rec(30000208, "T", "C", ".|1", 100)])
+    check(f"{name}: two phased half calls on one haplotype: joined",
+          out is not None and [core(r) for r in out] == [("30000203", "TGTAAT", "AGTAAC", "GT:PS", ".|1:100")], raw)
+    out, raw = join(awk, [rec(30000203, "T", "A", "1|.", 100), rec(30000208, "T", "C", "0|1", 100)])
+    check(f"{name}: a phased half call and an ALT on the other haplotype: not joined", out == [], raw)
     out, raw = join(awk, [rec(30000203, "TGT", "T", "0/1"), rec(30000204, "G", "A", "0/1")])
     check(f"{name}: overlapping records: not joined", out == [], raw)
     out, raw = join(awk, [rec(30000203, "T", "A", "0/1"), rec(30000213, "G", "T", "0/1")])
