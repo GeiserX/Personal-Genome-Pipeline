@@ -51,8 +51,12 @@ expect "an unknown entry fails" 1 nosuch
 
 key=$("$RUN" --data-key hla)
 pin=$(sed -n 's/^HLA_DB_RELEASE=\${HLA_DB_RELEASE:-\(.*\)}$/\1/p' "${REPO}/scripts/lib/common.sh")
-if [[ "$key" == e2e-data-hla-*-"${pin}"-gencode[0-9]*-* ]]; then echo "PASS: the hla key names the pin ${pin}: ${key}"
-else echo "FAIL: the hla key does not name the pin ${pin}: ${key}"; failed=1; fi
+other=$(sed -n 's/^OTHER=//p' "${REPO}/tests/e2e/bash-step-08-hla.sh")
+gencode=$(sed -n 's/^GENCODE_RELEASE=//p' "${REPO}/scripts/lib/common.sh")
+if [ -n "$other" ] && [ -n "$pin" ] && [ -n "$gencode" ] \
+   && [[ "$key" =~ ^e2e-data-hla-${other//./\\.}-${pin//./\\.}-gencode${gencode}-[0-9a-f]{16}$ ]]; then
+  echo "PASS: the hla key names ${other}, ${pin}, GENCODE ${gencode} and a hash: ${key}"
+else echo "FAIL: the hla key does not match its inputs (${other:-?} ${pin:-?} ${gencode:-?}): ${key}"; failed=1; fi
 if "$RUN" --data-key pgs | grep -qE '^e2e-data-pgs-[0-9a-f]{16}$'; then echo "PASS: the pgs key is a hash"
 else echo "FAIL: the pgs key"; failed=1; fi
 exit "$failed"

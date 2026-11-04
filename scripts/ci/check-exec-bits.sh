@@ -10,7 +10,10 @@
 #
 # A helper counts as called when its file name appears in main.nf,
 # workflows/*.nf or modules/**/*.nf as a word that no "/" or word character
-# comes before (`bin/foo.py` in a comment is a path, not a call). The mode is
+# comes before (`bin/foo.py` in a comment is a path, not a call). A bare name
+# after an interpreter (`python3 foo.py`) or in a comment counts as a call
+# too: the guard asks for a bit it may not need rather than tell a mention
+# from a call, since a missing bit only shows inside a real task. The mode is
 # the one git records (git ls-files -s), which is what a checkout gets.
 # ROOT is a git work tree, by default the checkout this script is in.
 set -euo pipefail

@@ -434,11 +434,20 @@ data_fetch() (
       rm -rf "$d" && mkdir -p "$d" || exit 1
       read -r other pin <<< "$(hla_releases)"
       [ -n "$pin" ] || exit 1
+      # Each install is tried again as a whole: install_data_file reads
+      # hla.dat.zip's md5 from md5checksum.txt in one request, outside fetch's
+      # tries. What an earlier try installed is kept.
       ( GENOME_DIR=$d
         unset SAMPLE
-        HLA_DB_RELEASE=$other install_data_file hla_dat \
-          && HLA_DB_RELEASE=$pin install_data_file hla_dat \
-          && install_data_file gencode_genes && install_data_file gencode_exons ) || exit 1
+        for job in "$other hla_dat" "$pin hla_dat" "$pin gencode_genes" "$pin gencode_exons"; do
+          read -r rel name <<< "$job"
+          for ((t = 1; ; t++)); do
+            HLA_DB_RELEASE=$rel install_data_file "$name" && break
+            [ "$t" -lt 3 ] || exit 1
+            echo "Data cache: installing ${name} (${rel}) failed, try ${t} of 3; again in ${FETCH_WAIT} s" >&2
+            sleep "$FETCH_WAIT"
+          done
+        done ) || exit 1
       (cd "$d" && find . -type f ! -name 'SHA256SUMS*' ! -name '*.part' | LC_ALL=C sort | xargs sha256sum) > "${d}/SHA256SUMS.tmp" \
         && mv "${d}/SHA256SUMS.tmp" "${d}/SHA256SUMS" && data_ok hla || exit 1 ;;
     pgs)
@@ -484,7 +493,7 @@ OFFLINE=(env http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_P
 # and every file is in place, after a control shows the block holds.
 data_seed() {
   local n dest flag f t placed=true
-  CASE_ENV=()
+  CASE_ENV=() CASE_CONTROL_FAILED=false
   [ -n "$DATA_CACHE" ] || return 0
   read -r n dest flag <<< "$(data_name "$1")"
   [ -n "$n" ] || return 0
@@ -511,7 +520,8 @@ data_seed() {
   out=$("${OFFLINE[@]}" curl -fsS --max-time 20 -o /dev/null https://raw.githubusercontent.com/ 2>&1 || true)
   if ! grep -q '127\.0\.0\.1.* 9\b' <<< "$out"; then
     echo "$out"
-    echo "::error::Data cache: a request under the network block did not fail at the closed port; ${1%.sh} runs with the network"
+    echo "::error::Data cache: a request under the network block did not fail at the closed port; ${1%.sh} runs with the network and counts as failed"
+    CASE_CONTROL_FAILED=true
     return 0
   fi
   echo "Data cache: control passed (a request under the block failed); ${1%.sh} runs with every HTTP(S) request sent to a closed port"
@@ -601,8 +611,11 @@ for c in "${CASES[@]}"; do
   set -e
   data_drop "$c"
   echo "::endgroup::"
+  # A case whose network block could not be shown to hold proves nothing offline.
+  [ "$rc" -eq 0 ] && $CASE_CONTROL_FAILED && rc=-1
   case "$rc" in
     0)   result=pass ;;
+    -1)  result="FAIL (network-block control)"; failed=$((failed + 1)) ;;
     124) result="FAIL (timeout ${CASE_TIMEOUT}s)"; failed=$((failed + 1)) ;;
     *)   result="FAIL (exit ${rc})"; failed=$((failed + 1)) ;;
   esac
