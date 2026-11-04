@@ -7,7 +7,7 @@ Determines your HLA genotype (Human Leukocyte Antigen) from WGS data — the imm
 HLA alleles determine transplant compatibility, predisposition to autoimmune diseases, and severe adverse drug reactions (e.g., HLA-B*57:01 and abacavir, HLA-B*58:01 and allopurinol).
 
 ## Tool
-- **T1K** v1.0.9 — efficient HLA genotyping from sequencing reads
+- **T1K** v1.0.10 — efficient HLA genotyping from sequencing reads
 
 ## Docker Image
 - `T1K_IMAGE`
