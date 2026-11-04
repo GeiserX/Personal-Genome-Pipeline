@@ -243,11 +243,11 @@ def main():
               and 'badge-yellow">fail<' in html and "<th>Primary caller</th>" in html, html[-3000:])
         os.makedirs(os.path.join(sd, "cyrius"))
         with open(os.path.join(sd, "cyrius", "S_cyp2d6.tsv"), "w") as f:
-            f.write("Sample\tGenotype\tFilter\nS\t*1/*2\tLowQ_high_CN\n")
+            f.write("Sample\tGenotype\tFilter\nS\tfixture_call\tLowQ_high_CN\n")
         s = collect_summary.collect("S", sd)
         cyp = [x for x in s["sections"]["locityper"]["data"]["loci"] if x["locus"] == "CYP2D6"][0]
         check("5. a Cyrius call without Filter PASS is shown as not usable, as the CYP2D6 block does",
-              "Cyrius (step 21): *1/*2 (not usable: Filter LowQ_high_CN)" in cyp["primary"], cyp)
+              "Cyrius (step 21): fixture_call (not usable: Filter LowQ_high_CN)" in cyp["primary"], cyp)
         os.makedirs(os.path.join(sd, "logs"))
         import time
         with open(os.path.join(sd, "logs", "run_status.tsv"), "w") as f:
