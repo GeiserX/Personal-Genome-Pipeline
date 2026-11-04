@@ -793,6 +793,7 @@ CHAPTERS = (
         ("cpic", "CPIC recommendations", ("cpic",)),
         ("cyp2d6", "pypgx, Cyrius and CYP2D6", ("pypgx", "cyrius")),
         ("hla", "HLA typing", ("hla",)),
+        ("locityper", "Locityper second opinion", ("locityper",)),
     )),
     ("ancestry", "Ancestry", "Where do my ancestors come from?", (
         ("ancestry-fine", "Fine-grained ancestry", ("ancestry_fine",)),
@@ -1077,6 +1078,12 @@ def text_report(s):
             for g, line in kir_lines(kir):
                 w(f"    {g:<8} {line}" if g else f"    {line}")
             w(f"  {KIR_NOTE}")
+        w("")
+
+    if head("locityper", "Locityper Second Opinion at Hard Loci (step 53)"):
+        for line in locityper_lines(S["locityper"]["data"]):
+            w(f"  {line}")
+        w(f"  {LOCITYPER_NOTE}")
         w("")
 
     if head("prs", "Polygenic Risk Scores"):
@@ -1781,6 +1788,33 @@ def lpa_lines(d):
     return out
 
 
+LOCITYPER_NOTE = ("A second opinion beside the primary caller, never the call itself. Locityper (Prodanov et al. 2025, "
+                  "Nat Genet, PMID 41107551) picks the two haplotypes of the HPRC pangenome panel that best explain the "
+                  "reads at each locus; it names haplotypes of panel people (<sample>.1 or .2), not alleles, so the "
+                  "two callers are shown side by side and not compared. Filter: the authors' HLA and KIR benchmark "
+                  "filter (no warning, weighted distance of 30 or less, fewer than 1000 or 20% unexplained reads). "
+                  "Every column: locityper/<sample>_locityper.tsv.")
+
+
+def locityper_text(x):
+    """One locus of step 53: the two haplotypes with quality and filter, or why there is no call."""
+    if x["status"] != "called":
+        return f"not called: {x['reason']}"
+    why = f": {x['reason']}" if x["filter"] == "fail" and x["reason"] != "." else ""
+    return (f"{x['haplotype_1']} + {x['haplotype_2']} (quality {x['quality']}, {x['unexplained_reads']} of "
+            f"{x['total_reads']} reads unexplained, weighted distance {x['weighted_distance']}; filter {x['filter']}{why})")
+
+
+def locityper_lines(d):
+    """Step 53's lines: per locus Locityper's call, then the primary caller's."""
+    out = [f"Loci called: {d.get('called', 0)} of {len(d.get('loci', []))}; passing the authors' filter: "
+           f"{d.get('passed', 0)}"]
+    for x in d.get("loci", []):
+        out.append(f"{x['locus']:<9} Locityper: {locityper_text(x)}")
+        out.append(f"{'':<9} primary:   {x.get('primary', '.')}")
+    return out
+
+
 def vntyper_lines(d):
     """Step 52's reading: the result, the call, the depth with its
     sensitivity, and the advice; the lines of the text section and the card."""
@@ -2343,6 +2377,19 @@ def html_report(s, index=None):
         hla_body += [stat(g, E(line)) if g else small_note(line) for g, line in kir_lines(hla["kir"])]
         hla_body.append(small_note(KIR_NOTE))
     a("hla", card(S["hla"], "HLA Typing", hla_body))
+    if S.get("locityper", MISSING)["state"] != "missing":
+        lt = S["locityper"]
+        body = []
+        if lt["state"] in ("ok", "stale"):
+            d = lt["data"]
+            body.append(stat("Loci called", E(f"{d['called']} of {len(d['loci'])} ({d['passed']} pass the filter)")))
+            body.append("    <table><tr><th>Locus</th><th>Locityper</th><th>Filter</th><th>Primary caller</th></tr>"
+                        + "".join(f"<tr><td>{E(x['locus'])}</td><td>{E(locityper_text(x))}</td>"
+                                  f"<td>{badge(x['filter'], {'pass': 'green', 'fail': 'yellow'}.get(x['filter'], 'gray'))}</td>"
+                                  f"<td>{E(x.get('primary', '.'))}</td></tr>" for x in d["loci"])
+                        + "</table>")
+            body.append(small_note(LOCITYPER_NOTE))
+        a("locityper", card(lt, "Locityper Second Opinion at Hard Loci", body, full=True))
 
     m, dl, cn, sv = (S[k]["data"] for k in ("manta", "delly", "cnvpytor", "sv_consensus"))
     sv_body = [stat("Manta SVs (total / PASS)", f"{m.get('total', 'N/A')} / {m.get('pass', 'N/A')}"),
