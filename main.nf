@@ -853,7 +853,8 @@ workflow {
                      "the couple carrier screen reads each partner's ClinVar hits, so it does not run."
         }
         def ch_couple_outputs = couple_ids && tools_list.contains('clinvar') ? Channel.empty().mix(
-            PGX.out.clinvar_dir, SV.out.delly_vcf, BAM_ANALYSIS.out.expansion_vcf, BAM_ANALYSIS.out.smn_copy_number
+            PGX.out.clinvar_dir, SV.out.delly_vcf, BAM_ANALYSIS.out.expansion_vcf, BAM_ANALYSIS.out.smn_copy_number,
+            BAM_ANALYSIS.out.cn_intervals, SV.out.cnvpytor_vcf
         ).filter { meta, f -> couple_ids.contains(meta.id) }.map { meta, f -> f } : Channel.empty()
         FAMILY(
             ch_gvcf.filter { meta, g, idx -> family_ids.contains(meta.id) },
@@ -1118,6 +1119,7 @@ workflow {
         .join(CLINICAL.out.ancestry_fine_png.map  { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.coverage.map       { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.callability.map    { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.cn_intervals.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.sample_qc.map      { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.telomere_results.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.mito_vcf.map       { meta, f -> [meta.id, f] }, remainder: true)
