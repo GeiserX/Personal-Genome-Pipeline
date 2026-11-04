@@ -67,8 +67,10 @@ Both reports have an Ancient Populations section: the ten nearest groups, the ca
 
 ## Runtime
 
-- Setup: the 7.1 GB download, then convertf and two smartpca runs over the whole release. smartpca holds the packed genotypes of every person in memory, about 7 GB, so the setup container gets 12 GB.
-- Step 44: minutes. bcftools reads the gVCF at the panel's sites through its index, and smartpca works on about 820 people plus you; it gets 8 GB.
+Measured on public HG002 by the `ancient-footprint` job of `public-evidence.yml`, on a GitHub runner with 4 CPUs, 16 GB of RAM and `THREADS=4` (run 41621716972, 2026-11-03):
+
+- Setup: 61 minutes, the 7.1 GB download included, then convertf and two smartpca runs over the whole release. smartpca holds the packed genotypes of every person in memory. The highest anonymous memory of any setup container, convertf included, was 7.6 GiB (sampled every 2 seconds; the sampler does not record which container). The container's whole charge, file cache included, reached 11.6 GiB of its 12 GiB limit; the kernel drops that cache before it kills a task, and no swap was used. Used disk grew by 9.6 GiB at most while it ran; the installed panel keeps 1.05 GiB (1,150,106 sites on GRCh38, 819 present-day and 10,580 ancient people).
+- Step 44: 7 minutes. bcftools reads the gVCF at the panel's sites through its index, and smartpca works on the 819 people plus you; it gets 8 GB and used 1.2 GiB. The gVCF the job builds from GIAB's HG002 genotypes gave 1,133,951 of the 1,150,106 sites.
 
 ## Notes
 

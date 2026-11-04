@@ -657,6 +657,12 @@ One SMN1 copy suggests SMA carrier status; two do not rule it out (two copies on
 
 Expect many calls: a genome carries about 1,200 such insertions, nearly all common and harmless. Read the catalog first. **Seen** means an insertion of the same element was called inside the site's window; one copy of the FKTN or BBS1 insertion is carrier status for a recessive condition, and the TAF1 insertion on a male's single X is what causes X-linked dystonia-parkinsonism. **Not seen** is not proof of absence: short reads find an SVA's edges, not its body. **Not callable** means too few reads there (under 10x) to tell. Confirm anything that matters in a clinical laboratory. [Step 50](50-mei.md) explains the columns.
 
+## Ancient Populations (Step 44, opt-in)
+
+**Where to look:** `${SAMPLE}/ancient/${SAMPLE}_ancient.tsv`, the 20 ancient groups nearest to you on a PCA of present-day West Eurasians, with their dates, places and number of people (`n`), and `${SAMPLE}/ancient/${SAMPLE}_ancient_pca.svg`, the plot with you marked.
+
+Closeness on the PCA is genetic similarity, not descent: being near an ancient group does not mean you descend from those people. A group with `n` of 1 or 2 has a noisy position. The axes describe West Eurasia only, so a genome with most of its ancestry from elsewhere lands at the edge and its nearest groups say little. `sites_used` in `${SAMPLE}_ancient_info.tsv` tells how many panel sites your gVCF covered; a whole genome covers nearly all of them (1,133,951 of the 1,150,106 that lift to GRCh38, for a gVCF built from the public GIAB HG002 genotypes). [Step 44](44-ancient.md) explains the columns.
+
 ## Polygenic Risk Scores (Step 25)
 
 **Where to look:** `${SAMPLE}/prs/${SAMPLE}_prs_summary.tsv`, one row per condition, and the PRS section of the report.
