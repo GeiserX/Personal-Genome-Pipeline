@@ -24,9 +24,11 @@
 #   - parity: step 38 and the pipeline write the same relationships,
 #     inheritance table, segments, DNA Painter CSV, de novo list and joint
 #     and phased records;
-#   - a single-sample run without --pedigree publishes the same files as main
-#     does, after dropping the lines that hold a date or a command line; a
-#     planted difference shows that the comparison sees one.
+#   - a single-sample run of HG002 without --pedigree publishes the same
+#     files, with the same content, as the trio run publishes for HG002 (same
+#     commit, same tools), after dropping the lines that hold a date or a
+#     command line: --pedigree adds the family folder and changes nothing
+#     else. A planted difference shows that the comparison sees one.
 . "$(dirname "$0")/lib.sh"
 
 command -v nextflow >/dev/null || { fail "nextflow is not on PATH"; finish; }
@@ -229,6 +231,16 @@ check "nothing was phased or reported after the stop" \
   test ! -e "${F}/trio_swapped/family.phased.vcf.gz" -a ! -e "${F}/trio_swapped/family_report.md"
 
 # --- 4. The pipeline ----------------------------------------------------------------------------
+# The tools of the trio runs and of the single-sample run of section 5. Not
+# clinvar: with it and the partners HG003 and HG004 the trio run would also
+# run the couple carrier screen, which case couple-carrier-1 covers.
+NF_TOOLS=(--tools roh)
+# samplesheet_row SAMPLE [GVCF]: the sample as a VCF row with its gVCF.
+samplesheet_row() {
+  local g=${2:-${F}/$1/vcf/$1.g.vcf.gz}
+  printf '%s,%s,%s,%s,%s,%s\n' "$1" "${F}/$1/vcf/$1.vcf.gz" "${F}/$1/vcf/$1.vcf.gz.tbi" "$g" "${g}.tbi" "${SEX[$1]}"
+}
+
 # nf_family NAME PEDIGREE [HG004_GVCF]: the trio as VCF rows with their gVCFs.
 nf_family() {
   local name=$1 ped=$2 hg004=${3:-${F}/HG004/vcf/HG004.g.vcf.gz} dir="${CASE_TMP}/$1" s g
@@ -238,14 +250,13 @@ nf_family() {
   for s in HG002 HG003 HG004; do
     g="${F}/${s}/vcf/${s}.g.vcf.gz"
     [ "$s" = HG004 ] && g=$hg004
-    printf '%s,%s,%s,%s,%s,%s\n' "$s" "${F}/${s}/vcf/${s}.vcf.gz" "${F}/${s}/vcf/${s}.vcf.gz.tbi" "$g" "${g}.tbi" "${SEX[$s]}" \
-      >> "${dir}/samplesheet.csv"
+    samplesheet_row "$s" "$g" >> "${dir}/samplesheet.csv"
   done
   OUT="${dir}/out"
   echo "+ nextflow run main.nf (${name}) --pedigree ${ped##*/}"
   ( cd "$dir" && nextflow run "${REPO}/main.nf" -profile docker -ansi-log false \
       -work-dir "${F}/nfwork" --input "${dir}/samplesheet.csv" \
-      --reference "${F}/reference/${REF_NAME}.fasta" --tools roh \
+      --reference "${F}/reference/${REF_NAME}.fasta" "${NF_TOOLS[@]}" \
       --pedigree "$ped" --somalier_sites "$SITES" \
       --outdir "$OUT" --max_cpus 4 --max_memory 14.GB ) > "${dir}/run.log" 2>&1
   RC=$?
@@ -256,6 +267,7 @@ nf_family() {
 
 nf_family clean "${F}/pedigree.tsv"
 check_eq "pipeline, the trio: exit" "$RC" 0
+TRIO_OUT=$OUT
 NF="${OUT}/family"
 cmp_items=(relationships.tsv HG002_inheritance.tsv.gz HG002_segments.tsv HG002_dnapainter.csv de_novo.tsv)
 for f in "${cmp_items[@]}"; do
@@ -272,10 +284,13 @@ check "the pipeline published somalier's tables under family/somalier" test -s "
 
 nf_family swapped "${F}/pedigree_swapped.tsv"
 check "pipeline, HG002 and HG003 swapped: the run stops (exit ${RC})" test "$RC" -ne 0
-check "FAMILY_CHECK is the task that failed" has "FAMILY:FAMILY_CHECK" "$(cat "$LOG")"
+# Both read from files, never from the console: Nextflow's console shows only
+# the tail of a failed task's stderr, and in one run the task's stdout lines
+# overwrote the start of it there, so the ERROR lines were gone. The run's
+# .nextflow.log names the failed process in full.
+check "FAMILY_CHECK is the task that failed (.nextflow.log)" \
+  grep -qE "Error executing process > '([A-Za-z_]+:)*FAMILY:FAMILY_CHECK" "${CASE_TMP}/swapped/.nextflow.log"
 # The pair message, read from the failed FAMILY_CHECK task's own .command.err.
-# The console's copy of it is not reliable: in one run the task's stdout lines
-# overwrote the start of its stderr there, and the ERROR lines were gone.
 FC_ERR=""
 for d in "${F}"/nfwork/*/*/; do
   grep -q 'family_report.py check' "${d}.command.sh" 2>/dev/null || continue
@@ -312,7 +327,7 @@ echo "${DN:-no row}"
 check "the planted site is a de novo candidate of HG002" test -n "$DN"
 check_eq "with both parents homozygous reference" "$(cut -f7,8 <<< "$DN" | cut -d: -f1 | tr '\t' ' ')" "0/0 0/0"
 
-# --- 5. A single-sample run is what main publishes ---------------------------------------------
+# --- 5. A single-sample run is what the trio run publishes for the sample --------------------
 # norm DIR: one line per published file (outside pipeline_info), its path and
 # the md5 of its text without the lines that hold a date or a command line.
 # An index (.tbi, .csi) is listed by name only: it holds byte offsets into the
@@ -326,41 +341,33 @@ norm() {
       esac
     done )
 }
-MAIN="${CASE_TMP}/main"
-rm -rf "$MAIN"
-mkdir -p "$MAIN"
-if git -C "$REPO" fetch -q --depth 1 https://github.com/GeiserX/OwnGenome.git main 2>"${CASE_TMP}/fetch.log"; then
-  git -C "$REPO" archive FETCH_HEAD | tar -x -C "$MAIN"
-fi
-check "main's pipeline is checked out" test -s "${MAIN}/main.nf"
-single() {
-  local tree=$1 dir="${CASE_TMP}/single-$2"
-  rm -rf "$dir"
-  mkdir -p "$dir"
-  printf 'sample,vcf,vcf_index,sex\nHG002,%s,%s,male\n' "${F}/HG002/vcf/HG002.vcf.gz" "${F}/HG002/vcf/HG002.vcf.gz.tbi" > "${dir}/samplesheet.csv"
-  ( cd "$dir" && nextflow run "${tree}/main.nf" -profile docker -ansi-log false -work-dir "${dir}/work" \
-      --input "${dir}/samplesheet.csv" --reference "${F}/reference/${REF_NAME}.fasta" --tools roh,clinvar \
-      --clinvar "${G0}/clinvar/clinvar_pathogenic_chr.vcf.gz" --clinvar_index "${G0}/clinvar/clinvar_pathogenic_chr.vcf.gz.tbi" \
-      --outdir "${dir}/out" --max_cpus 4 --max_memory 14.GB ) > "${dir}/run.log" 2>&1
-  SRC=$?
-  grep -vE 'Pulling|Waiting|Verifying|Download complete|Pull complete|Already exists' "${dir}/run.log" | tail -n 5
-  norm "${dir}/out" > "${dir}/files.txt"
-}
-single "$MAIN" main
-check_eq "main, one sample, no --pedigree: exit" "$SRC" 0
-single "$REPO" head
-check_eq "this branch, one sample, no --pedigree: exit" "$SRC" 0
-check_ge "files the single-sample run publishes" "$(wc -l < "${CASE_TMP}/single-head/files.txt" | tr -d ' ')" 3
-# A file main does not publish yet is a new output, not a change: compare only
-# the files main publishes, so a missing or changed one still fails.
-check "a single-sample run publishes every file main publishes, with the same content" \
-  diff "${CASE_TMP}/single-main/files.txt" <(awk 'NR == FNR {keep[$1]; next} $1 in keep' "${CASE_TMP}/single-main/files.txt" "${CASE_TMP}/single-head/files.txt")
-check "no family/ folder without --pedigree" test ! -e "${CASE_TMP}/single-head/out/family"
-F1=$(awk 'NR == 1 {print $1}' "${CASE_TMP}/single-head/files.txt")
-cp -r "${CASE_TMP}/single-head/out" "${CASE_TMP}/single-planted"
+# The same commit both times, so a pull request that changes a single-sample
+# output on purpose changes it in both runs alike.
+SINGLE="${CASE_TMP}/single"
+rm -rf "$SINGLE"
+mkdir -p "$SINGLE"
+{ echo 'sample,vcf,vcf_index,gvcf,gvcf_index,sex'; samplesheet_row HG002; } > "${SINGLE}/samplesheet.csv"
+( cd "$SINGLE" && nextflow run "${REPO}/main.nf" -profile docker -ansi-log false -work-dir "${F}/nfwork" \
+    --input "${SINGLE}/samplesheet.csv" --reference "${F}/reference/${REF_NAME}.fasta" "${NF_TOOLS[@]}" \
+    --outdir "${SINGLE}/out" --max_cpus 4 --max_memory 14.GB ) > "${SINGLE}/run.log" 2>&1
+check_eq "one sample, no --pedigree: exit" "$?" 0
+grep -vE 'Pulling|Waiting|Verifying|Download complete|Pull complete|Already exists' "${SINGLE}/run.log" | tail -n 5
+# HG002's folder only: a file at the top of --outdir may sum up every sample.
+norm "${SINGLE}/out" | grep '^\./HG002/' > "${SINGLE}/files.txt"
+norm "$TRIO_OUT" > "${CASE_TMP}/trio-files.txt"
+check_ge "files the single-sample run publishes for HG002" "$(wc -l < "${SINGLE}/files.txt" | tr -d ' ')" 2
+# The trio run publishes more (HG003, HG004, family/): compare the files the
+# single-sample run publishes, so a missing or changed one fails.
+check "the trio run publishes every file the single-sample run does for HG002, with the same content" \
+  diff "${SINGLE}/files.txt" <(awk 'NR == FNR {keep[$1]; next} $1 in keep' "${SINGLE}/files.txt" "${CASE_TMP}/trio-files.txt")
+check "no family/ folder without --pedigree" test ! -e "${SINGLE}/out/family"
+F1=$(awk '$2 != "index" {print $1; exit}' "${SINGLE}/files.txt")
+rm -rf "${CASE_TMP}/single-planted"
+cp -r "${SINGLE}/out" "${CASE_TMP}/single-planted"
 echo "planted" >> "${CASE_TMP}/single-planted/${F1#./}"
-norm "${CASE_TMP}/single-planted" > "${CASE_TMP}/single-planted.txt"
+norm "${CASE_TMP}/single-planted" | grep '^\./HG002/' > "${CASE_TMP}/single-planted.txt"
 check "the comparison sees a planted difference (a line added to ${F1})" \
-  sh -c "! diff -q '${CASE_TMP}/single-head/files.txt' '${CASE_TMP}/single-planted.txt' > /dev/null"
+  bash -c '! diff -q "$1" <(awk "NR == FNR {keep[\$1]; next} \$1 in keep" "$1" "$2") > /dev/null' \
+  _ "${CASE_TMP}/single-planted.txt" "${CASE_TMP}/trio-files.txt"
 in_e2e rm -rf /w/genome-family
 finish
