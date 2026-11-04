@@ -1335,3 +1335,4 @@ workflow {
             }.join('')
     }
 }
+// demo of a main.nf change for the e2e scope
