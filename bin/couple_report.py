@@ -241,8 +241,10 @@ def finding(gene, text, copies):
 
 def zygosity(gt, chrom, sex, par):
     """het, hom, hemizygous, or None (no alt allele)."""
-    a = [x for x in re.split(r"[/|]", gt) if x not in (".", "")]
-    alt = [x for x in a if x != "0"]
+    # A '.' allele still counts in the ploidy: step 06 splits a GT 1/2 record
+    # into ./1 halves, and each half is one copy, never hom.
+    a = [x for x in re.split(r"[/|]", gt) if x != ""]
+    alt = [x for x in a if x not in ("0", ".")]
     if not alt:
         return None
     if chrom in ("chrX", "chrY") and sex == "male" and not par:
@@ -279,7 +281,10 @@ def clinvar_findings(path, genes, sex, par, aside=None):
                 continue
             if g in genes:
                 ident = "" if r[2] in (".", "") else ", ClinVar %s" % r[2]
-                text = "%s:%d %s>%s %s, %s, %s%s" % (h["chrom"], h["pos"], h["ref"], h["alt"], z,
+                # A split half call counts as het (one copy) but reads as the other reports word it.
+                words = ("one copy, other copy not called ref (%s)" % gt
+                         if z == "het" and re.fullmatch(r"[1-9][/|]\.|\.[/|][1-9]", gt) else z)
+                text = "%s:%d %s>%s %s, %s, %s%s" % (h["chrom"], h["pos"], h["ref"], h["alt"], words,
                                                      h["significance"], stars_text(h["stars"]), ident)
                 out.append(finding(g, text, 1 if z == "het" else 2))
     return out, total

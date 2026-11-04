@@ -19,6 +19,12 @@ two exons, one SNV in the first exon near its end:
   and the output table, --skip, a contig the BAM lacks, an indel hit, and a
   control: with ALT_SHARE_MIN above 1 the spliced fixture is not flagged, so
   the flagged check depends on the threshold.
+  --construct: the planted SNV listed as a construct site gets its name in
+  the construct_site column and a KNOWN CONSTRUCT SITE line with its counts
+  on the spliced fixture (flagged), on the genomic one (clear, the line is
+  still printed) and with --skip; without --construct there is no line.
+  Part 1 also reads assets/construct_variants.tsv: its ten rows, each a
+  GRCh38 position on a chr contig with plain bases.
 
 Part 2 needs pysam. Without it on the host, the test runs part 2 in
 PYPGX_IMAGE (versions.env) through docker, as step 06 runs the script.
@@ -183,6 +189,25 @@ def part1():
     expect("verdict: the flag text", cc.verdict(9, 9, 0, 0)[1],
            "possible cDNA/transgene contamination: check the reads")
 
+    cat = cc.read_construct(os.path.join(REPO, "assets", "construct_variants.tsv"))
+    expect("assets/construct_variants.tsv: ten rows", len(cat), 10)
+    expect("assets/construct_variants.tsv: plain bases, positions past 0",
+           all(k[1] > 0 and k[2].isalpha() and k[3].isalpha() and k[2] != k[3] for k in cat), True)
+    expect("the catalog key drops chr, so a CPSR contig name meets it",
+           cat.get(("12", 40340400, "G", "A")), "LRRK2 G2019S")
+    expect("a construct line for a clear hit still prints the counts",
+           cc.construct_line(["chrT", "1151", "A", "C", "8", "0", "6", "0", "clear", "", "GENET X1Y"]),
+           "  KNOWN CONSTRUCT SITE GENET X1Y at chrT:1151 A>C: clear, 0 of 8 alt reads and 0 of 6 ref reads "
+           "clipped at an exon edge")
+    expect("a construct line for a hit with too few alt reads still prints the counts",
+           cc.construct_line(["chrT", "1151", "A", "C", "1", "0", "6", "0", "not_checked",
+                              "fewer than 2 reads carry the alt allele", "GENET X1Y"]),
+           "  KNOWN CONSTRUCT SITE GENET X1Y at chrT:1151 A>C: not checked (fewer than 2 reads carry the alt "
+           "allele), 0 of 1 alt reads and 0 of 6 ref reads clipped at an exon edge")
+    expect("a construct line for a hit with no BAM has no counts",
+           cc.construct_line(["chrT", "1151", "A", "C", "", "", "", "", "not_checked", "no BAM", "GENET X1Y"]),
+           "  KNOWN CONSTRUCT SITE GENET X1Y at chrT:1151 A>C: not checked (no BAM)")
+
 
 def write_bam(pysam, path, kind):
     header = {"HD": {"VN": "1.6", "SO": "unsorted"}, "SQ": [{"SN": "chrT", "LN": len(G)}]}
@@ -253,7 +278,28 @@ def part2(pysam):
         out = os.path.join(tmp, "skip.tsv")
         rc, _ = run_main(["--hits", hits, "--skip", "no BAM", "--out", out])
         expect("--skip: every hit not checked, with the reason",
-               [line.rstrip("\n").split("\t")[8:] for line in open(out)][1:], [["not_checked", "no BAM"]] * 3)
+               [line.rstrip("\n").split("\t")[8:] for line in open(out)][1:], [["not_checked", "no BAM", ""]] * 3)
+
+        # --construct: the planted SNV as a construct site.
+        catalog = os.path.join(tmp, "construct.tsv")
+        with open(catalog, "w") as f:
+            f.write("# a made-up construct site\nchrom\tpos\tref\talt\tgene\tname\n"
+                    f"chrT\t{POS0 + 1}\t{REF}\t{ALT}\tGENET\tX1Y\n")
+        line = f"KNOWN CONSTRUCT SITE GENET X1Y at chrT:{POS0 + 1} {REF}>{ALT}: "
+        for kind, verdict in (("spliced", "flagged, 9 of 9"), ("genomic", "clear, 0 of 8")):
+            out = os.path.join(tmp, f"construct-{kind}.tsv")
+            rc, log = run_main(["--hits", hits, "--bam", os.path.join(tmp, f"{kind}.bam"), "--exons", exons,
+                                "--construct", catalog, "--out", out])
+            expect(f"--construct, {kind}: exit code", rc, 0)
+            names = [line_.rstrip("\n").split("\t")[10] for line_ in open(out)][1:]
+            expect(f"--construct, {kind}: the construct_site column names the site, and only it",
+                   names, ["GENET X1Y", "", ""])
+            expect(f"--construct, {kind}: the log prints the site with its counts", line + verdict in log, True)
+        rc, log = run_main(["--hits", hits, "--skip", "no BAM", "--construct", catalog, "--out", out])
+        expect("--construct with --skip: exit code", rc, 0)
+        expect("--construct with --skip: the line says not checked, and why", line + "not checked (no BAM)" in log, True)
+        rc, log = run_main(["--hits", hits, "--bam", os.path.join(tmp, "genomic.bam"), "--exons", exons, "--out", out])
+        expect("without --construct: no construct line (red control)", "KNOWN CONSTRUCT SITE" in log, False)
         rc, _ = run_main(["--hits", hits, "--bam", os.path.join(tmp, "spliced.bam"),
                           "--exons", os.path.join(tmp, "none.bed"), "--out", out])
         expect("a missing exon file exits 2", rc, 2)

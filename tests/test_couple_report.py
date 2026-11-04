@@ -44,7 +44,8 @@ Checks:
      male partner's AZF deletions are listed by that name (absent on a
      normal male), the female's are not applicable;
      where CNVpytor (step 18) and the depth call disagree, both are printed;
-     without --cn-intervals the section is not written.
+     without --cn-intervals the section is not written;
+ 12. a split half call (./1) is het with one copy, never hom.
 
 Run: python3 tests/test_couple_report.py
 """
@@ -469,6 +470,24 @@ def main():
         rc, log = run("genes", "--table", bad, "--orphanet-genes", p6, "--orphanet-inheritance", p9, "--gtf", gtf,
                       "--par-bed", PAR, "--out", f"{t}/bad_out.tsv")
         check("genes: a panel gene GENCODE does not have stops it", rc == 2 and "NOSUCH" in log, (rc, log))
+
+    # 12. a split half call (./1, the GT 1/2 record step 06 splits) is one copy:
+    #     the missing allele still counts in the ploidy, so it is never hom
+    check("zygosity: ./1 and 1|. on an autosome are het (one copy), not hom",
+          cr.zygosity("./1", "chr7", "female", False) == "het"
+          and cr.zygosity("1|.", "chr7", "male", False) == "het",
+          (cr.zygosity("./1", "chr7", "female", False), cr.zygosity("1|.", "chr7", "male", False)))
+    with tempfile.TemporaryDirectory() as t:
+        v = put(f"{t}/half.vcf", HEAD + hit("CFTR", gt="./1"))
+        f, _ = cr.clinvar_findings(v, GENE_ROWS, "female", cr.family_report.read_par(PAR))
+        check("a ./1 CFTR hit is one copy, worded as the other reports word a half call",
+              len(f) == 1 and f[0]["copies"] == 1 and " one copy, other copy not called ref (./1), " in f[0]["text"], f)
+    check("zygosity: 1/1 is hom, a haploid 1 on chrX is hemizygous, ./. and ./0 are no call",
+          cr.zygosity("1/1", "chr7", "female", False) == "hom"
+          and cr.zygosity("1", "chrX", "female", False) == "hemizygous"
+          and cr.zygosity("./1", "chrX", "male", False) == "hemizygous"
+          and cr.zygosity("./.", "chr7", "female", False) is None
+          and cr.zygosity("./0", "chr7", "female", False) is None)
 
     print("\nRESULT:", "ALL PASS" if not FAILS else "%d FAILED" % len(FAILS))
     return 1 if FAILS else 0
