@@ -92,7 +92,7 @@ echo "=== 4. Pictures"
 VENV=${VENV:-${WORK}/venv}
 [ -x "${VENV}/bin/python" ] || python3 -m venv "$VENV"
 PKGS=(playwright==1.64.1 pillow==13.0.0)
-[ "$(uname -s)" != Darwin ] || PKGS+=(pyobjc-framework-Vision==12.2.2)
+[ "$(uname -s)" != Darwin ] || PKGS+=(pyobjc-framework-Vision==13.0)
 "${VENV}/bin/python" -m pip install -q "${PKGS[@]}"
 export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-${VENV}/browsers}
 # On a fresh Linux box Chromium also needs system libraries: --with-deps
