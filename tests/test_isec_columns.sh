@@ -8,6 +8,8 @@
 #      step read bcftools isec's 0002.vcf, which is the sample's side of the
 #      intersection, so every row showed ".|.";
 #   2. a pathogenic allele inside a multiallelic record (GT 1/2) is found;
+#      its split half reads ./1 (the other copy carries another ALT, so it
+#      is not called ref) and prints as "one copy, other copy not called ref";
 #   3. a VCF whose FILTER is '.' everywhere gives the same hits, with a notice;
 #   4. a ClinVar file named 1,2,... against chr1,... stops with an error, and
 #      a sample VCF named 1,2,... stops with a hint about the sample;
@@ -19,7 +21,7 @@
 #   6b. a half call (GT ./1) carries the ClinVar allele and is a hit; the
 #      GT="alt" filter dropped it as missing;
 #   7. clinvar/S1_clinvar_hits.tsv has one row per hit with genotype, gene,
-#      significance and review status;
+#      significance and review status (the GT 1/2 hit with genotype ./1);
 #   8. a sample record on a contig the reference lacks, in a header without
 #      contig lengths, and a ClinVar record on NT_113889.1 (which the full
 #      chr-renamed ClinVar file has) made bcftools norm exit 255; now both are
@@ -149,10 +151,11 @@ if printf '%s' "$ROWS" | grep -q '<td>GENEB</td><td>Likely pathogenic</td>'; the
 else
   fail "pathogenic allele inside a multiallelic record (GT 1/2) is missing"
 fi
-if [ "$(printf '%s\n' "$ROWS" | grep -c '<td>het</td>' || true)" -eq 2 ]; then
-  pass "both hits show genotype het"
+if [ "$(printf '%s\n' "$ROWS" | grep -c '<td>het</td>' || true)" -eq 1 ] \
+   && [ "$(printf '%s\n' "$ROWS" | grep -cF '<td>one copy, other copy not called ref (./1)</td>' || true)" -eq 1 ]; then
+  pass "the 0/1 hit shows het, the GT 1/2 half shows 'one copy, other copy not called ref (./1)'"
 else
-  fail "hits do not show genotype het"
+  fail "genotype column wrong: want 1 het row and 1 './1' half-call row"
 fi
 if grep -q 'Pathogenic/Likely Pathogenic hits: 2$' "${GD}/S1/S1_report.txt" 2>/dev/null \
    && grep -q 'GENEA' "${GD}/S1/S1_report.txt" && grep -q 'GENEB' "${GD}/S1/S1_report.txt"; then
@@ -182,7 +185,7 @@ TSV="${GD}/S1/clinvar/S1_clinvar_hits.tsv"
 if [ "$(head -n 1 "$TSV" 2>/dev/null)" = "$(printf 'chrom\tpos\tref\talt\tgenotype\tclinvar_id\tgeneinfo\tclnsig\tclnrevstat')" ] \
    && [ "$(awk 'END {print NR}' "$TSV")" = 3 ] \
    && grep -qxF "$(printf 'chr1\t10\tC\tT\t0/1\t1001\tGENEA:11\tPathogenic\tcriteria_provided,_single_submitter')" "$TSV" \
-   && grep -qxF "$(printf 'chr1\t20\tT\tG\t0/1\t1002\tGENEB:22\tLikely_pathogenic\treviewed_by_expert_panel')" "$TSV"; then
+   && grep -qxF "$(printf 'chr1\t20\tT\tG\t./1\t1002\tGENEB:22\tLikely_pathogenic\treviewed_by_expert_panel')" "$TSV"; then
   pass "hits TSV: a header and one row per hit with genotype, gene, significance and review status"
 else
   fail "hits TSV is missing or wrong: $(tr '\t\n' ' |' < "$TSV" 2>/dev/null || echo 'no file')"

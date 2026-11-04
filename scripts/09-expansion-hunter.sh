@@ -10,7 +10,9 @@
 #   - Multithreading support (--threads)
 #   - Bundled GRCh38 variant catalog (31 pathogenic loci) inside the container
 # Catalog: STRchive's 82 disease loci (reference/strchive-<version>/catalog.json,
-# which setup.sh builds with bin/strchive_convert.py), or the bundled 31 when
+# which setup.sh builds with bin/strchive_convert.py; with STR_EXTRA_LOCI=yes
+# it also holds assets/str_extra_loci.json, the CFTR TG/poly-T and UGT1A1 TA
+# repeats, which the "Not graded" lines below name), or the bundled 31 when
 # that file is missing. EH_CATALOG=bundled picks the bundled one;
 # EH_CATALOG=FILE another catalog (a JSON file under GENOME_DIR).
 # ExpansionHunter stops when a catalog locus is on a contig the reference

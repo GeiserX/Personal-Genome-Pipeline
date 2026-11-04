@@ -141,7 +141,19 @@ exit "$FAILED"
 # separated, tab separated), as --print-table writes them, after the build.
 #: # build b157
 #: rs10246939	chr7	141972804	T	C
+#: rs1052553	chr17	45996523	A	G
+#: rs10757278	chr9	22124478	A	C,G,T
+#: rs1333049	chr9	22125504	G	A,C
 #: rs1726866	chr7	141972905	G	A,C,T
+#: rs17580	chr14	94380925	T	A
+#: rs1799945	chr6	26090951	C	G,T
+#: rs1800562	chr6	26092913	G	A,T
+#: rs28929474	chr14	94378610	C	A,G,T
 #: rs429358	chr19	44908684	T	C
+#: rs4588	chr4	71752606	G	A,C,T
+#: rs60910145	chr22	36265988	T	C,G
+#: rs7041	chr4	71752617	A	C,G,T
 #: rs713598	chr7	141973545	C	A,G,T
+#: rs73885319	chr22	36265860	A	G
 #: rs7412	chr19	44908822	C	T
+#: rs8070723	chr17	46003698	A	G

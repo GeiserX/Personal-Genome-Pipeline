@@ -98,14 +98,59 @@ def combined_cell(h):
 
 
 def cdna_text(h):
-    """Step 06's cDNA read check of one ClinVar hit, as both reports print it."""
+    """Step 06's cDNA read check of one ClinVar hit, as both reports print it.
+    A hit at a known construct site always shows its read counts."""
     c = h["cdna"]
+    counts = (f"{c['alt_clipped']} of {c['alt_reads']} alt reads and {c['ref_clipped']} of "
+              f"{c['ref_reads']} ref reads clipped at an exon edge")
+    site = f"known lab-construct site ({c['construct']}): " if c.get("construct") else ""
     if c["check"] == "flagged":
-        return (f"{c['note']} ({c['alt_clipped']} of {c['alt_reads']} alt reads and {c['ref_clipped']} of "
-                f"{c['ref_reads']} ref reads clipped at an exon edge)")
+        return f"{site}{c['note']} ({counts})"
     if c["check"] == "clear":
-        return "clear"
-    return "not checked" + (f": {c['note']}" if c["note"] else "")
+        return f"{site}clear ({counts})" if site else "clear"
+    out = site + "not checked" + (f": {c['note']}" if c["note"] else "")
+    # A construct-site hit prints its counts whatever the verdict, when they were measured.
+    return out + (f" ({counts})" if site and c.get("alt_reads") is not None else "")
+
+
+def construct_past_cap(hits, shown=50):
+    """Hits at a known lab-construct site below the listed first `shown`: both
+    reports print them too, so every hit the overview counts has a row."""
+    return [h for h in hits[shown:] if (h.get("cdna") or {}).get("construct")]
+
+
+def construct_past_cap_text(h):
+    return f"{h['gene']} {h['chrom']}:{h['pos']} {h['ref']}>{h['alt']} {h['genotype']}: {cdna_text(h)}"
+
+
+CDNA_SCAN_NOTE = ("A locus with reads that jump from one exon to the next is spliced DNA: cDNA or plasmid "
+                  "contamination, or a processed copy of the gene the person carries. Check the reads before "
+                  "trusting a variant call there.")
+DEEP_INTRONIC_NOTE = ("Known pathogenic deep intronic sites, reported on every run: they lie far from any exon, so "
+                      "most filters miss them. 'ref' with a GQ is a reference call, 'ref (low confidence)' "
+                      "one below the call floor; 'no call' says nothing either way.")
+
+
+def cdna_scan_lines(d):
+    """Step 06's genome-wide cDNA scan, as both reports print it ([] when it did not run)."""
+    scan = d.get("cdna_scan")
+    if scan is None:
+        return []
+    loci = scan["loci"]
+    if scan["note"].startswith("not run"):
+        return [f"cDNA scan of every exon: {scan['note']}"]
+    # The note says what was read (exon regions, contigs): a BAM short of contigs is no whole-exome negative.
+    out = [f"cDNA scan of every exon: {len(loci)} loci with reads across two or more exon junctions"
+           + (f" ({scan['note']})" if scan["note"] else "")]
+    out += [f"  {x['chrom']}:{x['start']}-{x['end']}: {x['junctions']} junctions, {x['reads']} reads" for x in loci[:20]]
+    return out
+
+
+def deep_intronic_call(x):
+    """One always-report site's call: 'het, GQ 40, DP 30', 'ref, GQ 50 (gVCF block)', 'no call: why'."""
+    if x["call"] == "no call":
+        return "no call" + (f": {x['detail']}" if x["detail"] else "")
+    return x["call"] + (f", {x['detail']}" if x["detail"] else "")
 
 
 def af_text(h):
@@ -821,6 +866,15 @@ def section_keys(sid):
     return next(keys for _, _, _, secs in CHAPTERS for x, _, keys in secs if x == sid)
 
 
+def recheck_line(r):
+    """One line of run facts from the last database re-check (bin/owngenome_recheck.py)."""
+    newer = [i for i in r.get("items") or [] if i.get("class") not in ("no-newer-release", None)]
+    head = f"Database re-check: {r.get('checked_utc') or 'unknown date'}: "
+    if not newer:
+        return head + "nothing newer than this run"
+    return head + "; ".join(f"{i.get('label') or i.get('item')} {i.get('class')}" for i in newer)
+
+
 def text_report(s):
     S = s["sections"]
     # Each block writes into its section's list (at(key), or head(key));
@@ -847,6 +901,9 @@ def text_report(s):
     w(f"  Generated: {s['generated_utc']}")
     if s["run"]["started_utc"]:
         w(f"  Latest run-all.sh run: {s['run']['started_utc']}")
+    if s.get("recheck"):
+        w(f"  {recheck_line(s['recheck'])}")
+    ns = s.get("new_since") or {}
     w("=" * 80)
     w("")
 
@@ -857,6 +914,8 @@ def text_report(s):
             return False
         w(f"## {title or sec['title']}")
         w("---")
+        if key in (ns.get("sections") or []):
+            w(f"  [New since {ns.get('previous_utc') or 'the previous run'}]")
         note = stale_note(sec)
         if note:
             w(f"  [{note}]")
@@ -871,6 +930,8 @@ def text_report(s):
     if any(sec["state"] != "missing" for sec in (cov, sexc, sqc, rdc)):
         w("## Quality control")
         w("---")
+        if any(k in (ns.get("sections") or []) for k in ("coverage", "sex_check", "sample_qc", "read_count")):
+            w(f"  [New since {ns.get('previous_utc') or 'the previous run'}]")
         for sec in (cov, sexc, sqc, rdc):
             if stale_note(sec):
                 w(f"  [{sec['title']}: {stale_note(sec)}]")
@@ -946,6 +1007,20 @@ def text_report(s):
                     w(f"               call: {call_text(h)}")
                 if "cdna" in h:
                     w(f"               reads: {cdna_text(h)}")
+            extra = construct_past_cap(d["hits"])
+            if extra:
+                w("  Hits at a known lab-construct site past the first 50:")
+                for h in extra:
+                    w(f"    {construct_past_cap_text(h)}")
+        for line in cdna_scan_lines(d):
+            w(f"  {line}")
+        if d.get("cdna_scan") and d["cdna_scan"]["loci"]:
+            w(f"  {CDNA_SCAN_NOTE}")
+        if "deep_intronic" in d:
+            w("  Known deep intronic sites (always reported): gene, variant, call")
+            for x in d["deep_intronic"]:
+                w(f"    {x['gene']:<10} {x['hgvs']} {x['chrom']}:{x['pos']} {x['ref']}>{x['alt']}  {deep_intronic_call(x)}")
+            w(f"  {DEEP_INTRONIC_NOTE}")
         w(f"  {CLINVAR_FREQ_NOTE}")
         w("")
 
@@ -1009,6 +1084,8 @@ def text_report(s):
     if any(calls.values()) or verdict:
         w("## CYP2D6 across callers")
         w("---")
+        if any(k in (ns.get("sections") or []) for k in ("pypgx", "cyrius")):  # the consensus change is filed under pypgx
+            w(f"  [New since {ns.get('previous_utc') or 'the previous run'}]")
         for k, v in calls.items():
             w(f"  {CYP2D6_LABELS.get(k, k):<26} {v or 'not run'}")
         agree = s["cyp2d6"]["agree"]
@@ -2290,6 +2367,12 @@ def html_report(s, index=None):
     if "cdna_flagged" in c:
         cv_body.insert(2, stat("Flagged by the cDNA read check",
                                badge(c["cdna_flagged"], "red" if c["cdna_flagged"] else "gray")))
+    if c.get("construct_sites"):
+        cv_body.insert(2, stat("Hits at a known lab-construct site (check the reads)",
+                               badge(c["construct_sites"], "yellow")))
+    if c.get("cdna_scan") and not c["cdna_scan"]["note"].startswith("not run"):
+        nl = len(c["cdna_scan"]["loci"])
+        cv_body.insert(2, stat("Loci with spliced reads (cDNA scan)", badge(nl, "red" if nl else "gray")))
     if "low_confidence" in c:
         f = c.get("call_floor") or {}
         cv_body.insert(1, stat(f"Low-confidence calls (GQ below {f.get('GQ')} or DP below {f.get('DP')}), not counted",
@@ -2709,8 +2792,28 @@ def html_report(s, index=None):
                 + ("<th>Call quality</th>" if call else "")
                 + ("<th>cDNA read check</th>" if reads else "") + "</tr>"]
                + ["      " + x for x in rows] + ["    </table>"]
+               + [small_note("Hit at a known lab-construct site past the first 50: " + construct_past_cap_text(h))
+                  for h in construct_past_cap(c["hits"], report_charts.HITS_SHOWN)]
                + viewer_links((h["chrom"], h["pos"], f"{h['gene']} {h['chrom']}:{h['pos']}") for h in c["hits"][:50]),
                full=True))
+
+    if S["clinvar"]["state"] in ("ok", "stale") and ("deep_intronic" in c or c.get("cdna_scan")):
+        body = []
+        if "deep_intronic" in c:
+            body += ["    <table>", "      <tr><th>Gene</th><th>Variant</th><th>Position</th><th>Call</th></tr>"]
+            body += [f"      <tr><td>{E(x['gene'])}</td><td>{E(x['hgvs'])}</td>"
+                     f"<td>{E(x['chrom'])}:{x['pos']} {E(x['ref'])}&gt;{E(x['alt'])}</td>"
+                     f"<td>{E(deep_intronic_call(x))}</td></tr>" for x in c["deep_intronic"]]
+            body += ["    </table>", small_note(DEEP_INTRONIC_NOTE)]
+        scan = cdna_scan_lines(c)
+        if scan:
+            body.append(f"    <p>{E(scan[0])}</p>")
+            if len(scan) > 1:
+                body += ["    <table>", "      <tr><th>Locus</th><th>Junctions</th><th>Reads</th></tr>"]
+                body += [f"      <tr><td>{E(x['chrom'])}:{x['start']}-{x['end']}</td><td>{x['junctions']}</td>"
+                         f"<td>{x['reads']}</td></tr>" for x in c["cdna_scan"]["loci"][:20]]
+                body += ["    </table>", small_note(CDNA_SCAN_NOTE)]
+        a("clinvar", card(S["clinvar"], "Known Deep Intronic Sites and the cDNA Scan", body, full=True))
 
     add_charts(parts, chart_specs(s))
     return html_page(s, parts, index if index is not None else results_index.build(s, anchors=SECTION_OF))
@@ -2835,9 +2938,10 @@ def step_files(S, sample, sid):
     return out
 
 
-def frame(S, sample, sid, lines, keys=None, always=False):
+def frame(S, sample, sid, lines, keys=None, always=False, since=None):
     """One section: an anchor, the step, state and file date under its first
-    card title, each caveat under its card's title, the cards, then links to
+    card title (and "New since <date>" when its result changed since the
+    previous run), each caveat under its card's title, the cards, then links to
     the step's own files."""
     secs = [S.get(k, MISSING) for k in keys or ()]
     meta = None
@@ -2847,6 +2951,7 @@ def frame(S, sample, sid, lines, keys=None, always=False):
         dates = [x["file_date"] for x in secs if x.get("file_date")]
         meta = (f'    <p class="sec-meta">Step{"s" if len(steps) > 1 else ""} {E(", ".join(steps))} &middot; '
                 f"{badge(label, colour)}" + (f" &middot; file date {E(max(dates))}" if dates else "")
+                + (f" &middot; {badge(f'New since {since}', 'yellow')}" if since else "")
                 + f' &middot; <a class="anchor" href="#{sid}">link to this section</a></p>')
     wide = len([x for x in lines if x.strip().startswith("<h2>")]) > 1 or any(x.startswith('  <div class="card full-width"') for x in lines)
     files = step_files(S, sample, sid)
@@ -2902,6 +3007,8 @@ def html_page(s, parts, index=None):
     m = s["manifest"]
     commit = next((r[2] for r in m if r[0] == "run" and r[1] == "git_commit"), None) if m else None
     db = s["databases"]
+    ns = s.get("new_since") or {}
+    changed = set(ns.get("sections") or [])
     toc, body = ['<nav class="toc" aria-label="Contents">', '  <h2 class="toc-title">Contents</h2>', "  <ol>"], []
     for cid, title, question, secs in CHAPTERS:
         shown = [(sid, t, keys) for sid, t, keys in secs if parts.get(sid)]
@@ -2914,7 +3021,8 @@ def html_page(s, parts, index=None):
             state = frame_state([S.get(k, MISSING) for k in keys])
             toc.append(f'        <li><a href="#{sid}"><span class="dot dot-{state}" '
                        f'title="{STATE_BADGE[state][0]}"></span>{E(t)}</a></li>')
-            body += frame(S, s["sample"], sid, parts[sid], keys)
+            body += frame(S, s["sample"], sid, parts[sid], keys,
+                          since=(ns.get("previous_utc") or "the previous run") if changed & set(keys) else None)
         toc += ["      </ol>", "    </li>"]
         body += ["  </div>", "</section>"]
     cid, title, question = LIMITS
@@ -2947,7 +3055,8 @@ def html_page(s, parts, index=None):
            f"    Pipeline commit: {E(commit or 'unknown')} &nbsp;|&nbsp; ClinVar file: {E(db['clinvar_release'] or 'unknown')}"
            f" &nbsp;|&nbsp; ClinVar in CPSR's bundle: {E(db['cpsr_clinvar_release'] or 'unknown')}"
            f" &nbsp;|&nbsp; HLA database: {E(db['hla_database'] or 'unknown')}",
-           "  </div>", "</header>",
+           "  </div>"] + ([f'  <div class="meta">{E(recheck_line(s["recheck"]))}</div>'] if s.get("recheck") else []) + [
+           "</header>",
            '<p class="print-hint">To print one section, open it from the contents (or its "link to this section"), '
            "then print: the printout holds that section, this header, the list of what is not assessed and the "
            "disclaimer. A chapter prints the same way. In a browser without CSS :has() the whole report prints.</p>"]

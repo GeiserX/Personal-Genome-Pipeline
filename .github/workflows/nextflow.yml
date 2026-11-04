@@ -168,7 +168,65 @@ jobs:
         run: |
           nextflow run main.nf -profile test_all -stub -ansi-log false --outdir "${RUNNER_TEMP}/all-tools" \
             -work-dir "${RUNNER_TEMP}/all-tools-work" --pedigree assets/stub/pedigree.tsv \
-            --hpo HP:0001250 --exomiser_proband stub_sample --exomiser_data assets/stub/db
+            --hpo HP:0001250 --exomiser_proband stub_sample --exomiser_data assets/stub/db \
+            --mito_clinvar assets/stub/db/clinvar.vcf.gz
+
+      # bin/owngenome_recheck.py names the steps a new ClinVar release changes, from the
+      # reads and upstream columns of assets/steps.tsv. The all-tools run again
+      # with -resume and a ClinVar file of another ##fileDate (as --clinvar and
+      # --mito_clinvar, as run-all.sh passes them): the steps with a task that ran
+      # again (COMPLETED in this run's trace, not CACHED) must be exactly the named
+      # steps the first run had. The control: the same names from a steps.tsv with
+      # ClinVar taken out of step 13's reads must differ from what ran, so the
+      # comparison can fail. Right after the all-tools run, so -resume resumes it.
+      - name: A new ClinVar file redoes exactly the steps owngenome_recheck.py names
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 10
+        run: |
+          d="${RUNNER_TEMP}/clinvar-new"; mkdir -p "$d"
+          printf '##fileformat=VCFv4.1\n##fileDate=20991231\n' | gzip -c > "${d}/clinvar.vcf.gz"
+          : > "${d}/clinvar.vcf.gz.tbi"
+          nextflow run main.nf -profile test_all -stub -resume -ansi-log false --outdir "${RUNNER_TEMP}/all-tools-recheck" \
+            -work-dir "${RUNNER_TEMP}/all-tools-work" --pedigree assets/stub/pedigree.tsv \
+            --hpo HP:0001250 --exomiser_proband stub_sample --exomiser_data assets/stub/db \
+            --clinvar "${d}/clinvar.vcf.gz" --clinvar_index "${d}/clinvar.vcf.gz.tbi" --mito_clinvar "${d}/clinvar.vcf.gz"
+          awk -F'\t' -v OFS='\t' '$1 == "13" {sub(/clinvar_file_date,/, "", $11)} {print}' assets/steps.tsv > "${d}/steps-control.tsv"
+          python3 - "${RUNNER_TEMP}/all-tools" "${RUNNER_TEMP}/all-tools-recheck" \
+            "$(python3 bin/owngenome_recheck.py --affected clinvar_file_date)" \
+            "$(python3 bin/owngenome_recheck.py --affected clinvar_file_date --steps "${d}/steps-control.tsv")" <<'PY'
+          import csv, glob, os, sys
+          sys.path.insert(0, "bin")
+          import run_state
+          first_dir, second_dir, named, control = sys.argv[1], sys.argv[2], set(sys.argv[3].split()), set(sys.argv[4].split())
+          step_of = {p: s["step"] for s in run_state.read_steps("assets/steps.tsv") for p in s["processes"]}
+
+          def tasks(d):
+              out = []
+              for t in glob.glob(os.path.join(d, "pipeline_info", "trace_*.txt")):
+                  for r in csv.DictReader(open(t), delimiter="\t"):
+                      out.append((run_state.task_name(r["name"])[0], r["status"]))
+              return out
+          first, second = tasks(first_dir), tasks(second_dir)
+          stray = sorted({p for p, st in second if st == "COMPLETED" and p not in step_of})
+          had = {step_of[p] for p, _ in first if p in step_of}
+          redone = {step_of[p] for p, st in second if st == "COMPLETED" and p in step_of}
+          want = named & had
+          print(f"tasks: {len(first)} in the first run, {len(second)} in the rerun "
+                f"({sum(st == 'COMPLETED' for _, st in second)} ran again, {sum(st == 'CACHED' for _, st in second)} cached)")
+          print("named by owngenome_recheck.py, of the steps the run had:", " ".join(sorted(want)))
+          print("redone:", " ".join(sorted(redone)))
+          print("control names:", " ".join(sorted(control & had)))
+          bad = 0
+          if not first or not second:
+              print("FAIL: no trace rows"); bad = 1
+          if stray:
+              print("FAIL: processes of no step ran again:", stray); bad = 1
+          if redone != want:
+              print("FAIL: named but not redone:", sorted(want - redone), "redone but not named:", sorted(redone - want)); bad = 1
+          if control & had == redone:
+              print("FAIL: the control names the same steps, so this comparison cannot fail"); bad = 1
+          sys.exit(bad)
+          PY
 
       # The stub samplesheet has four samples with alignments (one aligned
       # from FASTQ, one given as CRAM): the T1K index is built once for all of

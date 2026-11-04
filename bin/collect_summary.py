@@ -23,6 +23,10 @@ Each section has a state:
 
 The run manifest (S/run_manifest.tsv, bin/write_manifest.sh) is copied in for
 the report footer, with the ClinVar release date and the HLA database release.
+Two optional keys, for the report's run facts and badges: recheck, the last
+database re-check (S/recheck/state.json, bin/owngenome_recheck.py), and new_since,
+the date of the previous run kept in S/history/ and the sections whose results
+changed since it (bin/run_delta.py's comparison).
 
   collect_summary.py sample-qc --sample S --somalier-samples F --selfsm F [...]
 
@@ -74,6 +78,7 @@ import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule besid
 import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17's read check reads them
 import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step 22 support join
 import chip_report  # noqa: E402  step 49's detection limit at the median depth
+import run_delta  # noqa: E402  the comparison with the previous run, for the "New since" badges
 import traits_report  # noqa: E402  step 42's genotype-rules columns and the rules the traits table holds
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
@@ -286,12 +291,27 @@ def low_confidence(dp, gq, floor):
     return (gq is not None and gq < floor["GQ"]) or (dp is not None and dp < floor["DP"])
 
 
+def half_call(gt):
+    """True for a GT of one alt allele and one missing one: 1/., ./1, 1|."""
+    return bool(re.fullmatch(r"[1-9][/|]\.|\.[/|][1-9]", gt or ""))
+
+
+def clinvar_zygosity(gt):
+    """A ClinVar hit's genotype as bin/clinvar_hits.awk words it. One alt
+    allele and one missing one (1/., ./1) is the half of a multiallelic call
+    step 06 split with the other alt written as missing (a 1/2 at a poly-T
+    tract), or a half call: never het, which would say the other copy is ref."""
+    if half_call(gt):
+        return f"one copy, other copy not called ref ({gt})"
+    return {"0/1": "het", "1/0": "het", "0|1": "het", "1|0": "het", "1/1": "hom", "1|1": "hom"}.get(gt, gt)
+
+
 def clinvar_row(r, floor=None):
     info = info_map(r[7]) if len(r) > 7 else {}
     rev = info.get("CLNREVSTAT", "")
     genes = [g.split(":")[0] for g in info.get("GENEINFO", "").split("|") if g]
     gt = r[9].split(":")[0] if len(r) > 9 else ""
-    zyg = {"0/1": "het", "1/0": "het", "0|1": "het", "1|0": "het", "1/1": "hom", "1|1": "hom"}.get(gt, gt)
+    zyg = clinvar_zygosity(gt)
     fmt = dict(zip(r[8].split(":"), r[9].split(":"))) if len(r) > 9 else {}
     dp, gq = (int(fmt[k]) if fmt.get(k, "").isdigit() else None for k in ("DP", "GQ"))
     return {
@@ -328,8 +348,48 @@ def clinvar_cdna_checks(d, s, p=None):
         out[(r.get("chrom"), int(r["pos"]), r.get("ref"), r.get("alt"))] = {
             "check": r.get("cdna_check") or "not_checked", "note": r.get("cdna_note") or "",
             "alt_reads": num(r.get("alt_reads")), "alt_clipped": num(r.get("alt_clipped")),
-            "ref_reads": num(r.get("ref_reads")), "ref_clipped": num(r.get("ref_clipped"))}
+            "ref_reads": num(r.get("ref_reads")), "ref_clipped": num(r.get("ref_clipped")),
+            "construct": r.get("construct_site") or None}
     return out
+
+
+def clinvar_cdna_scan(d, s):
+    """Step 06's genome-wide cDNA scan (bin/cdna_scan.py): {"note", "loci"},
+    or None when the table is absent (a run before the scan existed)."""
+    p = first_existing(d, [f"clinvar/{s}_clinvar_cdna_scan.tsv"])
+    if not p:
+        return None
+    try:
+        with open_text(p) as f:
+            lines = f.read().splitlines()
+    except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as e:
+        raise Unreadable(f"{os.path.basename(p)}: {e}") from e
+    note = lines[0][len("# cdna_scan: "):] if lines and lines[0].startswith("# cdna_scan: ") else ""
+    body = [ln for ln in lines if not ln.startswith("#")]
+    loci = []
+    for r in csv.DictReader(body, delimiter="\t"):
+        if not (r.get("start") or "").isdigit():
+            continue
+        loci.append({"chrom": r.get("chrom"), "start": int(r["start"]), "end": int(r.get("end") or 0),
+                     "junctions": int(r.get("junctions") or 0), "reads": int(r.get("reads") or 0),
+                     "junction_list": r.get("junction_list") or ""})
+    return {"note": note, "loci": loci}
+
+
+def clinvar_deep_intronic(d, s):
+    """Step 06's always-report list (the known deep intronic sites): one row
+    per site with the sample's call, or None when the table is absent."""
+    p = first_existing(d, [f"clinvar/{s}_clinvar_deep_intronic.tsv"])
+    if not p:
+        return None
+    try:
+        rows = read_tsv(p)
+    except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as e:
+        raise Unreadable(f"{os.path.basename(p)}: {e}") from e
+    return [{"chrom": r.get("chrom"), "pos": int(r["pos"]), "ref": r.get("ref"), "alt": r.get("alt"),
+             "gene": r.get("gene") or ".", "hgvs": r.get("hgvs") or "", "clinvar_id": r.get("clinvar_id") or "",
+             "call": r.get("call") or "no call", "detail": r.get("detail") or ""}
+            for r in rows if (r.get("pos") or "").isdigit()]
 
 
 def tabix_linear_index(path):
@@ -493,6 +553,13 @@ def sec_clinvar(d, s):
                 "check": "not_checked", "note": "not in the read-check table", "alt_reads": None,
                 "alt_clipped": None, "ref_reads": None, "ref_clipped": None}
         data["cdna_flagged"] = sum(1 for x in rows if x["cdna"]["check"] == "flagged")
+        data["construct_sites"] = sum(1 for x in rows if x["cdna"].get("construct"))
+    scan = clinvar_cdna_scan(d, s)
+    if scan is not None:
+        data["cdna_scan"] = scan
+    deep = clinvar_deep_intronic(d, s)
+    if deep is not None:
+        data["deep_intronic"] = deep
     return p, data
 
 
@@ -718,15 +785,33 @@ def sec_parascopy(d, s):
     # when the locus was not run (no read over it, no model, Parascopy failed).
     na = next((r["agCN_filter"] for r in rows if (r.get("agCN_filter") or "").startswith("not assessed")), None)
     hp = os.path.join(os.path.dirname(p), f"{s}_hba_copy_number.tsv")
+    ip = os.path.join(os.path.dirname(p), f"{s}_cn_intervals.tsv")
     return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
                "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
                "rows": len(rows),
                # HBA1/HBA2 from depth (bin/hba_copy_number.py); None when
                # step 35 wrote no HBA table (a run from before the check)
                "hba": read_hba(hp) if os.path.isfile(hp) else None,
+               # the interval rows of bin/cn_loci.tsv (recurrent CNV regions,
+               # carrier deletions, AZF); None without step 35's table
+               "cn_intervals": read_cn_intervals(ip) if os.path.isfile(ip) else None,
                "reading": (f"SMN1 and SMN2 {na}: no carrier reading" if na
                            else "no row of step 35's table covers SMN1 exon 7: no carrier reading"
                            if smn1["text"] == "no row covers exon 7" else smn_reading(smn1["cn"]))}
+
+
+def read_cn_intervals(path):
+    """Step 35's interval table (bin/copy_number.py intervals): the rows with
+    a deletion or a duplication, and a count of the rows by status."""
+    rows = read_tsv(path)
+    if rows and not {"locus", "name", "status", "copies", "expected", "change"} <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(path)} lacks the locus, name, status, copies, expected or change column")
+    counts = {}
+    for r in rows:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    return {"rows": len(rows), "by_status": counts,
+            "changes": [{k: r[k] for k in ("locus", "name", "chrom", "start", "end", "copies", "expected", "change")}
+                        for r in rows if r["change"] in ("deletion", "duplication")]}
 
 
 def read_hba(path):
@@ -3344,9 +3429,11 @@ def carrier_genes():
 
 
 def allele_copies(gt):
-    """(alt copies, called copies) of a GT: '0/1' (1, 2), '1/1' (2, 2), '1' (1, 1)."""
-    a = [x for x in re.split(r"[/|]", gt or "") if x not in (".", "")]
-    return sum(1 for x in a if x != "0"), len(a)
+    """(alt copies, ploidy) of a GT: '0/1' (1, 2), '1/1' (2, 2), '1' (1, 1),
+    '1/.' (1, 2): a missing allele is a copy not called, not a missing copy,
+    so the half of a split 1/2 call is not read as hemizygous."""
+    a = [x for x in re.split(r"[/|]", gt or "") if x != ""]
+    return sum(1 for x in a if x not in ("0", ".")), len(a)
 
 
 def zygosity_word(copies, ploidy):
@@ -3518,14 +3605,16 @@ def carrier_list(p):
         if len(r) < 8:
             continue
         row = clinvar_row(r)
-        copies, ploidy = allele_copies(r[9].split(":")[0] if len(r) > 9 else "")
+        gt = r[9].split(":")[0] if len(r) > 9 else ""
+        copies, ploidy = allele_copies(gt)
         key = (row["chrom"], row["pos"], row["ref"], row["alt"])
         for g in row["gene"].split(","):
             if g not in genes:
                 continue
             x = genes[g]
             item = {"gene": g, "variant": f"{row['chrom']}:{row['pos']} {row['ref']}>{row['alt']}",
-                    "genotype": zygosity_word(copies, ploidy), "significance": row["significance"],
+                    "genotype": row["genotype"] if half_call(gt) else zygosity_word(copies, ploidy),
+                    "significance": row["significance"],
                     "stars": row["stars"], "inheritance": x["inheritance"], "condition": x["condition"]}
             sev = x["severity"].get(key)
             if sev:
@@ -4162,7 +4251,29 @@ def collect(sample, sample_dir, declared_sex=None):
            else [VNTYPER_NOT_ASSESSED])
         + ([] if sections["mosaic"]["data"].get("status") == "assessed" else [MCA_NOT_ASSESSED]),
     }
+    recheck = run_delta.read_recheck(os.path.join(sample_dir, "recheck", "state.json"))
+    if recheck:
+        summary["recheck"] = recheck
+    since = new_since(sample_dir, summary)
+    if since:
+        summary["new_since"] = since
     return summary
+
+
+def new_since(sample_dir, summary):
+    """{previous_utc, sections}: what changed since the newest run kept in history/ (generate-report.sh
+    keeps one per run), or None without one. A folder that cannot be read counts as none."""
+    prev_dir = run_delta.newest_history(sample_dir)
+    if not prev_dir:
+        return None
+    try:
+        with open(os.path.join(prev_dir, "summary.json")) as f:
+            prev = json.load(f)
+        changes = run_delta.compare(prev, run_delta.read_manifest(os.path.join(prev_dir, "run_manifest.tsv")),
+                                    summary, run_delta.read_manifest(os.path.join(sample_dir, "run_manifest.tsv")))
+    except (OSError, ValueError, AttributeError, TypeError, KeyError):
+        return None
+    return {"previous_utc": prev.get("generated_utc"), "sections": run_delta.changed_sections(changes)}
 
 
 def sample_qc_main(argv):
