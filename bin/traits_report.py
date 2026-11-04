@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# (demo of a one-helper change for the e2e scope)
 """traits_report.py: the traits table and the genotype rules of step 42, read from the gVCF genotypes.
 
   traits_report.py --table assets/traits.tsv --rules assets/genotype_rules.tsv --genotypes G.tsv \\
