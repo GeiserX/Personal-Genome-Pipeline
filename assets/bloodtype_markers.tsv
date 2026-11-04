@@ -14,48 +14,305 @@
 #   GRCh38 through Ensembl VEP on the gene's transcript, which also checked the REF base
 #   (2026-10-25). dbSNP places some FCGR3B ids on FCGR3A, its near copy: the positions here
 #   are FCGR3B's (exon 3, minus strand, so ref and alt are the complement of the c. bases).
+#   The null rows (alt_means null) are the single-variant null alleles RBCeq2 2.4.4 lists for
+#   SMIM1 (Vel), ABCB6 (Lan), ABCG2 (Jra), FUT1 (H), FUT2 (secretor), KEL (K0) and SLC14A1
+#   (Jk(a-b-)): an allele that makes no antigen. Left out: alleles of two or more variants, the
+#   deletions over 50 bp (JK*01N.01, ABCG2*01N.27), and KEL*02N.58, whose position KEL*02N.23
+#   holds with another REF, and three alleles too common for a null on their own: gnomAD v4
+#   (2026-11-03) gives FUT2 c.772G>A (rs602662) about 0.5 and c.335C>T (rs200157007) 0.14 in
+#   South Asians, both on the c.461G>A haplotype, and SLC14A1 c.810G>A (rs17675299) 0.08 in Finns.
+#   Null alleles at one position with one REF share a row: alt is then
+#   a comma list, and any of them is a null copy. The HPA-7 to -35 rows (HPA-15 aside) are
+#   RBCeq2's HPA alleles; that database lists them at GRCh37 positions, so each was mapped to
+#   GRCh38 with Ensembl's assembly map (2026-11-03). Every null and HPA-7 to -35 row was checked
+#   on GRCh38 the same day: Ensembl VEP on the row's REF and ALT gave the allele's c. change on
+#   its RefSeq transcript, and the REF is Ensembl's GRCh38 sequence. Where RBCeq2's text has a
+#   slip, the c. change here is VEP's: HPA-13 is ITGA2 c.2483C>T, HPA-16 ITGB3 c.497C>T and
+#   HPA-35 ITGB3 c.1514G>A. rsid is the dbSNP id Ensembl places at the row with the same change,
+#   left empty when there is none.
+# high_prevalence: the antigen of the row most people carry, so lacking it is rare (ISBT's
+#   high-prevalence antigens Vel, Lan, Jra, H, k, Kpb, Jsb, Ku, Jk3, Lub, Dib, Coa; for platelets
+#   HPA-1a and the a antigen of HPA-4 and HPA-6 to -35 but -15, whose b antigen is a
+#   low-prevalence one). Step 41 lists first the systems where the genome predicts the person
+#   lacks one.
+# null_on: for a null row of a system with two-allele sites (Kell, Kidd), the antigens the null
+#   allele is found with in the ISBT allele table, first choice first. Phase is not read, so a
+#   null copy is placed on a chromosome that carries them.
 # The RhD depth regions (the RHD gene, its ten exons and two flanks outside the common RHD
 #   deletion) are the RHD row of bin/cn_loci.tsv; step 41 adds them to this table's sites for bedcov.
 # caveat: why a short-read call at that site is less certain (confidence low in the table).
 # meaning: for the platelet and neutrophil antigens, what lacking one of them means, written
 #   into the note of the system's row when the genome predicts the person lacks it. It is
 #   information about the antigen, not advice.
-chrom	start	end	kind	system	name	ref	alt	ref_means	alt_means	hgvs	rsid	caveat	meaning
-chr9	133257520	133257521	site	ABO	ABO_261	T	TC	O.01 (c.261delG)	no c.261delG	ABO c.261delG	rs8176719	
-chr9	133255928	133255929	site	ABO	ABO_802	C	T	not O.02	O.02	ABO c.802G>A	rs41302905	
-chr9	133255927	133255928	site	ABO	ABO_803	C	G	A	B	ABO c.803G>C	rs8176747	
-chr9	133255934	133255935	site	ABO	ABO_796	G	T	A	B	ABO c.796C>A	rs8176746	
-chr9	133255668	133255669	site	ABO	ABO_1061	CG	C	A1	A2	ABO c.1061delC	rs56392308	a deletion in a run of C: short-read calls are less reliable here
-chr1	25300924	25300925	site	RhD	RHD_PSI_DUP	T	TCTTACTGGGTTTTATTGCAGACAGACTACCACATGAA		RHD*08N.01	RHD c.487-19_504dup		
-chr1	25301067	25301068	site	RhD	RHD_PSI_609	G	A		RHD*08N.01	RHD c.609G>A	rs114032679	
-chr1	25408710	25408711	site	RhCE	RHCE_307	G	A	c	C	RHCE c.307C>T	rs676785	RHCE exon 2 of a C allele is RHD-like: short reads can place it on RHD
-chr1	25390873	25390874	site	RhCE	RHCE_676	C	G	e	E	RHCE c.676G>C	rs609320	
-chr7	142957920	142957921	site	Kell	KEL_578	G	A	k	K	KEL c.578C>T	rs8176058	
-chr7	142954266	142954267	site	Kell	KEL_841	G	A	Kpb	Kpa	KEL c.841C>T	rs8176059	
-chr7	142943025	142943026	site	Kell	KEL_1790	A	G	Jsb	Jsa	KEL c.1790T>C	rs8176038	
-chr1	159205563	159205564	site	Duffy	FY_125	G	A	Fya	Fyb	ACKR1 c.125G>A	rs12075	
-chr1	159204892	159204893	site	Duffy	FY_GATA	T	C		no red cell expression	ACKR1 c.-67T>C	rs2814778	
-chr1	159205703	159205704	site	Duffy	FY_265	C	T		Fyb weak (FY*X)	ACKR1 c.265C>T	rs34599082	
-chr18	45739553	45739554	site	Kidd	JK_838	G	A	Jka	Jkb	SLC14A1 c.838G>A	rs1058396	
-chr4	144120566	144120567	site	MNS	GYPA_59	A	G	N	M	GYPA c.59T>C	rs7682260	GYPA, GYPB and GYPE are near copies: short reads can misplace these calls
-chr4	143999442	143999443	site	MNS	GYPB_143	G	A	s	S	GYPB c.143C>T	rs7683365	GYPA, GYPB and GYPE are near copies: short reads can misplace these calls
-chr19	44812187	44812188	site	Lutheran	LU_230	G	A	Lub	Lua	BCAM c.230G>A	rs28399653	
-chr17	44251252	44251253	site	Diego	DI_2561	G	A	Dib	Dia	SLC4A1 c.2561C>T	rs2285644	
-chr12	14840504	14840505	site	Dombrock	DO_793	C	T	Dob	Doa	ART4 c.793G>A	rs11276	
-chr7	30912042	30912043	site	Colton	CO_134	C	T	Coa	Cob	AQP1 c.134C>T	rs28362692	
-chr17	47283363	47283364	site	HPA-1	HPA1_176	T	C	1a	1b	ITGB3 c.176T>C	rs5918		HPA-1a is the platelet antigen most often behind FNAIT and post-transfusion purpura in white populations: an HPA-1a-negative (HPA-1b/1b) mother can make anti-HPA-1a against an HPA-1a-positive baby; a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)
-chr17	4933085	4933086	site	HPA-2	HPA2_482	C	T	2a	2b	GP1BA c.482C>T	rs6065		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)
-chr17	44375696	44375697	site	HPA-3	HPA3_2621	A	C	3a	3b	ITGA2B c.2621T>G	rs5911		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)
-chr17	47284586	47284587	site	HPA-4	HPA4_506	G	A	4a	4b	ITGB3 c.506G>A	rs5917		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)
-chr5	53062926	53062927	site	HPA-5	HPA5_1600	G	A	5a	5b	ITGA2 c.1600G>A	rs1801106		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)
-chr17	47292421	47292422	site	HPA-6	HPA6_1544	G	A	6a	6b	ITGB3 c.1544G>A	rs13306487		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)
-chr6	73783708	73783709	site	HPA-15	HPA15_2108	A	C	15b	15a	CD109 c.2108C>A	rs10455097		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)
-chr1	161629988	161629989	site	HNA-1	FCGR3B_108	G	C	1b	1a	FCGR3B c.108G>C	rs200688856	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
-chr1	161629982	161629983	site	HNA-1	FCGR3B_114	A	G	1b	1a	FCGR3B c.114C>T	rs527909462	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
-chr1	161629902	161629903	site	HNA-1	FCGR3B_194	T	C	1a	1b	FCGR3B c.194A>G	rs448740	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
-chr1	161629863	161629864	site	HNA-1	FCGR3B_233	G	T	no 1c	1c	FCGR3B c.233C>A	rs5030738	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
-chr1	161629852	161629853	site	HNA-1	FCGR3B_244	T	C	1b	1a	FCGR3B c.244G>A	rs147574249	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
-chr1	161629780	161629781	site	HNA-1	FCGR3B_316	T	C	1b	1a	FCGR3B c.316G>A	rs2290834	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
-chr19	10631493	10631494	site	HNA-3	HNA3_461	A	G	3b	3a	SLC44A2 c.461G>A	rs2288904		a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
-chr16	31265489	31265490	site	HNA-4	HNA4_230	G	A	4a	4b	ITGAM c.230G>A	rs1143679		a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
-chr16	30506719	30506720	site	HNA-5	HNA5_2372	G	C	5a	5b	ITGAL c.2372G>C	rs2230433		a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)
+chrom	start	end	kind	system	name	ref	alt	ref_means	alt_means	hgvs	rsid	caveat	meaning	high_prevalence	null_on
+chr9	133257520	133257521	site	ABO	ABO_261	T	TC	O.01 (c.261delG)	no c.261delG	ABO c.261delG	rs8176719				
+chr9	133255928	133255929	site	ABO	ABO_802	C	T	not O.02	O.02	ABO c.802G>A	rs41302905				
+chr9	133255927	133255928	site	ABO	ABO_803	C	G	A	B	ABO c.803G>C	rs8176747				
+chr9	133255934	133255935	site	ABO	ABO_796	G	T	A	B	ABO c.796C>A	rs8176746				
+chr9	133255668	133255669	site	ABO	ABO_1061	CG	C	A1	A2	ABO c.1061delC	rs56392308	a deletion in a run of C: short-read calls are less reliable here			
+chr1	25300924	25300925	site	RhD	RHD_PSI_DUP	T	TCTTACTGGGTTTTATTGCAGACAGACTACCACATGAA		RHD*08N.01	RHD c.487-19_504dup					
+chr1	25301067	25301068	site	RhD	RHD_PSI_609	G	A		RHD*08N.01	RHD c.609G>A	rs114032679				
+chr1	25408710	25408711	site	RhCE	RHCE_307	G	A	c	C	RHCE c.307C>T	rs676785	RHCE exon 2 of a C allele is RHD-like: short reads can place it on RHD			
+chr1	25390873	25390874	site	RhCE	RHCE_676	C	G	e	E	RHCE c.676G>C	rs609320				
+chr7	142957920	142957921	site	Kell	KEL_578	G	A	k	K	KEL c.578C>T	rs8176058			k	
+chr7	142954266	142954267	site	Kell	KEL_841	G	A	Kpb	Kpa	KEL c.841C>T	rs8176059			Kpb	
+chr7	142943025	142943026	site	Kell	KEL_1790	A	G	Jsb	Jsa	KEL c.1790T>C	rs8176038			Jsb	
+chr7	142961804	142961805	site	Kell	KEL_02N30	C	T	Ku	null	KEL c.71G>A	rs753369164			Ku	k Kpb Jsb
+chr7	142961421	142961422	site	Kell	KEL_02N46	AT	GGAG	Ku	null	KEL c.160_161delinsCTCC				Ku	k Kpb Jsb
+chr7	142961397	142961398	site	Kell	KEL_02N23	G	GA	Ku	null	KEL c.184dupT	rs751207765			Ku	k Kpb Jsb
+chr7	142961381	142961382	site	Kell	KEL_02N54	G	T	Ku	null	KEL c.201C>A				Ku	k Kpb Jsb
+chr7	142961358	142961359	site	Kell	KEL_02N01	C	G,T,A	Ku	null	KEL c.223+1G>C, c.223+1G>A, c.223+1G>T	rs369569464			Ku	k Kpb Jsb
+chr7	142961097	142961098	site	Kell	KEL_02N28	C	A	Ku	null	KEL c.230G>T	rs2116352619			Ku	k Kpb Jsb
+chr7	142961081	142961082	site	Kell	KEL_02N03	A	T	Ku	null	KEL c.246T>A	rs61729058			Ku	k Kpb Jsb
+chr7	142961060	142961061	site	Kell	KEL_02N41	G	C	Ku	null	KEL c.267C>G	rs879327552			Ku	k Kpb Jsb
+chr7	142961028	142961029	site	Kell	KEL_02N42	C	G	Ku	null	KEL c.299G>C	rs200268316			Ku	k Kpb Jsb
+chr7	142960998	142960999	site	Kell	KEL_02N43	CT	C	Ku	null	KEL c.328delA	rs1796941672			Ku	k Kpb Jsb
+chr7	142960955	142960956	site	Kell	KEL_02N53	CT	C	Ku	null	KEL c.371delA				Ku	k Kpb Jsb
+chr7	142960945	142960946	site	Kell	KEL_02N26	G	A	Ku	null	KEL c.382C>T	rs61729053			Ku	k Kpb Jsb
+chr7	142960929	142960930	site	Kell	KEL_02N35	A	G	Ku	null	KEL c.398T>C				Ku	k Kpb Jsb
+chr7	142958391	142958392	site	Kell	KEL_02N36	TC	T	Ku	null	KEL c.436delG	rs1562964425			Ku	k Kpb Jsb
+chr7	142958373	142958374	site	Kell	KEL_02N32	T	C	Ku	null	KEL c.455A>G				Ku	k Kpb Jsb
+chr7	142958371	142958372	site	Kell	KEL_02N63	TGTA	T	Ku	null	KEL c.454_456delTAC	rs1241298894			Ku	k Kpb Jsb
+chr7	142958347	142958348	site	Kell	KEL_02N48	T	A	Ku	null	KEL c.481A>T				Ku	k Kpb Jsb
+chr7	142958305	142958306	site	Kell	KEL_02N64	C	A	Ku	null	KEL c.523G>T				Ku	k Kpb Jsb
+chr7	142957974	142957975	site	Kell	KEL_02N08	T	C	Ku	null	KEL c.526-2A>G				Ku	k Kpb Jsb
+chr7	142957924	142957925	site	Kell	KEL_02N07	G	A	Ku	null	KEL c.574C>T	rs200430183			Ku	k Kpb Jsb
+chr7	142954487	142954488	site	Kell	KEL_02N55	G	A	Ku	null	KEL c.712C>T	rs753948889			Ku	k Kpb Jsb
+chr7	142954484	142954485	site	Kell	KEL_02N24	C	A	Ku	null	KEL c.715G>T	rs766427535			Ku	k Kpb Jsb
+chr7	142954468	142954469	site	Kell	KEL_02N27	GC	G	Ku	null	KEL c.730delG				Ku	k Kpb Jsb
+chr7	142954372	142954373	site	Kell	KEL_02N22	C	G	Ku	null	KEL c.736-1G>C	rs765075509			Ku	k Kpb Jsb
+chr7	142954202	142954203	site	Kell	KEL_02N11	AC	A	Ku	null	KEL c.904delG	rs61729059			Ku	k Kpb Jsb
+chr7	142954182	142954183	site	Kell	KEL_02N12	C	T,A	Ku	null	KEL c.924+1G>A, c.924+1G>T	rs568600999			Ku	k Kpb Jsb
+chr7	142953932	142953933	site	Kell	KEL_02N14	C	T,A	Ku	null	KEL c.948G>A, c.948G>T	rs61729049			Ku	k Kpb Jsb
+chr7	142953907	142953908	site	Kell	KEL_02N61	TG	T	Ku	null	KEL c.972delC				Ku	k Kpb Jsb
+chr7	142953883	142953884	site	Kell	KEL_02N49	G	A	Ku	null	KEL c.997C>T				Ku	k Kpb Jsb
+chr7	142953838	142953839	site	Kell	KEL_02N04	G	A	Ku	null	KEL c.1042C>T	rs61729054			Ku	k Kpb Jsb
+chr7	142952581	142952582	site	Kell	KEL_02N62	A	G	Ku	null	KEL c.1130T>C	rs1216525453			Ku	k Kpb Jsb
+chr7	142946304	142946305	site	Kell	KEL_02N15	G	A	Ku	null	KEL c.1216C>T	rs61729045			Ku	k Kpb Jsb
+chr7	142946267	142946268	site	Kell	KEL_02N37	A	G	Ku	null	KEL c.1253T>C	rs149225200			Ku	k Kpb Jsb
+chr7	142946201	142946202	site	Kell	KEL_02N60	C	T	Ku	null	KEL c.1314+5G>A				Ku	k Kpb Jsb
+chr7	142944678	142944679	site	Kell	KEL_02N09	C	T	Ku	null	KEL c.1377G>A	rs61729052			Ku	k Kpb Jsb
+chr7	142944400	142944401	site	Kell	KEL_02N51	C	G	Ku	null	KEL c.1414-1G>C	rs906814829			Ku	k Kpb Jsb
+chr7	142944393	142944394	site	Kell	KEL_02N10	G	A	Ku	null	KEL c.1420C>T	rs61729056			Ku	k Kpb Jsb
+chr7	142944339	142944340	site	Kell	KEL_02N40	G	A	Ku	null	KEL c.1474C>T	rs932456335			Ku	k Kpb Jsb
+chr7	142944336	142944337	site	Kell	KEL_02N16	G	A	Ku	null	KEL c.1477C>T	rs61729050			Ku	k Kpb Jsb
+chr7	142943828	142943829	site	Kell	KEL_02N17	G	A	Ku	null	KEL c.1546C>T	rs8176034			Ku	k Kpb Jsb
+chr7	142943592	142943593	site	Kell	KEL_02N20	C	T	Ku	null	KEL c.1596G>A				Ku	k Kpb Jsb
+chr7	142943524	142943525	site	Kell	KEL_02N29	C	T,A	Ku	null	KEL c.1664G>A, c.1664G>T	rs1796425365			Ku	k Kpb Jsb
+chr7	142943510	142943511	site	Kell	KEL_02N18	G	C	Ku	null	KEL c.1678C>G	rs61729046			Ku	k Kpb Jsb
+chr7	142943338	142943339	site	Kell	KEL_02N59	C	T	Ku	null	KEL c.1708G>A	rs766803262			Ku	k Kpb Jsb
+chr7	142943320	142943321	site	Kell	KEL_02N33	C	G	Ku	null	KEL c.1726G>C	rs201778033			Ku	k Kpb Jsb
+chr7	142943274	142943275	site	Kell	KEL_02N31	C	T	Ku	null	KEL c.1771+1G>A	rs869025768			Ku	k Kpb Jsb
+chr7	142943001	142943002	site	Kell	KEL_02N52	T	TG	Ku	null	KEL c.1813dupC	rs1796409113			Ku	k Kpb Jsb
+chr7	142942983	142942984	site	Kell	KEL_02N38	A	C	Ku	null	KEL c.1832T>G				Ku	k Kpb Jsb
+chr7	142942917	142942918	site	Kell	KEL_02N56	AAG	A	Ku	null	KEL c.1896_1897delCT				Ku	k Kpb Jsb
+chr7	142942523	142942524	site	Kell	KEL_02N21	G	C	Ku	null	KEL c.1947C>G	rs902425813			Ku	k Kpb Jsb
+chr7	142942494	142942495	site	Kell	KEL_02N25	TC	T	Ku	null	KEL c.1975delG	rs1042359399			Ku	k Kpb Jsb
+chr7	142942447	142942448	site	Kell	KEL_02N19	G	A	Ku	null	KEL c.2023C>T	rs61729047			Ku	k Kpb Jsb
+chr7	142942443	142942444	site	Kell	KEL_02N05	C	T	Ku	null	KEL c.2027G>A	rs61729051			Ku	k Kpb Jsb
+chr7	142941414	142941415	site	Kell	KEL_02N65	T	C	Ku	null	KEL c.2038-2A>G	rs1796350597			Ku	k Kpb Jsb
+chr7	142941352	142941353	site	Kell	KEL_02N39	G	A	Ku	null	KEL c.2098C>T	rs565926203			Ku	k Kpb Jsb
+chr7	142941329	142941330	site	Kell	KEL_02N50	GC	G	Ku	null	KEL c.2120delG				Ku	k Kpb Jsb
+chr7	142941274	142941275	site	Kell	KEL_02N44	AG	A	Ku	null	KEL c.2175delC	rs1796344884			Ku	k Kpb Jsb
+chr1	159205563	159205564	site	Duffy	FY_125	G	A	Fya	Fyb	ACKR1 c.125G>A	rs12075				
+chr1	159204892	159204893	site	Duffy	FY_GATA	T	C		no red cell expression	ACKR1 c.-67T>C	rs2814778				
+chr1	159205703	159205704	site	Duffy	FY_265	C	T		Fyb weak (FY*X)	ACKR1 c.265C>T	rs34599082				
+chr18	45739553	45739554	site	Kidd	JK_838	G	A	Jka	Jkb	SLC14A1 c.838G>A	rs1058396				
+chr18	45730324	45730325	site	Kidd	JK_01N09	AGGACAGCCCCACTATGGTTAGAGT	A	Jk3	null	SLC14A1 c.27_50del	rs547922260			Jk3	Jka
+chr18	45730437	45730438	site	Kidd	JK_02N21	G	A	Jk3	null	SLC14A1 c.118G>A	rs145283450			Jk3	Jkb
+chr18	45730471	45730472	site	Kidd	JK_01N32	G	C	Jk3	null	SLC14A1 c.151+1G>C				Jk3	Jka
+chr18	45731013	45731014	site	Kidd	JK_02N25	G	A	Jk3	null	SLC14A1 c.152-1G>A	rs373247991			Jk3	Jkb
+chr18	45731018	45731019	site	Kidd	JK_02N22	ACCCGTGGTGC	A	Jk3	null	SLC14A1 c.157_166del	rs750167058			Jk3	Jkb
+chr18	45731022	45731023	site	Kidd	JK_02N15	G	GC	Jk3	null	SLC14A1 c.160_161insC				Jk3	Jkb
+chr18	45731052	45731053	site	Kidd	JK_01N18	C	T	Jk3	null	SLC14A1 c.190C>T	rs552191196			Jk3	Jka
+chr18	45731053	45731054	site	Kidd	JK_02N09	G	A	Jk3	null	SLC14A1 c.191G>A	rs114362217			Jk3	Jkb
+chr18	45731056	45731057	site	Kidd	JK_02N10	G	A	Jk3	null	SLC14A1 c.194G>A	rs778150490			Jk3	Jkb
+chr18	45731064	45731065	site	Kidd	JK_01N02	C	T	Jk3	null	SLC14A1 c.202C>T	rs142529927			Jk3	Jka
+chr18	45731084	45731085	site	Kidd	JK_02N03	C	A	Jk3	null	SLC14A1 c.222C>A	rs749037771			Jk3	Jkb
+chr18	45731128	45731129	site	Kidd	JK_01N24	AC	A	Jk3	null	SLC14A1 c.270delC	rs766335775			Jk3	Jka
+chr18	45731138	45731139	site	Kidd	JK_01N33	G	A	Jk3	null	SLC14A1 c.276G>A	rs763262711			Jk3	Jka
+chr18	45731161	45731162	site	Kidd	JK_01N28	C	T	Jk3	null	SLC14A1 c.299C>T	rs1381249141			Jk3	Jka
+chr18	45731169	45731170	site	Kidd	JK_01N27	T	C	Jk3	null	SLC14A1 c.307T>C				Jk3	Jka
+chr18	45731188	45731189	site	Kidd	JK_01N13	TG	T	Jk3	null	SLC14A1 c.327delG				Jk3	Jka
+chr18	45734272	45734273	site	Kidd	JK_01N06	G	A,C	Jk3	null	SLC14A1 c.342-1G>A, c.342-1G>C	rs78937798			Jk3	Jkb Jka
+chr18	45734290	45734291	site	Kidd	JK_02N27	G	A	Jk3	null	SLC14A1 c.359G>A	rs747951920			Jk3	Jkb
+chr18	45734363	45734364	site	Kidd	JK_01N14	G	A	Jk3	null	SLC14A1 c.432G>A	rs2047121737			Jk3	Jka
+chr18	45736491	45736492	site	Kidd	JK_02N24	CA	C	Jk3	null	SLC14A1 c.510delA	rs751692991			Jk3	Jkb
+chr18	45736499	45736500	site	Kidd	JK_01N12	ACCTCCCCGTCTTCAC	A	Jk3	null	SLC14A1 c.522_536del	rs772726215			Jk3	Jka
+chr18	45736545	45736546	site	Kidd	JK_01N05	C	A	Jk3	null	SLC14A1 c.561C>A	rs778172038			Jk3	Jkb Jka
+chr18	45736566	45736567	site	Kidd	JK_01N03	C	G	Jk3	null	SLC14A1 c.582C>G	rs34756616			Jk3	Jka
+chr18	45736630	45736631	site	Kidd	JK_02N20	GAC	G	Jk3	null	SLC14A1 c.647_648delAC	rs1223735153			Jk3	Jkb
+chr18	45736648	45736649	site	Kidd	JK_02N04	G	T	Jk3	null	SLC14A1 c.663+1G>T	rs77744921			Jk3	Jkb
+chr18	45739217	45739218	site	Kidd	JK_02N19	G	A	Jk3	null	SLC14A1 c.719G>A	rs2047284407			Jk3	Jkb
+chr18	45739220	45739221	site	Kidd	JK_01N07	CA	C	Jk3	null	SLC14A1 c.723delA	rs759505281			Jk3	Jkb Jka
+chr18	45739235	45739236	site	Kidd	JK_01N22	T	G	Jk3	null	SLC14A1 c.737T>G				Jk3	Jka
+chr18	45739250	45739251	site	Kidd	JK_01N15	TCTC	T	Jk3	null	SLC14A1 c.757_759delTCC	rs2144802213			Jk3	Jka
+chr18	45739314	45739315	site	Kidd	JK_01N10	G	A	Jk3	null	SLC14A1 c.811+5G>A	rs1414947682			Jk3	Jka
+chr18	45739527	45739528	site	Kidd	JK_01N26	G	T	Jk3	null	SLC14A1 c.812G>T	rs372299852			Jk3	Jka
+chr18	45739570	45739571	site	Kidd	JK_02N16	CT	C	Jk3	null	SLC14A1 c.856delT	rs1444093504			Jk3	Jkb
+chr18	45739581	45739582	site	Kidd	JK_01N08	A	G	Jk3	null	SLC14A1 c.866A>G	rs2047297782			Jk3	Jka
+chr18	45739586	45739587	site	Kidd	JK_02N06	T	C	Jk3	null	SLC14A1 c.871T>C	rs78242949			Jk3	Jkb
+chr18	45739608	45739609	site	Kidd	JK_01N16	G	A	Jk3	null	SLC14A1 c.893G>A	rs2047298796			Jk3	Jka
+chr18	45739611	45739612	site	Kidd	JK_02N07	G	A	Jk3	null	SLC14A1 c.896G>A	rs538368217			Jk3	Jkb
+chr18	45739663	45739664	site	Kidd	JK_01N30	T	C	Jk3	null	SLC14A1 c.946+2T>C	rs755898701			Jk3	Jka
+chr18	45748384	45748385	site	Kidd	JK_01N04	C	T	Jk3	null	SLC14A1 c.956C>T	rs565898944			Jk3	Jkb Jka
+chr18	45748429	45748430	site	Kidd	JK_01N23	G	C	Jk3	null	SLC14A1 c.996+5G>C				Jk3	Jka
+chr18	45749817	45749818	site	Kidd	JK_02N14	CG	C	Jk3	null	SLC14A1 c.1038delG	rs746265611			Jk3	Jkb
+chr4	144120566	144120567	site	MNS	GYPA_59	A	G	N	M	GYPA c.59T>C	rs7682260	GYPA, GYPB and GYPE are near copies: short reads can misplace these calls			
+chr4	143999442	143999443	site	MNS	GYPB_143	G	A	s	S	GYPB c.143C>T	rs7683365	GYPA, GYPB and GYPE are near copies: short reads can misplace these calls			
+chr19	44812187	44812188	site	Lutheran	LU_230	G	A	Lub	Lua	BCAM c.230G>A	rs28399653			Lub	
+chr17	44251252	44251253	site	Diego	DI_2561	G	A	Dib	Dia	SLC4A1 c.2561C>T	rs2285644			Dib	
+chr12	14840504	14840505	site	Dombrock	DO_793	C	T	Dob	Doa	ART4 c.793G>A	rs11276				
+chr7	30912042	30912043	site	Colton	CO_134	C	T	Coa	Cob	AQP1 c.134C>T	rs28362692			Coa	
+chr1	3775432	3775433	site	Vel	VEL_01N01	AGTCAGCCTAGGGGCTGT	A	Vel	null	SMIM1 c.64_80delAGCCTAGGGGCTGTGTC	rs566629828			Vel	
+chr2	219210263	219210264	site	Langereis	LAN_01N22	CGAG	C	Lan	null	ABCB6 c.2383_2385delCTC	rs1950559481			Lan	
+chr2	219210379	219210380	site	Langereis	LAN_01N34	C	T	Lan	null	ABCB6 c.2351+1G>A	rs150574070			Lan	
+chr2	219210708	219210709	site	Langereis	LAN_01N10	A	C	Lan	null	ABCB6 c.2256+2T>G	rs1559234527			Lan	
+chr2	219210709	219210710	site	Langereis	LAN_01N17	C	T	Lan	null	ABCB6 c.2256+1G>A	rs1950565975			Lan	
+chr2	219210811	219210812	site	Langereis	LAN_01N33	G	A	Lan	null	ABCB6 c.2155C>T				Lan	
+chr2	219211089	219211090	site	Langereis	LAN_01N09	GGA	G	Lan	null	ABCB6 c.1985_1986delTC	rs387906909			Lan	
+chr2	219212412	219212413	site	Langereis	LAN_01N08	G	A	Lan	null	ABCB6 c.1942C>T	rs376664522			Lan	
+chr2	219212442	219212443	site	Langereis	LAN_01N32	G	A	Lan	null	ABCB6 c.1912C>T	rs761968111			Lan	
+chr2	219212487	219212488	site	Langereis	LAN_01N07	C	TCACCTGTT	Lan	null	ABCB6 c.1867delinsAACAGGTGA				Lan	
+chr2	219213045	219213046	site	Langereis	LAN_01N31	C	T	Lan	null	ABCB6 c.1825G>A	rs374541848			Lan	
+chr2	219213446	219213447	site	Langereis	LAN_01N05	CCT	C	Lan	null	ABCB6 c.1709_1710delAG	rs867157424			Lan	
+chr2	219213465	219213466	site	Langereis	LAN_01N06	CAT	C	Lan	null	ABCB6 c.1690_1691delAT	rs387906908			Lan	
+chr2	219213502	219213503	site	Langereis	LAN_01N36	C	T	Lan	null	ABCB6 c.1656-1G>A	rs879255549			Lan	
+chr2	219213626	219213627	site	Langereis	LAN_01N26	GC	G	Lan	null	ABCB6 c.1617delG	rs769584110			Lan	
+chr2	219213843	219213844	site	Langereis	LAN_01N12	G	GA	Lan	null	ABCB6 c.1559dup				Lan	
+chr2	219213859	219213860	site	Langereis	LAN_01N04	A	AGCAGGGAGCCG	Lan	null	ABCB6 c.1533_1543dupCGGCTCCCTGC	rs772078524			Lan	
+chr2	219213940	219213941	site	Langereis	LAN_01N37	C	T	Lan	null	ABCB6 c.1463G>A				Lan	
+chr2	219215000	219215001	site	Langereis	LAN_01N11	C	T	Lan	null	ABCB6 c.1236G>A	rs772387819			Lan	
+chr2	219215025	219215026	site	Langereis	LAN_01N21	TAGATGATGCCAA	T	Lan	null	ABCB6 c.1199_1210delTTGGCATCATCT				Lan	
+chr2	219216025	219216026	site	Langereis	LAN_01N35	CCGATCCG	C	Lan	null	ABCB6 c.1118_1124delCGGATCG	rs765925019			Lan	
+chr2	219216180	219216181	site	Langereis	LAN_01N30	C	T	Lan	null	ABCB6 c.971-1G>A	rs1450661565			Lan	
+chr2	219216376	219216377	site	Langereis	LAN_01N03	GCCAC	G	Lan	null	ABCB6 c.953_956delGTGG	rs755885095			Lan	
+chr2	219216448	219216449	site	Langereis	LAN_01N25	CTCAG	C	Lan	null	ABCB6 c.881_884delCTGA				Lan	
+chr2	219216466	219216467	site	Langereis	LAN_01N20	T	C	Lan	null	ABCB6 c.869-2A>G	rs1574816150			Lan	
+chr2	219216689	219216690	site	Langereis	LAN_01N38	GC	G	Lan	null	ABCB6 c.829delG	rs747139680			Lan	
+chr2	219216692	219216693	site	Langereis	LAN_01N29	C	T	Lan	null	ABCB6 c.827G>A	rs200125320			Lan	
+chr2	219216801	219216802	site	Langereis	LAN_01N19	G	A	Lan	null	ABCB6 c.718C>T	rs766607263			Lan	
+chr2	219216802	219216803	site	Langereis	LAN_01N02	C	T	Lan	null	ABCB6 c.717G>A	rs148458820			Lan	
+chr2	219217767	219217768	site	Langereis	LAN_01N39	C	A	Lan	null	ABCB6 c.589G>T				Lan	
+chr2	219217782	219217783	site	Langereis	LAN_01N13	G	A	Lan	null	ABCB6 c.574C>T	rs149202834			Lan	
+chr2	219218213	219218214	site	Langereis	LAN_01N16	AG	A	Lan	null	ABCB6 c.459delC	rs755723161			Lan	
+chr2	219218296	219218297	site	Langereis	LAN_01N15	AC	A	Lan	null	ABCB6 c.376delG	rs377591749			Lan	
+chr2	219218371	219218372	site	Langereis	LAN_01N18	G	GC	Lan	null	ABCB6 c.301dupG	rs768732686			Lan	
+chr2	219218476	219218477	site	Langereis	LAN_01N01	G	GC	Lan	null	ABCB6 c.196dupG	rs781146478			Lan	
+chr2	219218585	219218586	site	Langereis	LAN_01N14	TGAA	T	Lan	null	ABCB6 c.85_87delTTC	rs748337351			Lan	
+chr2	219218672	219218673	site	Langereis	LAN_01N28	T	G	Lan	null	ABCB6 c.1A>C	rs770340675			Lan	
+chr4	88094575	88094576	site	Junior	JR_01N28	C	T	Jra	null	ABCG2 c.1820+1G>A	rs199897813			Jra	
+chr4	88094606	88094607	site	Junior	JR_01N22	G	GA	Jra	null	ABCG2 c.1789_1790insT				Jra	
+chr4	88095533	88095534	site	Junior	JR_01N21	G	A	Jra	null	ABCG2 c.1723C>T	rs548254708			Jra	
+chr4	88097583	88097584	site	Junior	JR_01N20	AG	A	Jra	null	ABCG2 c.1515delC	rs868217328			Jra	
+chr4	88113383	88113384	site	Junior	JR_01N12	GGT	G	Jra	null	ABCG2 c.1111_1112delAC	rs387906869			Jra	
+chr4	88113474	88113475	site	Junior	JR_01N14	AAGG	A	Jra	null	ABCG2 c.1019_1021delCCT	rs755318857			Jra	
+chr4	88113508	88113509	site	Junior	JR_01N16	CTA	C	Jra	null	ABCG2 c.986_987delTA	rs781465213			Jra	
+chr4	88115020	88115021	site	Junior	JR_01N11	G	GAAGT	Jra	null	ABCG2 c.875_878dupACTT	rs1560674481			Jra	
+chr4	88118156	88118157	site	Junior	JR_01N10	TAA	T	Jra	null	ABCG2 c.791_792delTT	rs387906870			Jra	
+chr4	88118165	88118166	site	Junior	JR_01N05	C	A	Jra	null	ABCG2 c.784G>T	rs200473953			Jra	
+chr4	88118213	88118214	site	Junior	JR_01N03	G	A	Jra	null	ABCG2 c.736C>T	rs200190472			Jra	
+chr4	88118219	88118220	site	Junior	JR_01N09	G	A	Jra	null	ABCG2 c.730C>T				Jra	
+chr4	88118243	88118244	site	Junior	JR_01N02	G	A	Jra	null	ABCG2 c.706C>T	rs140207606			Jra	
+chr4	88121756	88121757	site	Junior	JR_01N19	TC	T	Jra	null	ABCG2 c.566delG				Jra	
+chr4	88121780	88121781	site	Junior	JR_01N08	C	CT	Jra	null	ABCG2 c.542dup	rs1445054262			Jra	
+chr4	88131152	88131153	site	Junior	JR_01N26	G	A	Jra	null	ABCG2 c.439C>T	rs372192400			Jra	
+chr4	88131170	88131171	site	Junior	JR_01N15	G	GT	Jra	null	ABCG2 c.420dup	rs1560695576			Jra	
+chr4	88131804	88131805	site	Junior	JR_01N01	G	A	Jra	null	ABCG2 c.376C>T	rs72552713			Jra	
+chr4	88131843	88131844	site	Junior	JR_01N04	G	A	Jra	null	ABCG2 c.337C>T	rs201121511			Jra	
+chr4	88131891	88131892	site	Junior	JR_01N18	T	A	Jra	null	ABCG2 c.289A>T				Jra	
+chr4	88132574	88132575	site	Junior	JR_01N17	C	T	Jra	null	ABCG2 c.263+1G>A	rs767710822			Jra	
+chr4	88139797	88139798	site	Junior	JR_01N07	ATTCGATAATAT	A	Jra	null	ABCG2 c.187_197del	rs565722112			Jra	
+chr4	88139993	88139994	site	Junior	JR_01N24	A	G	Jra	null	ABCG2 c.2T>C	rs765550029			Jra	
+chr19	48750230	48750231	site	H	FUT1_01N36	C	A	H	null	FUT1 c.1051G>T				H	
+chr19	48750234	48750235	site	H	FUT1_01N17	C	G	H	null	FUT1 c.1047G>C	rs1438752561			H	
+chr19	48750301	48750302	site	H	FUT1_01N16	T	G	H	null	FUT1 c.980A>C	rs777291875			H	
+chr19	48750333	48750334	site	H	FUT1_01N15	G	C	H	null	FUT1 c.948C>G	rs104894686			H	
+chr19	48750337	48750338	site	H	FUT1_01N14	G	A	H	null	FUT1 c.944C>T				H	
+chr19	48750398	48750399	site	H	FUT1_01N13	CAA	C	H	null	FUT1 c.881_882delTT	rs777455020			H	
+chr19	48750455	48750456	site	H	FUT1_01N12	G	A	H	null	FUT1 c.826C>T	rs104894688			H	
+chr19	48750489	48750490	site	H	FUT1_01N22	G	GC	H	null	FUT1 c.791dup				H	
+chr19	48750494	48750495	site	H	FUT1_01N34	T	G	H	null	FUT1 c.787A>C				H	
+chr19	48750505	48750506	site	H	FUT1_01N10	A	T	H	null	FUT1 c.776T>A				H	
+chr19	48750512	48750513	site	H	FUT1_01N20	CG	C	H	null	FUT1 c.768delC				H	
+chr19	48750515	48750516	site	H	FUT1_01N33	GGGCTTCGTGCCGTGCCC	G	H	null	FUT1 c.749_765del				H	
+chr19	48750556	48750557	site	H	FUT1_01N09	A	C	H	null	FUT1 c.725T>G	rs28934588			H	
+chr19	48750570	48750571	site	H	FUT1_01N23	GC	G	H	null	FUT1 c.710delG	rs1486913817			H	
+chr19	48750586	48750587	site	H	FUT1_01N08	C	T	H	null	FUT1 c.695G>A	rs2033981531			H	
+chr19	48750587	48750588	site	H	FUT1_01N19	A	G	H	null	FUT1 c.694T>C				H	
+chr19	48750597	48750598	site	H	FUT1_01N18	C	T	H	null	FUT1 c.684G>A				H	
+chr19	48750609	48750610	site	H	FUT1_01N32	ATAG	A	H	null	FUT1 c.669_671delCTA	rs1383604580			H	
+chr19	48750695	48750696	site	H	FUT1_01N07	G	A	H	null	FUT1 c.586C>T				H	
+chr19	48750728	48750729	site	H	FUT1_01N06	ACT	A	H	null	FUT1 c.551_552delAG	rs573412368			H	
+chr19	48750743	48750744	site	H	FUT1_01N05	G	A	H	null	FUT1 c.538C>T	rs746629771			H	
+chr19	48750768	48750769	site	H	FUT1_01N04	C	G	H	null	FUT1 c.513G>C				H	
+chr19	48750772	48750773	site	H	FUT1_01N31	G	GA	H	null	FUT1 c.508dupT				H	
+chr19	48750819	48750820	site	H	FUT1_01N03	G	T	H	null	FUT1 c.462C>A	rs753874356			H	
+chr19	48750820	48750821	site	H	FUT1_01N02	T	C	H	null	FUT1 c.461A>G				H	
+chr19	48750826	48750827	site	H	FUT1_01N24	TC	T	H	null	FUT1 c.454delG	rs1409390706			H	
+chr19	48750858	48750859	site	H	FUT1_01N26	C	T	H	null	FUT1 c.423G>A	rs2033988762			H	
+chr19	48750859	48750860	site	H	FUT1_01N01	C	T	H	null	FUT1 c.422G>A	rs749165173			H	
+chr19	48750882	48750883	site	H	FUT1_01N29	TGGGGCCAGCACGGGCAGGGTGATGCGGAATACC	T	H	null	FUT1 c.366_398del				H	
+chr19	48750889	48750890	site	H	FUT1_01N30	A	G	H	null	FUT1 c.392T>C				H	
+chr19	48750920	48750921	site	H	FUT1_01N28	C	T	H	null	FUT1 c.361G>A				H	
+chr19	48750993	48750994	site	H	FUT1_01N25	A	T	H	null	FUT1 c.288T>A				H	
+chr19	48751232	48751233	site	H	FUT1_01N27	A	G	H	null	FUT1 c.49T>C				H	
+chr19	48751261	48751262	site	H	FUT1_01N21	C	CGATGGCT	H	null	FUT1 c.13_19dupAGCCATC	rs1220576904			H	
+chr19	48703400	48703401	site	Secretor	FUT2_01N17	G	A	Se	null	FUT2 c.445G>A	rs200543547				
+chr19	48703416	48703417	site	Secretor	FUT2_01N02	G	A	Se	null	FUT2 c.461G>A	rs601338				
+chr19	48703557	48703558	site	Secretor	FUT2_01N03	G	A	Se	null	FUT2 c.602G>A	rs572832908				
+chr19	48703559	48703560	site	Secretor	FUT2_01N04	C	T	Se	null	FUT2 c.604C>T	rs1800028				
+chr19	48703616	48703617	site	Secretor	FUT2_01N05	C	T	Se	null	FUT2 c.661C>T	rs1800029				
+chr19	48703646	48703647	site	Secretor	FUT2_01N06	C	T	Se	null	FUT2 c.691C>T	rs144566043				
+chr19	48703652	48703653	site	Secretor	FUT2_01N07	C	T	Se	null	FUT2 c.697C>T	rs768236330				
+chr19	48703672	48703673	site	Secretor	FUT2_01N08	CGT	C	Se	null	FUT2 c.719_720delGT					
+chr19	48703675	48703676	site	Secretor	FUT2_01N09	GGTC	G	Se	null	FUT2 c.721_723delGTC					
+chr19	48703765	48703766	site	Secretor	FUT2_01N11	AC	A	Se	null	FUT2 c.812delC	rs1799761				
+chr19	48703806	48703807	site	Secretor	FUT2_01N18	C	A	Se	null	FUT2 c.851C>A	rs371279676				
+chr19	48703837	48703838	site	Secretor	FUT2_01N12	G	A	Se	null	FUT2 c.882G>A	rs1800030				
+chr19	48703856	48703857	site	Secretor	FUT2_01N13	G	A	Se	null	FUT2 c.901G>A	rs144269088				
+chr19	48703938	48703939	site	Secretor	FUT2_01N14	C	T	Se	null	FUT2 c.983C>T	rs200626231				
+chr17	47283363	47283364	site	HPA-1	HPA1_176	T	C	1a	1b	ITGB3 c.176T>C	rs5918		HPA-1a is the platelet antigen most often behind FNAIT and post-transfusion purpura in white populations: an HPA-1a-negative (HPA-1b/1b) mother can make anti-HPA-1a against an HPA-1a-positive baby; a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	1a	
+chr17	4933085	4933086	site	HPA-2	HPA2_482	C	T	2a	2b	GP1BA c.482C>T	rs6065		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)		
+chr17	44375696	44375697	site	HPA-3	HPA3_2621	A	C	3a	3b	ITGA2B c.2621T>G	rs5911		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)		
+chr17	47284586	47284587	site	HPA-4	HPA4_506	G	A	4a	4b	ITGB3 c.506G>A	rs5917		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	4a	
+chr5	53062926	53062927	site	HPA-5	HPA5_1600	G	A	5a	5b	ITGA2 c.1600G>A	rs1801106		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)		
+chr17	47292421	47292422	site	HPA-6	HPA6_1544	G	A	6a	6b	ITGB3 c.1544G>A	rs13306487		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	6a	
+chr17	47292174	47292175	site	HPA-7	HPA7_1297	C	G	7a	7b	ITGB3 c.1297C>G	rs121918448		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	7a	
+chr17	47300547	47300548	site	HPA-8	HPA8_1984	C	T	8a	8b	ITGB3 c.1984C>T	rs151219882		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	8a	
+chr17	44375715	44375716	site	HPA-9	HPA9_2602	C	T	9a	9b	ITGA2B c.2602G>A	rs74988902		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	9a	
+chr17	47283450	47283451	site	HPA-10	HPA10_263	G	A	10a	10b	ITGB3 c.263G>A	rs200358667		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	10a	
+chr17	47300539	47300540	site	HPA-11	HPA11_1976	G	A	11a	11b	ITGB3 c.1976G>A	rs377302275		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	11a	
+chr22	19723961	19723962	site	HPA-12	HPA12_119	G	A	12a	12b	GP1BB c.119G>A	rs375285857		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	12a	
+chr5	53073170	53073171	site	HPA-13	HPA13_2483	C	T	13a	13b	ITGA2 c.2483C>T	rs79932422		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	13a	
+chr17	47299524	47299525	site	HPA-14	HPA14_1909	TAAG	T	14a	14b	ITGB3 c.1909_1911del			a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	14a	
+chr6	73783708	73783709	site	HPA-15	HPA15_2108	A	C	15b	15a	CD109 c.2108C>A	rs10455097		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)		
+chr17	47284577	47284578	site	HPA-16	HPA16_497	C	T	16a	16b	ITGB3 c.497C>T	rs74708909		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	16a	
+chr17	47286306	47286307	site	HPA-17	HPA17_662	C	T	17a	17b	ITGB3 c.662C>T	rs770992614		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	17a	
+chr5	53070259	53070260	site	HPA-18	HPA18_2235	G	T	18a	18b	ITGA2 c.2235G>T	rs267606593		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	18a	
+chr17	47284567	47284568	site	HPA-19	HPA19_487	A	C	19a	19b	ITGB3 c.487A>C	rs80115510		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	19a	
+chr17	44378506	44378507	site	HPA-20	HPA20_1949	G	A	20a	20b	ITGA2B c.1949C>T	rs78299130		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	20a	
+chr17	47300523	47300524	site	HPA-21	HPA21_1960	G	A	21a	21b	ITGB3 c.1960G>A	rs70940817		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	21a	
+chr17	44385325	44385326	site	HPA-22	HPA22_584	T	G	22a	22b	ITGA2B c.584A>C	rs142811900		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	22a	
+chr17	47300505	47300506	site	HPA-23	HPA23_1942	C	T	23a	23b	ITGB3 c.1942C>T	rs139166528		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	23a	
+chr17	44380421	44380422	site	HPA-24	HPA24_1508	C	T	24a	24b	ITGA2B c.1508G>A	rs281864910		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	24a	
+chr5	53087039	53087040	site	HPA-25	HPA25_3347	C	T	25a	25b	ITGA2 c.3347C>T	rs771035051		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	25a	
+chr17	47299434	47299435	site	HPA-26	HPA26_1818	G	T	26a	26b	ITGB3 c.1818G>T	rs1156382155		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	26a	
+chr17	44375703	44375704	site	HPA-27	HPA27_2614	G	T	27a	27b	ITGA2B c.2614C>A	rs149468422		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	27a	
+chr17	44376344	44376345	site	HPA-28	HPA28_2311	C	A	28a	28b	ITGA2B c.2311G>T	rs368953599		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	28a	
+chr17	47274436	47274437	site	HPA-29	HPA29_98	C	T	29a	29b	ITGB3 c.98C>T	rs544276300		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	29a	
+chr17	44375922	44375923	site	HPA-30	HPA30_2511	C	G	30a	30b	ITGA2B c.2511G>C	rs377753373		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	30a	
+chr3	129062106	129062107	site	HPA-31	HPA31_368	C	T	31a	31b	GP9 c.368C>T	rs202229101		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	31a	
+chr17	47284601	47284602	site	HPA-32	HPA32_521	A	G	32a	32b	ITGB3 c.521A>G	rs879083862		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	32a	
+chr17	47292250	47292251	site	HPA-33	HPA33_1373	A	G	33a	33b	ITGB3 c.1373A>G	rs1555572829		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	33a	
+chr17	47283536	47283537	site	HPA-34	HPA34_349	C	T	34a	34b	ITGB3 c.349C>T	rs777748046		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	34a	
+chr17	47292391	47292392	site	HPA-35	HPA35_1514	G	A	35a	35b	ITGB3 c.1514G>A	rs779974422		a platelet antigen a person lacks can raise antibodies in a pregnancy (against the baby's platelets: fetal and neonatal alloimmune thrombocytopenia, FNAIT) or after a transfusion (post-transfusion purpura, refractoriness to platelet transfusions)	35a	
+chr1	161629988	161629989	site	HNA-1	FCGR3B_108	G	C	1b	1a	FCGR3B c.108G>C	rs200688856	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)		
+chr1	161629982	161629983	site	HNA-1	FCGR3B_114	A	G	1b	1a	FCGR3B c.114C>T	rs527909462	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)		
+chr1	161629902	161629903	site	HNA-1	FCGR3B_194	T	C	1a	1b	FCGR3B c.194A>G	rs448740	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)		
+chr1	161629863	161629864	site	HNA-1	FCGR3B_233	G	T	no 1c	1c	FCGR3B c.233C>A	rs5030738	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)		
+chr1	161629852	161629853	site	HNA-1	FCGR3B_244	T	C	1b	1a	FCGR3B c.244G>A	rs147574249	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)		
+chr1	161629780	161629781	site	HNA-1	FCGR3B_316	T	C	1b	1a	FCGR3B c.316G>A	rs2290834	FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) is not assessed	a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)		
+chr19	10631493	10631494	site	HNA-3	HNA3_461	A	G	3b	3a	SLC44A2 c.461G>A	rs2288904		a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)		
+chr16	31265489	31265490	site	HNA-4	HNA4_230	G	A	4a	4b	ITGAM c.230G>A	rs1143679		a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)		
+chr16	30506719	30506720	site	HNA-5	HNA5_2372	G	C	5a	5b	ITGAL c.2372G>C	rs2230433		a neutrophil antigen a person lacks can raise antibodies in a pregnancy or after a transfusion; such antibodies cause neonatal alloimmune neutropenia and transfusion-related acute lung injury (TRALI)		

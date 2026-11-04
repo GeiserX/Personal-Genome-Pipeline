@@ -3633,11 +3633,17 @@ def callability(catalog, table):
         if len(c) != 5:
             raise Unreadable(f"{os.path.basename(table)}: a row has {len(c)} columns, not 5")
         bases[c[3]] = (int(c[2]) - int(c[1]), int(c[4]))
+    if not bases:
+        raise Unreadable(f"{os.path.basename(table)} has no gene rows")
+    # mosdepth writes no row on a contig the BAM lacks: a chromosome with no row at all is
+    # not on the sample's reference; a gene missing from a chromosome that has rows means
+    # the table was written from another catalog.
+    contigs = {c[0] for c in lines[1:]}
     genes, unowned, owned, not_on_reference = [], [], [], []
     for r in catalog:
         g = {"gene": r["gene"], "hgnc_id": r["hgnc_id"], "reasons": r["reasons"].split(","),
              "owner": None if r["owner"] == "." else r["owner"], "share": None}
-        if r["start"] == ".":
+        if r["start"] == "." or r["chrom"] not in contigs:
             g["status"] = "not on this reference"
             not_on_reference.append(g["gene"])
         else:

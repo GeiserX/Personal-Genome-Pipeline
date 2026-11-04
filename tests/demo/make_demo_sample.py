@@ -27,7 +27,8 @@ Borrowed, not rewritten:
     from bin/traits_report.py, each fed made-up inputs; step 45's rows come
     from bin/ystr_report.py's marker_row, step 46's from bin/lpa_kiv2.py's
     assess, step 35's HBA1/HBA2 table from bin/hba_copy_number.py's assess,
-    step 49's depth rows from bin/chip_report.py's detection_limit and
+    step 49's depth rows from bin/chip_report.py's detection_limit, step 50's
+    tables from bin/mei_report.py on a made-up VCF and depth, and
     step 47's from bin/viral_report.py's build_rows, with made-up counts; steps 02, 40 and 41's tables are written here in their writers'
     columns.
 
@@ -827,13 +828,22 @@ BLOODTYPE = [
     ("Diego", "Di(a-b+)", "Dib/Dib", "high", ""),
     ("Dombrock", "Do(a+b+)", "Doa/Dob", "medium", ""),
     ("Colton", "Co(a+b-)", "Coa/Coa", "high", ""),
+    ("Vel", "Vel+", "Vel/Vel", "high", ""),
+    ("Langereis", "Lan+", "Lan/Lan", "high", ""),
+    ("Junior", "Jr(a+)", "Jra/Jra", "high", ""),
+    ("H", "H+", "H/H", "high", ""),
+    ("Secretor", "secretor", "Se/se", "high",
+     "null allele: FUT2 c.461G>A x1; weak secretor alleles (such as FUT2 c.418A>T, also written c.385A>T) "
+     "and a deletion of the whole FUT2 gene are not assessed"),
     ("HPA-1", "HPA-1(a+b-)", "1a/1a", "high", ""),
     ("HPA-2", "HPA-2(a+b-)", "2a/2a", "high", ""),
     ("HPA-3", "HPA-3(a+b+)", "3a/3b", "high", ""),
     ("HPA-4", "HPA-4(a+b-)", "4a/4a", "high", ""),
     ("HPA-5", "HPA-5(a+b-)", "5a/5a", "high", ""),
     ("HPA-6", "HPA-6(a+b-)", "6a/6a", "high", ""),
+    *[(f"HPA-{n}", f"HPA-{n}(a+b-)", f"{n}a/{n}a", "high", "") for n in range(7, 15)],
     ("HPA-15", "HPA-15(a+b+)", "15a/15b", "high", ""),
+    *[(f"HPA-{n}", f"HPA-{n}(a+b-)", f"{n}a/{n}a", "high", "") for n in range(16, 36)],
     ("HNA-1", "HNA-1(a+b+c-)", "FCGR3B*01/FCGR3B*02", "low",
      "FCGR3B and FCGR3A are near copies and the FCGR3B copy number varies (none to four or more): "
      "short reads can misplace these calls, the copies are not counted, and HNA-1null (no FCGR3B) "
@@ -1103,6 +1113,31 @@ def vntyper(d):
             f.write(f"{k}\t{t[k]}\n")
 
 
+def mei(d, rng):
+    """Step 50: bin/mei_report.py run on a made-up MEGAnE VCF (a few Alu and L1
+    insertions away from the catalog) and a made-up bedcov near 31x over every
+    window of assets/mei_sites.tsv, so every catalog row reads "not seen"."""
+    import tempfile
+    import mei_report
+    sites_path = os.path.join(REPO, "assets", "mei_sites.tsv")
+    sites = mei_report.read_sites(sites_path)
+    out = os.path.join(d, "mei")
+    os.makedirs(out, exist_ok=True)
+    with tempfile.TemporaryDirectory() as t:
+        vcf, depth = os.path.join(t, "megane.vcf"), os.path.join(t, "depth.tsv")
+        recs = [("chr3", 41258120, "SINE/Alu", "AluYa5"), ("chr7", 102931455, "SINE/Alu", "AluYb8"),
+                ("chr11", 63044871, "LINE/L1", "L1HS")]
+        put(vcf, "##fileformat=VCFv4.1\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t" + SAMPLE + "\n"
+            + "".join(f"{c}\t{p}\t.\tN\t<INS:ME>\t.\tPASS\tSVTYPE={e};MEPRED=PASS;MEI={s};CN_conf=H\tGT:CN\t0/1:1\n"
+                      for c, p, e, s in recs))
+        put(depth, "".join(f"{r['chrom']}\t{r['start']}\t{r['end']}\t{r['gene']}\t"
+                           f"{round((int(r['end']) - int(r['start'])) * rng.uniform(28, 34))}\t500\n" for r in sites))
+        if mei_report.main(["--sample", SAMPLE, "--vcf", vcf, "--sites", sites_path, "--depth", depth,
+                            "--out-calls", os.path.join(out, f"{SAMPLE}_mei.tsv"),
+                            "--out-sites", os.path.join(out, f"{SAMPLE}_mei_sites.tsv")]):
+            raise SystemExit("mei_report failed")
+
+
 def run_status(d, started):
     """logs/run_status.tsv as run-all.sh writes it, every step ok."""
     lines = ["# run-all.sh: when this run started and how each step ended",
@@ -1139,7 +1174,7 @@ def make(a):
              ("lpa", lambda r: lpa(d, r)), ("chip", lambda r: chip(d, r)),
              ("archaic", lambda r: archaic(d, r)), ("ancient", lambda r: ancient(d, r)),
              ("exomiser", lambda r: exomiser(d)), ("mocha", lambda r: mocha(d)),
-             ("vntyper", lambda r: vntyper(d))]
+             ("vntyper", lambda r: vntyper(d)), ("mei", lambda r: mei(d, r))]
     for name, fn in parts:
         fn(random.Random(f"{a.seed}:{name}"))
         print(f"  {name}: written")

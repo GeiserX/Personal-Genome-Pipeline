@@ -2,9 +2,11 @@
 
 ## What This Does
 
-Predicts the red cell, platelet and neutrophil antigens the genome encodes: ABO (with A1 and A2), RhD, RhCE (C/c, E/e), Kell (K/k, Kp, Js), Duffy (with the GATA-box variant), Kidd, MNS (M/N, S/s), Lutheran, Diego, Dombrock, Colton, the platelet antigens HPA-1, -2, -3, -4, -5, -6 and -15, and the neutrophil antigens HNA-1 (a, b, c), HNA-3, HNA-4 and HNA-5. Opt-in, and the last optional step.
+Predicts the red cell, platelet and neutrophil antigens the genome encodes: ABO (with A1 and A2), RhD, RhCE (C/c, E/e), Kell (K/k, Kp, Js, and the Kell-null K0), Duffy (with the GATA-box variant), Kidd (with the Kidd-null Jk(a-b-)), MNS (M/N, S/s), Lutheran, Diego, Dombrock, Colton, Vel, Langereis (Lan), Junior (Jra), H (with Bombay and para-Bombay), secretor status, the platelet antigens HPA-1 to HPA-35, and the neutrophil antigens HNA-1 (a, b, c), HNA-3, HNA-4 and HNA-5. Opt-in, and the last optional step.
 
 The result is a prediction from the DNA, not a serological typing. It is information about the sample, and the table states only what the variants predict. For a platelet or neutrophil antigen the genome predicts the person lacks, the row's note also says what lacking it means (see [What a platelet or neutrophil antigen means](#what-a-platelet-or-neutrophil-antigen-means)). That is information about the antigen, not advice.
+
+A person who lacks an antigen almost everyone carries (Vel, Lan, Jra, H, k and the others the table marks as high-prevalence) is rare, and their row comes first in the table.
 
 ## Why
 
@@ -16,6 +18,8 @@ Most blood group antigens differ by one known variant, so the genome predicts th
 - samtools `bedcov` for the read depth over the marker sites and RHD; the RHD regions are the RHD row of `bin/cn_loci.tsv`, and `bin/copy_number.py` turns their depth into the copy number (see [Copy number from depth](cn-loci.md))
 
 The variants and the antigens they define are the ISBT allele definitions, as RBCeq2 2.4.4 packages them (database v2.5.1, MIT licence, Australian Red Cross Lifeblood). The table's header names the release and the checksum of the file they were read from. Each position and REF base was checked against Ensembl GRCh38 and its dbSNP id. The HPA positions come from dbSNP through Ensembl, because that RBCeq2 database lists them at their GRCh37 positions.
+
+The null alleles (an allele that makes no antigen) are the single-variant null alleles RBCeq2 lists for SMIM1 (Vel), ABCB6 (Lan), ABCG2 (Jra), FUT1 (H), FUT2 (secretor), KEL (K0) and SLC14A1 (Jk(a-b-)): 205 rows. Null alleles at one position with the same REF share a row, its ALT then a comma list. Left out are the alleles of two or more variants, the two deletions over 50 bp, one KEL allele that shares its position with another under a different REF, and three alleles too common to be a null on their own (see Notes). HPA-7 to HPA-35 are RBCeq2's HPA alleles. That database gives them at GRCh37 positions, so each was mapped to GRCh38 with Ensembl's assembly map. Every new row was then checked on GRCh38 on 2026-11-03: Ensembl VEP on the row's REF and ALT gives the allele's c. change on its RefSeq transcript, and the REF is Ensembl's sequence. Where RBCeq2's text has a slip, the table keeps VEP's change: HPA-13 is ITGA2 c.2483C>T, HPA-16 is ITGB3 c.497C>T and HPA-35 is ITGB3 c.1514G>A. The IPD-HPA database (https://www.ebi.ac.uk/ipd/hpa/) names the same antigens.
 
 The neutrophil antigens are not in RBCeq2. Their variants are those of the ISBT HNA allele table (Flesch et al. 2016, Transfusion 56:1477, https://doi.org/10.1111/trf.13575). Each was mapped to GRCh38 with Ensembl VEP on the gene's transcript, which also checks the REF base (2026-10-25). dbSNP places some FCGR3B variant ids on FCGR3A, its near copy (rs447536, for one, maps to FCGR3A on GRCh38), so the FCGR3B positions in the table are FCGR3B's own, in exon 3.
 
@@ -52,6 +56,10 @@ With `run-all.sh`: `TOOLS=...,bloodtype`. It is opt-in and needs no data, so a r
 | Kidd, MNS, Lutheran, Diego, Dombrock, Colton | one variant each pair (c.838G>A; c.59T>C and c.143C>T; c.230G>A; c.2561C>T; c.793G>A; c.134C>T) | one allele per copy |
 | HPA-1, -2, -3, -4, -5, -6, -15 | ITGB3 c.176T>C, GP1BA c.482C>T, ITGA2B c.2621T>G, ITGB3 c.506G>A, ITGA2 c.1600G>A, ITGB3 c.1544G>A, CD109 c.2108C>A | one allele per copy; GRCh38 carries HPA-15b. HPA-6b is a low-frequency antigen, written HPA-6bw in the ISBT table |
 | HNA-1 | FCGR3B c.108G>C, c.114C>T, c.244G>A, c.316G>A (a or b); c.194A>G (checked); c.233C>A (c) | FCGR3B\*01 (HNA-1a) and \*02 (HNA-1b) differ at five bases. GRCh38 carries the \*02 base at four of them and the \*01 base at c.194, so the copies of HNA-1a are counted on the four, which must agree (else not determined), and c.194 is only checked: a c.194 that does not match is named in the note. FCGR3B\*03 (HNA-1c) is \*02 with c.233C>A and carries HNA-1b too. Without a call at c.233 an HNA-1b allele reads \*02 or \*03. Confidence is always low: FCGR3B and FCGR3A are near copies, and FCGR3B has from none to four or more copies, which the step does not count |
+| Vel, Langereis, Junior | SMIM1 c.64_80del; 36 ABCB6 null rows; 23 ABCG2 null rows | Read from the null rows alone: two null copies lack the antigen (Vel-, Lan-, Jr(a-)). One copy is a carrier, still positive. Two different null alleles, each once, are taken to sit on different chromosomes (no phase), so the antigen is lacking at confidence low |
+| H, Secretor | 34 FUT1 null rows; 14 FUT2 null rows (c.461G>A among them, often written c.428G>A) | The same rule. Two FUT1 null copies give H- on red cells: `H- (Bombay, Oh)` with a non-secretor, `H- (para-Bombay)` with a secretor. The ABO row then says the red cells carry little or no A or B and usually group as O, whatever the ABO alleles are |
+| Kell null (K0), Kidd null (Jk(a-b-)) | 57 KEL null rows; 40 SLC14A1 null rows, c.342-1G>A and c.871T>C among them | Each null copy silences one chromosome. With no phase it is placed on a chromosome with the antigens of the row's `null_on` column (k, Kpb and Jsb for KEL; Jka or Jkb, as the ISBT table finds it): one KEL null with K/k reads K+k-. Two null copies give K-k- Kp(a-b-) Js(a-b-) (lacking Ku) or Jk(a-b-) (lacking Jk3), also when an antigen site has no call. Two different nulls with different `null_on` alleles are each named with their own in the note |
+| HPA-7 to -14, -16 to -35 | one variant each in ITGB3, ITGA2B, ITGA2, GP1BB or GP9 | one allele per copy; the a antigen is on the reference allele, the low-prevalence b antigen on the other |
 | HNA-3, -4, -5 | SLC44A2 c.461G>A, ITGAM c.230G>A, ITGAL c.2372G>C | one allele per copy; GRCh38 carries HNA-3b |
 
 A site the VCF has no record for is the reference allele when the BAM has at least 8 reads there at MAPQ 20, and not determined below that. Without the BAM it is read as reference, and the confidence says so. The step leaves out of `samtools bedcov` the rows on a contig the BAM has no `@SQ` line for (a BAM cut to a few chromosomes), because `bedcov` would stop on them. Those sites then have no depth row: the ones with no VCF record are not determined, and RhD is not determined without chr1. A record at a site whose REF is not the table's REF is a no call, because it says nothing about the table's ALT; the one exception is a 0/0 call over a longer REF that starts with the table's REF, which is the reference allele.
@@ -67,9 +75,11 @@ A site the VCF has no record for is the reference allele when the BAM has at lea
 Confidence:
 
 - **high**: every site was called in the VCF or covered by reads
-- **medium**: a site was read as reference with no BAM depth to confirm it
-- **low**: a site in a region where short reads are unreliable, named in the note (RHCE exon 2 for C/c, which is RHD-like on a C allele; GYPA, GYPB and GYPE, which are near copies), markers that disagree, or another allele at a site
+- **medium**: a site was read as reference with no BAM depth to confirm it, or one of the system's null rows was not determined (for example too few reads there)
+- **low**: a site in a region where short reads are unreliable, named in the note (RHCE exon 2 for C/c, which is RHD-like on a C allele; GYPA, GYPB and GYPE, which are near copies), markers that disagree, another allele at a site of a two-antigen pair, or two different null alleles taken to sit on different chromosomes
 - **not determined**: a needed site had no call or too few reads; RhD without the BAM, with flanks under 10x, or with the hybrid pattern
+
+Row order: first the systems where the genome predicts the person lacks a high-prevalence antigen, then the others in the table's order. The high-prevalence antigens are the ones in the marker table's `high_prevalence` column: ISBT's high-prevalence antigens Vel, Lan, Jra, H, k, Kpb, Jsb, Ku, Jk3, Lub, Dib and Coa, and for platelets HPA-1a and the a antigen of HPA-4 and of HPA-6 to HPA-35 except HPA-15, whose b antigen is a low-prevalence one. Such a row's note ends with `lacks <antigen>, carried by most people (high prevalence)`. A genome with only the reference alleles lacks none of them, so its rows keep the table's order.
 
 Both reports show the table as their "Blood Groups (predicted)" section: system, phenotype, genotype and confidence. The note, with the meaning, is in the TSV.
 
@@ -84,11 +94,15 @@ Lacking an antigen is common (most people lack HPA-1b, for example). It means a 
 
 ## Runtime
 
-Not measured on a whole genome. The step reads the VCF once, line by line, and samtools reads the BAM at 51 small regions.
+Not measured on a whole genome. The step reads the VCF once, line by line, and samtools reads the BAM at 284 small regions.
 
 ## Notes
 
 - RhD here is the number of RHD copies, not their kind: weak D and partial D (RHD missense alleles) are not assessed, and neither are the RHD-CE-D hybrids that keep exons 3 to 7. The common RhD-negative allele, the deletion of the whole gene (RHD*01N.01), is what the depth sees.
 - Phase is not read. ABO assumes A and B sit on different chromosomes, Duffy places the GATA box on Fyb first.
-- Rare and null alleles outside the table (for example Kidd's Jk(a-b-) alleles, ABO's weak subgroups, cis-AB) are not assessed. Neither are HNA-2 (CD177), HNA-1d and HNA-1null (no FCGR3B gene), or the HPA antigens other than HPA-1 to -6 and -15.
+- Rare and null alleles outside the table (null alleles of two or more variants, ABO's weak subgroups, cis-AB) are not assessed. A high-prevalence antigen reads positive when none of the table's null alleles is found, so a null allele the table does not hold goes unseen. Neither are HNA-2 (CD177), HNA-1d and HNA-1null (no FCGR3B gene) assessed.
+- Every null row's allele was looked up in gnomAD v4 (genomes and exomes, 2026-11-03): 214 alleles, 53 of them not in gnomAD at all. Three were dropped because they are far more common than their null phenotype allows: FUT2 c.772G>A (rs602662, about 0.5 of chromosomes) and c.335C>T (rs200157007, 0.14 in South Asians) sit on the same haplotype as the common non-secretor allele c.461G>A, so with no phase they turned Se/se carriers into non-secretors; SLC14A1 c.810G>A (rs17675299, 0.08 in Finns) is far too common for a Kidd null. The rows kept that pass 1% in some population are known nulls of that population: FUT2 c.461G>A (the common non-secretor allele), SMIM1 c.64_80del (Vel), ABCG2 c.376C>T (Jr(a-), East Asians), SLC14A1 c.871T>C (Finns), and FUT2 c.812delC (rs1799761, 0.015 in African genomes).
+- Another ALT at a null row's position (for example G>T at the position of KEL c.1546C>T, rs8176034) is not that null allele: the note names it, and the confidence stays as the other sites set it.
+- Secretor status: weak secretor alleles (such as FUT2 c.418A>T, often written c.385A>T) and a deletion of the whole FUT2 gene are not assessed; the row's note says so.
+- Lewis (FUT3) is not read. GRCh38 carries FUT3 c.202T>C and c.314C>T, the variants of a common Lewis-null allele, so a working FUT3 shows up as alternative alleles whose phase a VCF does not give.
 - On the e2e fixture the case reads HG002's reads at the marker sites from GIAB's 60x BAM and HG002's genotypes from GIAB's v4.2.1 benchmark, because the fixture's slices hold none of these genes. Those published calls give O (no c.261 insertion), and so do the reads on their own (under 10% of them carry the insertion there); the reads give two RHD copies (D+). A copy of the same reads without any RHD read gives D-, and with half of them D+ with one copy deleted.
