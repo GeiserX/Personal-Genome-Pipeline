@@ -1,0 +1,43 @@
+# paraphase_genes.tsv: the Paraphase regions step 35b (scripts/35b-paraphase.sh, Nextflow PARAPHASE_REPORT)
+# reports gene by gene, read by bin/paraphase_report.py and bin/collect_summary.py. Every other region
+# Paraphase ran gets one row with its copy number. The report lists the regions in this order.
+# Columns:
+#   region   the region's key in Paraphase's JSON: the name in data/38/config.yaml of the pinned
+#            Paraphase 4.1.0, except CFHclust, the call Paraphase builds from its CFH and CFHR3 regions
+#   gene     the row's name in <sample>_paraphase_copy_number.tsv
+#   field    where the copy number comes from:
+#              a field of region_specific_info holding a number (smn1_cn, gene_cn, opn1lw_cn, ...);
+#              genotype (hba): HBA1 and HBA2 counted from the haplotype names, with the genotype;
+#              annotated_alleles (rccx): the RCCX copies with Paraphase's CYP21A2 alleles;
+#              final_haplotypes: the gene's own copies (gene1 haplotypes) when Paraphase labels them,
+#                else the family's total_cn;
+#              total_cn: the family's copies;
+#              sv_called (f8): the copies, with the intron 22 inversion or h1/h2 deletion Paraphase names;
+#              repeat_name (neb): the copies of the triplicate repeat, with Paraphase's TRI labels;
+#              fusions_called: the family's copies, with the deletions and duplications Paraphase names
+#            A field of region_specific_info Paraphase did not write makes the row "not assessed".
+#   reading  what the row says
+#   source   where the reading comes from (Paraphase's documentation is docs/<gene>.md of its 4.1.0 tag)
+# tests/test_paraphase_report.py parses a synthetic JSON for every row and counts the regions of the
+# pinned config.yaml against docs/35-paralogs.md (the e2e case paralog-rows-1 reads it from the image).
+region	gene	field	reading	source
+smn1	SMN1	smn1_cn	copies of SMN1; 0 is the pattern of spinal muscular atrophy, 1 that of a carrier	Paraphase docs/SMN1_SMN2.md
+smn1	SMN2	smn2_cn	copies of SMN2	Paraphase docs/SMN1_SMN2.md
+smn1	SMN exon 7-8 deletion	smn_del78_cn	copies of SMN with exons 7 and 8 deleted	Paraphase docs/SMN1_SMN2.md
+hba	HBA1	genotype	copies of HBA1, with the genotype and the 3.7 kb and 4.2 kb deletions or duplications by name (alpha-thalassaemia)	Paraphase docs/HBA1_HBA2.md
+hba	HBA2	genotype	copies of HBA2, as for HBA1	Paraphase docs/HBA1_HBA2.md
+rccx	CYP21A2 (RCCX)	annotated_alleles	copies of the RCCX module, each with CYP21A2 or its pseudogene CYP21A1P, and Paraphase's CYP21A2 alleles (congenital adrenal hyperplasia)	Paraphase docs/RCCX.md
+GBA	GBA1	final_haplotypes	copies of GBA1 apart from GBAP1 when Paraphase tells them apart (Gaucher disease, a Parkinson disease risk factor)	Paraphase docs/GBA.md
+pms2	PMS2	gene_cn	copies of PMS2 apart from PMS2CL (Lynch syndrome)	Paraphase docs/PMS2.md
+strc	STRC	gene_cn	copies of STRC apart from STRCP1 (recessive hearing loss)	Paraphase docs/STRC.md
+ncf1	NCF1	gene_cn	copies of NCF1 apart from NCF1B and NCF1C (chronic granulomatous disease)	Paraphase docs/NCF1.md
+OTOA	OTOA	final_haplotypes	copies of OTOA apart from its pseudogene when Paraphase tells them apart (recessive hearing loss)	Paraphase docs/regions.md
+f8	F8 intron 22	sv_called	copies of the F8 intron 22 homology region, and the intron 22 inversion or h1/h2 deletion by name (haemophilia A)	Paraphase docs/F8.md
+opn1lw	OPN1LW	opn1lw_cn	copies of OPN1LW (red-green colour vision)	Paraphase docs/OPN1LW_OPN1MW.md
+opn1lw	OPN1MW	opn1mw_cn	copies of OPN1MW (red-green colour vision)	Paraphase docs/OPN1LW_OPN1MW.md
+ikbkg	IKBKG	gene_cn	copies of IKBKG apart from IKBKGP1, and the haplotypes with the 11.7 kb deletion (incontinentia pigmenti)	Paraphase docs/IKBKG.md
+neb	NEB triplicate repeat	repeat_name	copies of NEB's triplicate repeat, with the haplotypes Paraphase assigns to TRI1, TRI2 and TRI3 (nemaline myopathy)	Paraphase docs/NEB.md
+CYP11B1	CYP11B1,CYP11B2	fusions_called	copies of CYP11B1 and CYP11B2, and a CYP11B1-CYP11B2 fusion by name (congenital adrenal hyperplasia, glucocorticoid-remediable aldosteronism)	Paraphase docs/json.md
+TPSAB1	TPSAB1,TPSB2	total_cn	copies of the tryptase genes TPSAB1 and TPSB2 together; extra copies can be hereditary alpha-tryptasemia, which needs the alpha and beta copies told apart	Lyons 2016, PMID 27749843; Paraphase docs/regions.md
+AMY1A	AMY1A,AMY1B,AMY1C	total_cn	copies of the salivary amylase genes AMY1A, AMY1B and AMY1C together	Perry 2007, PMID 17828263; Paraphase docs/regions.md
+CFHclust	CFH,CFHR1,CFHR2,CFHR3,CFHR4	fusions_called	copies of the CFH gene cluster, and its deletions and duplications by name, such as the CFHR3-CFHR1 deletion (atypical haemolytic uraemic syndrome, age-related macular degeneration)	Paraphase docs/CFH.md

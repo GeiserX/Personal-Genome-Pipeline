@@ -42,8 +42,8 @@
 #                    select): plan and count only those. Every case one of
 #                    them needs must be listed too.
 #      E2E_SHARD_FLOOR  the least seconds of cases worth a shard job of its
-#                    own (default 900: a job spends about 10 minutes on
-#                    pulling images and fetching the base outputs first)
+#                    own (default 900: a shard job spends 18 to 20 minutes
+#                    besides its cases, run 41847167444)
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"

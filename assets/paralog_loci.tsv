@@ -9,11 +9,52 @@
 #   reading        what the copy number there means, per value
 #   pscn_reliable  yes or no: whether the copy number of each copy (psCN) can be trusted there, or only
 #                  the copies together (agCN)
-#   tag            carrier, SF (secondary finding), PGx or trait
-#   cross_check    another engine that calls the same locus (paraphase on HiFi reads), or none
+#   tag            carrier (a recessive disease gene), SF (ACMG secondary finding), disease (a dominant
+#                  or mosaic disease gene not on the SF list), PGx or trait
+#   cross_check    another engine that calls the same locus: paraphase (step 35b, HiFi reads), cn-depth
+#                  (a row of bin/cn_loci.tsv; RHCE's model covers RHD), or none
 #   table          the table's name: <sample>_<table>_copy_number.tsv under paralogs/, and Parascopy's own
 #                  files under paralogs/<sample>_parascopy/<table>/
 #   source         where the reading comes from
-# tests/test_paralog_loci.py checks every row against the model list.
+# Every row's region lies in its model's main region: SMN1 exon 7 for SMN1, the whole main region for the
+# others. agCN counts the copies of all the model's regions together.
+# psCN is marked reliable only where it was validated (SMN1); elsewhere the report reads agCN.
+# tests/test_paralog_loci.py checks every row against the model list and bin/cn_loci.tsv.
 model	genes	region	reading	pscn_reliable	tag	cross_check	table	source
 SMN1.gz	SMN1,SMN2	chr5:70951946-70951946	psCN of SMN1 at exon 7 (c.840): 0 = the pattern of SMA; 1 = an SMA carrier; 2 or more = not a carrier by copy number (a 2+0 carrier is not ruled out)	yes	carrier	paraphase	smn	Prodanov and Bansal 2022, PMID 35680869
+GBA.gz	GBA1,GBAP1	chr1:155231479-155244699	agCN of GBA1 and its pseudogene GBAP1 together, usually 4; under 4 means a copy is missing, as a recombinant GBA1-GBAP1 allele (Gaucher disease) can leave; over 4, an extra copy	no	carrier	paraphase	gba1	Prodanov and Bansal 2022, PMID 35680869; Mandelker 2016, PMID 27228465
+PMS2.gz	PMS2,PMS2CL	chr7:5896086-5986844	agCN of PMS2 and PMS2CL together, usually 4; under 4 means a deletion in the region, which in PMS2 itself is a cause of Lynch syndrome; which copy lost it is not said	no	SF	paraphase	pms2_pms2cl	Prodanov and Bansal 2022, PMID 35680869; Mandelker 2016, PMID 27228465
+STRC.gz	STRC,STRCP1	chr15:43558001-43650000	agCN of STRC and STRCP1 together, usually 4; under 4 means a deletion, and an STRC deletion is a common cause of recessive hearing loss (DFNB16): 3 can be a carrier, 2 can be affected or a pseudogene loss	no	carrier	paraphase	strc	Prodanov and Bansal 2022, PMID 35680869; Mandelker 2016, PMID 27228465
+NCF1.gz	NCF1,NCF1B,NCF1C	chr7:74768963-74856551	agCN of NCF1 and its pseudogenes NCF1B and NCF1C together, usually 6; most recessive chronic granulomatous disease comes from the pseudogenes' GT deletion moved into NCF1, which copy number alone cannot see	no	carrier	paraphase	ncf1	Prodanov and Bansal 2022, PMID 35680869; Mandelker 2016, PMID 27228465
+OTOA.gz	OTOA,OTOAP1	chr16:21728001-21764724	agCN of OTOA and its pseudogene OTOAP1 together, usually 4; under 4 means a deletion, and an OTOA deletion is a cause of recessive hearing loss (DFNB22)	no	carrier	paraphase	otoa	Prodanov and Bansal 2022, PMID 35680869; Mandelker 2016, PMID 27228465
+NEB.gz	NEB	chr2:151578796-151588972	agCN of the three copies of NEB's triplicate repeat together, usually 6; a gain or loss of a repeat copy is linked to nemaline myopathy	no	carrier	paraphase	neb	Prodanov and Bansal 2022, PMID 35680869
+CFH.gz	CFH,CFHR1	chr1:196745497-196748019	agCN of the end of CFH and its copy in CFHR1, usually 4; 3 or 2 is the common CFHR3-CFHR1 deletion on one or both chromosomes, which goes with a lower risk of age-related macular degeneration and, on both, with atypical haemolytic uraemic syndrome	no	trait	paraphase	cfh	Prodanov and Bansal 2022, PMID 35680869; Hughes 2006, PMID 16998489; Zipfel 2007, PMID 17367211
+CFHR4.gz	CFHR4,CFHR3	chr1:196888015-196922647	agCN of CFHR4 and its copy in CFHR3, usually 4; under 4 means a deletion in the CFHR cluster, such as the CFHR3-CFHR1 deletion	no	trait	paraphase	cfhr4	Prodanov and Bansal 2022, PMID 35680869; Zipfel 2007, PMID 17367211
+C4A.gz	C4A,C4B	chr6:31980532-32006219	agCN of C4A and C4B together, the number of C4 genes, usually 4 and often 2 to 6; more C4A copies go with a higher risk of schizophrenia	no	trait	paraphase	c4	Prodanov and Bansal 2022, PMID 35680869; Sekar 2016, PMID 26814963
+RHCE.gz	RHCE	chr1:25362250-25430192	agCN of RHCE and the RHD sequence it shares, usually 4: a cross-check of the RHD row of bin/cn_loci.tsv (the RHD deletion of RhD-negative people), 3 with one RHD copy, 2 with none	no	trait	cn-depth	rhce	Prodanov and Bansal 2022, PMID 35680869
+GYPA.gz	GYPA,GYPB,GYPE	chr4:144109304-144143949	agCN of GYPA with GYPB and GYPE (the MNS blood group genes), usually 6; under 6 means a deletion of one of them	no	trait	none	gypa	Prodanov and Bansal 2022, PMID 35680869
+FCGR3A.gz	FCGR3A,FCGR3B	chr1:161540267-161555737	agCN of FCGR3A and FCGR3B together, usually 4; FCGR3B copy number varies, and low FCGR3B copy number goes with lupus nephritis	no	trait	none	fcgr3	Prodanov and Bansal 2022, PMID 35680869; Aitman 2006, PMID 16482158
+FCGR2A.gz	FCGR2A,FCGR2C	chr1:161511501-161529540	agCN of FCGR2A and FCGR2C together, usually 4; a change is a copy-number variant of the FCGR locus	no	trait	paraphase	fcgr2a	Prodanov and Bansal 2022, PMID 35680869
+FCGR1A.gz	FCGR1A	chr1:149781952-149797518	agCN of FCGR1A and its copies on chr1, usually 2 for each copy the reference holds	no	trait	none	fcgr1a	Prodanov and Bansal 2022, PMID 35680869
+CD177.gz	CD177	chr19:43353687-43363959	agCN of CD177 and its pseudogene copies, usually 4; CD177 carries the neutrophil antigen HNA-2	no	trait	none	cd177	Prodanov and Bansal 2022, PMID 35680869
+TPSB2.gz	TPSB2,TPSAB1	chr16:1225688-1231184	agCN of the tryptase genes TPSB2 and TPSAB1 together, usually 4; extra copies are hereditary alpha-tryptasemia only when they are alpha-tryptase copies of TPSAB1, which copy number alone cannot tell	no	trait	paraphase	tpsb2	Prodanov and Bansal 2022, PMID 35680869; Lyons 2016, PMID 27749843
+HSPA1A.gz	HSPA1A,HSPA1B	chr6:31815405-31817690	agCN of HSPA1A and HSPA1B together, usually 4	no	trait	none	hspa1	Prodanov and Bansal 2022, PMID 35680869
+KLRC2.gz	KLRC2	chr12:10412316-10430000	agCN of KLRC2 (NKG2C) and its copies, usually 4; under 4 can be the common KLRC2 deletion on one or both chromosomes	no	trait	none	klrc2	Prodanov and Bansal 2022, PMID 35680869; Miyashita 2004, PMID 14688071
+DEFA3.gz	DEFA3,DEFA1,DEFA1B	chr8:7012029-7022209	agCN of the alpha-defensin genes DEFA1, DEFA1B and DEFA3 together, which varies widely between people	no	trait	paraphase	defa1a3	Prodanov and Bansal 2022, PMID 35680869
+CHRNA7.gz	CHRNA7,CHRFAM7A	chr15:32154859-32178018	agCN of CHRNA7 and its partial copy CHRFAM7A together, usually 4; CHRFAM7A copy number varies between people	no	trait	paraphase	chrna7	Prodanov and Bansal 2022, PMID 35680869
+HYDIN.gz	HYDIN	chr16:70811001-71169000	agCN of HYDIN and its copy HYDIN2 together, usually 4; HYDIN is a gene of recessive primary ciliary dyskinesia	no	carrier	none	hydin	Prodanov and Bansal 2022, PMID 35680869; Mandelker 2016, PMID 27228465
+AMY1C.gz	AMY1A,AMY1B,AMY1C	chr1:103745407-103761087	agCN of the salivary amylase genes AMY1A, AMY1B and AMY1C together, usually 6 and between 2 and 15 in Perry 2007; more copies go with more salivary amylase	no	trait	paraphase	amy1	Prodanov and Bansal 2022, PMID 35680869; Perry 2007, PMID 17828263
+APOBEC3A.gz	APOBEC3A,APOBEC3B	chr22:38960168-38962676	agCN of APOBEC3A and the APOBEC3B part it shares, usually 4; 3 or 2 is the common 29.5 kb APOBEC3B deletion on one or both chromosomes	no	trait	none	apobec3	Prodanov and Bansal 2022, PMID 35680869; Kidd 2007, PMID 17447845
+ABCC6.gz	ABCC6	chr16:16198410-16228707	agCN of ABCC6 and its pseudogene copies, usually 6; under 6 means a deletion, and ABCC6 is the gene of recessive pseudoxanthoma elasticum	no	carrier	none	abcc6	Prodanov and Bansal 2022, PMID 35680869; Mandelker 2016, PMID 27228465
+VWF.gz	VWF	chr12:6008001-6027500	agCN of VWF exons 23-34 and their pseudogene VWFP1 together, usually 4; VWF is the gene of von Willebrand disease	no	disease	none	vwf	Prodanov and Bansal 2022, PMID 35680869; Mandelker 2016, PMID 27228465
+PROS1.gz	PROS1	chr3:93872782-93879598	agCN of PROS1 and its pseudogene PROS2P together, usually 4; PROS1 is the gene of protein S deficiency	no	disease	none	pros1	Prodanov and Bansal 2022, PMID 35680869; Mandelker 2016, PMID 27228465
+SORD.gz	SORD	chr15:45030001-45081508	agCN of SORD and its pseudogene SORD2P together, usually 4; SORD neuropathy comes mostly from a one-base deletion the pseudogene carries, which copy number alone cannot see	no	carrier	none	sord	Prodanov and Bansal 2022, PMID 35680869; Cortese 2020, PMID 32367058
+GTF2I.gz	GTF2I	chr7:74728217-74765692	agCN of GTF2I and its copies at the edges of the Williams-Beuren region, usually 2 for each copy the reference holds; under that means a deletion	no	disease	paraphase	gtf2i	Prodanov and Bansal 2022, PMID 35680869
+GTF2H2C.gz	GTF2H2C,GTF2H2	chr5:69555192-69600221	agCN of GTF2H2C and GTF2H2 in the SMA region, usually 4; GTF2H2 can be lost with SMN1 in spinal muscular atrophy	no	trait	paraphase	gtf2h2	Prodanov and Bansal 2022, PMID 35680869
+NOTCH2.gz	NOTCH2	chr1:119989001-120105779	agCN of NOTCH2 and its NOTCH2NL copies together, which varies between people; NOTCH2 is a gene of Alagille syndrome	no	disease	paraphase	notch2	Prodanov and Bansal 2022, PMID 35680869; Mandelker 2016, PMID 27228465
+KRT6C.gz	KRT6C,KRT6A,KRT6B	chr12:52468517-52473926	agCN of KRT6C with KRT6A and KRT6B, usually 2 for each copy the reference holds; the KRT6 genes are genes of pachyonychia congenita	no	disease	none	krt6c	Prodanov and Bansal 2022, PMID 35680869; Mandelker 2016, PMID 27228465
+KRT86.gz	KRT86	chr12:52288501-52291500	agCN of KRT86 and its copy, usually 2 for each copy the reference holds; KRT86 is a gene of monilethrix	no	disease	none	krt86	Prodanov and Bansal 2022, PMID 35680869; Mandelker 2016, PMID 27228465
+PLG.gz	PLG	chr6:160698893-160712953	agCN of PLG and its copies on chr2, usually 2 for each copy the reference holds; PLG is the gene of recessive plasminogen deficiency	no	carrier	none	plg	Prodanov and Bansal 2022, PMID 35680869; Mandelker 2016, PMID 27228465
+PIK3CA.gz	PIK3CA	chr3:179214689-179244780	agCN of PIK3CA and its pseudogene copy on chr22, usually 4; germline copy number only: the mosaic PIK3CA variants of overgrowth are not assessed	no	disease	none	pik3ca	Prodanov and Bansal 2022, PMID 35680869; Mandelker 2016, PMID 27228465
+CEL.gz	CEL,CELP	chr9:133061543-133071863	agCN of CEL and its pseudogene CELP together, usually 4; a CEL-CELP hybrid allele goes with chronic pancreatitis	no	disease	none	cel	Prodanov and Bansal 2022, PMID 35680869; Fjeld 2015, PMID 25774637
+MUC5B.gz	MUC5B	chr11:1242601-1246400	agCN of MUC5B and its copies, usually 2 for each copy the reference holds	no	trait	none	muc5b	Prodanov and Bansal 2022, PMID 35680869

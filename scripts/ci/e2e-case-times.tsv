@@ -105,6 +105,7 @@ nextflow-hardening-2-nf	shard	643	bash-step-19-delly,nextflow-hardening-1-manta
 nextflow-report-parity-1-sections	shard	206	clinvar-clip-check-1
 paralog-catalog-1-gba	shard	114	-
 paralog-checks-and-doc-fixes-1-hba	shard	57	-
+paralog-rows-1	shard	316	-
 paralogs-paraphase-1	shard	252	-
 paralogs-report-section-1-nf-report-tables	shard	112	clinvar-clip-check-1,comphet-phasing-1-reads
 pgx-1-depth-check	shard	0	-
