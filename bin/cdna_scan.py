@@ -18,7 +18,7 @@ It reads the reads over each exon (EXONS.bed: chrom, 0-based start, end, the
 GENCODE basic exons setup.sh installs). A read counts for a junction when one
 of its pieces has a clip of at least MIN_CLIP bases within EDGE_SLACK bases
 of an exon end, another piece on the same contig and strand, later in the
-read (overlapping it by at most EDGE_SLACK read bases), has such a clip at a
+read (starting within EDGE_SLACK read bases of where the first stops), has such a clip at a
 later exon start, at least MIN_INTRON and at most MAX_INTRON bases on, or when
 an N gap of its CIGAR runs from an exon end to an exon start. Supplementary
 records count too, so a read whose primary alignment lies outside every exon
@@ -129,9 +129,9 @@ def junctions(chrom, ref_start, cigar, sa, edges, reverse=False):
     """The (exon end, exon start) junctions one read shows on chrom: from its
     pieces (the alignment and its SA alignments) and from its N gaps. Two
     pieces pair only on the same strand and in read order: the one clipped at
-    the exon end comes first in the read, the other starts where it stops
-    (EDGE_SLACK bases of overlap allowed, the bases an aligner can put on
-    either side of a junction)."""
+    the exon end comes first in the read, the other starts where it stops,
+    give or take EDGE_SLACK read bases (the bases an aligner can put on either
+    side of a junction, or leave out of both)."""
     out = set()
     ends, starts = edges.ends.get(chrom), edges.starts.get(chrom)
     if not ends or not starts:
@@ -154,7 +154,7 @@ def junctions(chrom, ref_start, cigar, sa, edges, reverse=False):
         for q in pieces:
             if q is p or q[2] < MIN_CLIP or q[4] != p[4]:
                 continue
-            if not (p[5] < q[5] and p[6] <= q[5] + EDGE_SLACK):
+            if not (p[5] < q[5] and abs(q[5] - p[6]) <= EDGE_SLACK):
                 continue
             a = Edges.nearest(starts, q[0])
             if a is not None and gap_ok(d, a):

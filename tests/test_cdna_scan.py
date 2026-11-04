@@ -17,8 +17,9 @@ Part 1, plain Python (reads as small objects, no BAM):
   and duplicate, secondary and repeated alignments that do not count, a
   supplementary record of a counted read that does not count it twice, a
   read whose primary lies on another contig that counts from its
-  supplementary records alone, SA pieces on the other strand or out of read
-  order that do not pair, the MIN_INTRON bound, and a control: with MIN_CLIP
+  supplementary records alone, SA pieces on the other strand, out of read
+  order or more than EDGE_SLACK read bases from the first that do not pair, a
+  reverse read whose strand scan passes on, the MIN_INTRON bound, and a control: with MIN_CLIP
   above the read length the spliced fixture lists nothing, so the listed
   check depends on the clip test.
 
@@ -153,6 +154,17 @@ def part1():
            cs.junctions("chrT", *p, f"chrT,{E2[0] + 1},+,10S40M50S,60,0;", ex), set())
     expect("both reversed, in read order: they pair",
            cs.junctions("chrT", *p, f"chrT,{E2[0] + 1},-,60S40M,60,0;", ex, True), {(E1[1], E2[0])})
+    expect(f"{cc.EDGE_SLACK} unaligned read bases between the pieces still pair",
+           cs.junctions("chrT", *p, f"chrT,{E2[0] + 1},+,{60 + cc.EDGE_SLACK}S{40 - cc.EDGE_SLACK}M,60,0;", ex),
+           {(E1[1], E2[0])})
+    expect(f"{cc.EDGE_SLACK + 1} unaligned read bases between the pieces do not",
+           cs.junctions("chrT", *p, f"chrT,{E2[0] + 1},+,{61 + cc.EDGE_SLACK}S{39 - cc.EDGE_SLACK}M,60,0;", ex), set())
+    rev = Read("rev", E1[1] - 60, "60M40S", f"chrT,{E2[0] + 1},-,60S40M,60,0;", flag=16)
+    expect("scan passes a reverse read's strand: with its SA piece also reversed it counts",
+           cs.scan([("chrT", [rev])], ex), {("chrT", E1[1], E2[0]): {("rev", True)}})
+    fwd = Read("fwd", E1[1] - 60, "60M40S", f"chrT,{E2[0] + 1},-,60S40M,60,0;")
+    expect("and a forward read with that reversed SA piece does not",
+           cs.scan([("chrT", [fwd])], ex), {})
     two = Read("n1", E1[1] - 50, f"50M{E2[0] - E1[1]}N150M{E3[0] - E2[1]}N50M")
     expect("a read across two junctions counts on each junction and once in the locus total",
            [r[4:] for r in listed("spliced", [two])],
