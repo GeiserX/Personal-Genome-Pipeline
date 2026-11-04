@@ -2411,7 +2411,8 @@ def locityper_primary(sections):
     out = {}
     for g in ("HLA-DRB1", "HLA-DQB1"):
         x = by_gene.get(g) or by_gene.get(g.replace("HLA-", ""))
-        out[g] = ("T1K (step 08): " + ("/".join(x["alleles"]) or "no allele") + old("hla")) if x else "T1K (step 08) did not run"
+        out[g] = ("T1K (step 08): " + ("/".join(x["alleles"]) or "no allele")
+                  + (" (low confidence)" if x.get("low_confidence") else "") + old("hla")) if x else "T1K (step 08) did not run"
     kir = hla.get("kir")
     out["KIR"] = (f"T1K KIR pass (step 08): {len(kir['typed'])} genes typed{old('hla')}" if kir and kir.get("typed")
                   else "T1K's KIR pass (step 08, KIR=true) gave no call")

@@ -68,10 +68,16 @@ def res(genotype="HG00733.1,NA19240.2", quality=27.8, total=900, unexpl=12, wd=0
     return r
 
 
-def gt_dir(root, locus, result=None, success=True, raw=None, truncate=False):
+def gt_dir(root, locus, result=None, success=True, raw=None, truncate=False, damage=False):
     d = os.path.join(root, "loci", locus)
     os.makedirs(d, exist_ok=True)
-    if truncate:  # a gzip cut in half, as a full disk leaves it
+    if damage:  # a whole gzip whose deflate body is corrupt: zlib.error, not OSError
+        whole = bytearray(gzip.compress(json.dumps(dict(result, pad="x" * 4000)).encode()))
+        for i in range(12, 30):
+            whole[i] ^= 0xFF
+        with open(os.path.join(d, "res.json.gz"), "wb") as f:
+            f.write(bytes(whole))
+    elif truncate:  # a gzip cut in half, as a full disk leaves it
         whole = gzip.compress(json.dumps(result).encode())
         with open(os.path.join(d, "res.json.gz"), "wb") as f:
             f.write(whole[:len(whole) // 2])
@@ -87,10 +93,10 @@ def cases(mod, t):
     out = []
     n = [0]
 
-    def row(result=None, success=True, raw=None, exit_code=0, truncate=False):
+    def row(result=None, success=True, raw=None, exit_code=0, truncate=False, damage=False):
         n[0] += 1
         root = os.path.join(t, f"c{n[0]}")
-        gt_dir(root, "CYP2D6", result, success, raw, truncate)
+        gt_dir(root, "CYP2D6", result, success, raw, truncate, damage)
         return mod.row_for("CYP2D6", "chr22:42122285-42152960", root, exit_code)
 
     r = row(res())
@@ -128,6 +134,12 @@ def cases(mod, t):
         r = {"status": f"raised {type(e).__name__}", "reason": str(e)}
     out.append(("3. a truncated res.json.gz: not called, the table still written", r["status"] == "not called"
                 and "cannot be read" in r["reason"], r))
+    try:
+        r = row(res(), damage=True)
+    except Exception as e:
+        r = {"status": f"raised {type(e).__name__}", "reason": str(e)}
+    out.append(("3. a res.json.gz with a corrupt deflate body: not called, the table still written",
+                r["status"] == "not called" and "cannot be read" in r["reason"], r))
     return out
 
 
@@ -256,6 +268,13 @@ def main():
         cyp = [x for x in s["sections"]["locityper"]["data"]["loci"] if x["locus"] == "CYP2D6"][0]
         check("5. a primary call older than the last run says it is stale", "(stale: from an earlier run)" in cyp["primary"],
               (s["sections"]["cyrius"]["state"], cyp))
+        hla = {"loci": [{"gene": "DRB1", "alleles": ["*15:01", "*03:01"], "low_confidence": True},
+                        {"gene": "DQB1", "alleles": ["*06:02", "*02:01"], "low_confidence": False}]}
+        prim = collect_summary.locityper_primary({"hla": {"state": "ok", "data": hla}, "pypgx": {"state": "missing"},
+                                                  "cyrius": {"state": "missing"}})
+        check("5. a low-confidence T1K call says so in the primary text, a confident one does not",
+              prim["HLA-DRB1"] == "T1K (step 08): *15:01/*03:01 (low confidence)"
+              and prim["HLA-DQB1"] == "T1K (step 08): *06:02/*02:01", prim)
         os.makedirs(os.path.join(t, "none", "S"))
         s = collect_summary.collect("S", os.path.join(t, "none", "S"))
         check("5. without step 53 there is no card and no text section",

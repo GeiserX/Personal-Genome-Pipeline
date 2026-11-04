@@ -41,6 +41,7 @@ import json
 import math
 import os
 import sys
+import zlib
 
 COLUMNS = ["locus", "region", "status", "genotype", "haplotype_1", "haplotype_2", "quality", "total_reads",
            "unexplained_reads", "weighted_distance", "warnings", "filter", "reason"]
@@ -123,7 +124,7 @@ def row_for(name, region, gt_dir, exit_code):
     try:
         with gzip.open(res_path, "rt") as f:
             res = json.load(f)
-    except (OSError, EOFError, ValueError) as e:  # EOFError: a truncated gzip
+    except (OSError, EOFError, ValueError, zlib.error) as e:  # EOFError: a truncated gzip; zlib.error: a corrupt body
         blank["reason"] = f"res.json.gz cannot be read: {e or type(e).__name__}"
         return blank
     gt = (res.get("genotype") or "").strip()
