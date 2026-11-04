@@ -29,7 +29,7 @@ grep -h '^OBSERVED' "${CASE_TMP}/bash.log" "${CASE_TMP}/nf.log"
 # Red control on a copy: the ClinVar hits table loses its clnsig column, the ROH summary is renamed.
 PLANT="${CASE_TMP}/planted"
 rm -rf "$PLANT"; mkdir -p "$PLANT"
-cp -a "${NF_OUT}/${SAMPLE}" "${PLANT}/"
+cp -a "${NF_OUT}/${SAMPLE}" "${NF_OUT}/pipeline_info" "${PLANT}/"
 HITS="${PLANT}/${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.tsv"
 ROH="${PLANT}/${SAMPLE}/roh/${SAMPLE}_roh_summary.txt"
 if [ -f "$HITS" ] && [ -f "$ROH" ]; then
@@ -41,6 +41,7 @@ fi
 contract "$PLANT" nextflow "${CASE_TMP}/planted.log"; RC_PLANT=$?
 grep '^FAIL' "${CASE_TMP}/planted.log"
 check_eq "the planted copy fails the contract" "$RC_PLANT" 1
+check_eq "the planted copy fails on the two plants only" "$(grep -c '^FAIL ' "${CASE_TMP}/planted.log")" 2
 check "the dropped clnsig column is named" grep -q "BREAKING: ${SAMPLE}/clinvar/${SAMPLE}_clinvar_hits.tsv .* has no clnsig" "${CASE_TMP}/planted.log"
 check "the renamed ROH summary is named" grep -q "BREAKING: the stable file ${SAMPLE}/roh/${SAMPLE}_roh_summary.txt .* is missing" "${CASE_TMP}/planted.log"
 

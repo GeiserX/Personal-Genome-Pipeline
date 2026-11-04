@@ -1,5 +1,5 @@
 # assets/output_contract.tsv: what OwnGenome 1.0 keeps stable (docs/output-contract.md).
-# scripts/ci/check-output-contract.py reads it: --static in self-tests (tests/test_output_contract.py)
+# scripts/ci/check-output-contract.py reads it: --static in Guard's unit-tests job (tests/test_output_contract.py)
 # checks every row against the code, and the e2e case output-contract-1-hg002 checks the files the
 # HG002 run wrote. Columns, tab-separated:
 #   kind       file, param (a nextflow_schema.json param), tool (a --tools name in main.nf) or
