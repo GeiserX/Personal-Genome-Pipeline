@@ -284,8 +284,8 @@ rm -rf "$DOSAGE_WORK"
 # Interval rows of bin/cn_loci.tsv (as the PARASCOPY module): one samtools
 # bedcov over the segments of every row, then copy_number.py intervals; one
 # line per row in <sample>_cn_intervals.tsv. A failed pass writes every row as
-# not assessed (check_failed), and the step goes on; when even that cannot be
-# written (the catalog does not load), the step stops, as the module does.
+# not assessed (check_failed), and the step goes on; when even that container
+# fails, the table is the header alone and the log says no row was assessed.
 INTERVAL_OUT="${OUTDIR}/${SAMPLE}_cn_intervals.tsv"
 INTERVAL_WORK="${OUTDIR}/cn_intervals.part"
 rm -rf "$INTERVAL_OUT" "$INTERVAL_WORK"
@@ -299,7 +299,8 @@ if ! { run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
            --sex "$SEX" --out "$(cpath "$INTERVAL_OUT")"; }; then
   echo "WARNING: the interval depth check failed; ${INTERVAL_OUT##*/} lists every row as not assessed." >&2
   run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
-    python3 /pgp-bin/copy_number.py intervals --failed --out "$(cpath "$INTERVAL_OUT")"
+    python3 /pgp-bin/copy_number.py intervals --failed --out "$(cpath "$INTERVAL_OUT")" \
+    || printf 'locus\tname\tchrom\tstart\tend\tstatus\tcopies\texpected\tchange\testimate\treason\n' > "$INTERVAL_OUT"
 fi
 rm -rf "$INTERVAL_WORK"
 
@@ -310,7 +311,7 @@ echo "Dosage:      ${DOSAGE_OUT}"
 column -t -s $'\t' "$DOSAGE_OUT" 2>/dev/null || cat "$DOSAGE_OUT"
 echo "Intervals:   ${INTERVAL_OUT} (sex ${SEX}); rows with a change:"
 awk -F'\t' 'NR > 1 && ($9 == "deletion" || $9 == "duplication") {print "  " $1 ": " $9 " (" $7 " copies, " $8 " expected)"; n++}
-  END {if (!n) print "  none"}' "$INTERVAL_OUT"
+  END {if (NR <= 1) print "  none assessed: the table lists no row"; else if (!n) print "  none"}' "$INTERVAL_OUT"
 for t in "${TABLES[@]}"; do
   echo "Copy number: ${OUTDIR}/${t}"
   column -t -s $'\t' "${OUTDIR}/${t}" 2>/dev/null || cat "${OUTDIR}/${t}"
