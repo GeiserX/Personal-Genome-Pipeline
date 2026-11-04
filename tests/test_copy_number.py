@@ -682,6 +682,10 @@ def intervals(cat, read):
           all(not (32154858 < e and s < 32178018) for r in iv if r["locus"].startswith("15q13.3")
               for _, s, e, _ in r["_targets"])
           and any(r["locus"].startswith("15q13.3") for r in iv))
+    hits = [(r["locus"], o["locus"]) for r in iv for _, cs, ce, _ in r["_controls"] for o in iv
+            if o is not r and o["chrom"] == r["chrom"] and any(ts < ce and cs < te for _, ts, te, _ in o["_targets"])]
+    check("interval rows: no row's control sits on another row's target (Xq28's left flank off Xq28_MECP2)",
+          not hits, hits)
 
     a_d, p17 = cat["22q11.2_DGS_proximal_A-D"], cat["17p12_HNPP_CMT1A"]
     for r, target, want, change in ((a_d, 15.0, 1, "deletion"), (p17, 45.0, 3, "duplication"),

@@ -287,9 +287,11 @@ def build(clingen_lines, segdups, gaps, sats, parascopy):
         return merge([x for k in keys for x in d.get(k, [])])
 
     def flank_cuts(c):
+        # A control never sits on a target: the ClinGen regions and the HAND_ROWS targets are cut out too.
         d = by_chrom.get(c, {})
         return merge([x for k in ("mask", "segdup", "gap", "sat", "para") for x in d.get(k, [])]
-                     + [(s, e) for cc, s, e, _ in regions if cc == c])
+                     + [(s, e) for cc, s, e, _ in regions if cc == c]
+                     + [(s, e) for _, cc, tl, *_ in HAND_ROWS if cc == c for _, s, e in tl])
 
     rows, seen = [], {}
 

@@ -20,7 +20,7 @@ same command. Standard library only, so it runs in the plain python image.
       35's <id>_cn_intervals.tsv) the report lists, for each partner, every
       carrier deletion allele of that table (del(GJB6-D13S1830), CFTRdele2,3,
       the HBB exon 3 deletion) as present, absent or not assessable, and
-      a male partner's AZF regions; with --cnvpytor (step 18's
+      a male partner's AZF deletions the same way; with --cnvpytor (step 18's
       <id>_cnvs.vcf.gz) a CNVpytor call that disagrees is printed beside it.
       It writes, per couple A and
       B (sorted by name):
@@ -395,7 +395,9 @@ def smn_finding(path, genes):
 # The rows of bin/cn_loci.tsv the couple report reads, with their names here.
 CN_ALLELES = (("GJB6_D13S1830", "del(GJB6-D13S1830)"), ("CFTR_dele2_3", "CFTRdele2,3"),
               ("HBB_exon3_del", "HBB exon 3 deletion"))
-CN_AZF = (("AZFa", "AZFa"), ("AZFb", "AZFb"), ("AZFc_DAZ", "AZFc (DAZ copies; gr/gr and b2/b3 leave two of four)"))
+# Named as deletions, so present reads as "the deletion is there" (as for CN_ALLELES).
+CN_AZF = (("AZFa", "AZFa deletion"), ("AZFb", "AZFb deletion"),
+          ("AZFc_DAZ", "AZFc deletion (DAZ copies; gr/gr and b2/b3 leave two of four)"))
 # A CNVpytor deletion counts for a row when it covers half of the row's span or more.
 CNV_COVER = 0.5
 

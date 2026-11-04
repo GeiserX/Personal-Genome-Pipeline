@@ -4,8 +4,9 @@
 # of four rows (AZFa, AZFb, AZFc_DAZ and 22q11.2 A-B, targets and controls).
 #   - the interval block of step 35 (cut from scripts/35-paralogs.sh, run
 #     with scripts/lib/common.sh's run_in) on the sample read as male: AZFa
-#     and AZFb 1 copy of 1, 22q11.2 A-B 2 of 2, no change; every other row
-#     has no read and is not assessed, never a call;
+#     and AZFb 1 copy of 1, 22q11.2 A-B 2 of 2, no change; every row off
+#     chrY and chr22 has no read and is not assessed, never a call (the
+#     chr22 rows share A-B's fetched control window, so they are left out);
 #   - the interval block of modules/local/parascopy/main.nf, cut from the
 #     file, in PARASCOPY_IMAGE on the same BAM: the same table, byte for byte;
 #   - the same reads read as female: the three AZF rows not applicable,
@@ -64,8 +65,8 @@ done
 check_eq "male: 22q11.2 A-B 2 copies of 2, no change" \
   "$(col "$T" 22q11.2_DGS_proximal_A-B copies)/$(col "$T" 22q11.2_DGS_proximal_A-B expected)/$(col "$T" 22q11.2_DGS_proximal_A-B change)" \
   "2/2/no change"
-check_eq "rows without a read are not assessed, never called" \
-  "$(awk -F'\t' 'NR > 1 && $1 !~ /^(AZF|22q11.2_DGS_proximal_A-B$)/ && $6 == "called"' "$T" | wc -l | tr -d ' ')" 0
+check_eq "rows off chrY and chr22 have no read: not assessed, never called" \
+  "$(awk -F'\t' 'NR > 1 && $3 != "chrY" && $3 != "chr22" && $6 == "called"' "$T" | wc -l | tr -d ' ')" 0
 echo "cn-intervals: HG002 AZFa $(col "$T" AZFa estimate), AZFb $(col "$T" AZFb estimate)," \
   "AZFc DAZ $(col "$T" AZFc_DAZ estimate) ($(col "$T" AZFc_DAZ status)), 22q11.2 A-B $(col "$T" 22q11.2_DGS_proximal_A-B estimate)" >> "$E2E_NOTES"
 

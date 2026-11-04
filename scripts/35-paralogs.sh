@@ -32,9 +32,10 @@
 # The interval rows of that catalog (ClinGen's recurrent CNV regions such as
 # 22q11.2 and 1q21.1, the carrier deletion alleles and the Y chromosome AZF
 # regions) come from one more bedcov pass over all their segments, one line
-# per row in ${SAMPLE}_cn_intervals.tsv. A row on chrX or chrY needs the sex:
-# the second argument, else the sex step 16 infers, else none (those rows are
-# then not assessed). A chrY row on a female is not applicable.
+# per row in ${SAMPLE}_cn_intervals.tsv. A row on chrX or chrY needs the sex
+# given as the second argument (the declared sex, as the samplesheet gives
+# the PARASCOPY module); without it those rows are not assessed. A chrY row
+# on a female is not applicable.
 #
 # OPT-IN: a default run leaves this step out (run-all.sh runs it with
 # TOOLS=...,parascopy).
@@ -71,17 +72,11 @@ POP=${PARASCOPY_POPULATION:-EUR}
 MODELS="${DATA}/models_GRCh38_1KGP/${POP}"
 TABLE="${DATA}/homology_table/GRCh38.bed.gz"
 LOCI=${PARALOG_LOCI:-${PGP_ROOT}/assets/paralog_loci.tsv}
-# The sex of the chrX and chrY interval rows: the argument, else step 16's
-# inferred sex (goleft's .ped, PED coding 1 male, 2 female), else unknown.
-SEX_PED="${GENOME_DIR}/${SAMPLE}/indexcov/indexcov-indexcov.ped"
+# The sex of the chrX and chrY interval rows: the declared sex (the argument)
+# only, as in Nextflow, so both give the same table; none means unknown.
 case "$SEX" in
   male|female) ;;
-  "")
-    SEX=unknown
-    if [ -s "$SEX_PED" ]; then
-      SEX=$(awk -F'\t' 'NR == 1 { for (i = 1; i <= NF; i++) { h = $i; sub(/^#/, "", h); if (h == "sex") c = i }; next }
-        c { s = $c } END { print (s == 1 ? "male" : s == 2 ? "female" : "unknown") }' "$SEX_PED")
-    fi ;;
+  "") SEX=unknown ;;
   *) echo "ERROR: the sex is male or female, not '${SEX}'." >&2; exit 1 ;;
 esac
 

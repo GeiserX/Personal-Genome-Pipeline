@@ -41,7 +41,8 @@ Checks:
      GENCODE does not have;
  11. carrier deletion alleles and AZF (step 35's interval table): each allele
      of each partner is listed as present, absent or not assessable; the
-     male partner's AZF regions are listed, the female's are not applicable;
+     male partner's AZF deletions are listed by that name (absent on a
+     normal male), the female's are not applicable;
      where CNVpytor (step 18) and the depth call disagree, both are printed;
      without --cn-intervals the section is not written.
 
@@ -421,9 +422,9 @@ def main():
               and "- B, GJB6_D13S1830" not in md and "- B, del(GJB6-D13S1830): **absent** (read depth, step 35: 2 of 2 "
               "copies)\n" in md + "\n", lines)
         check("cn alleles: the male partner's AZF regions, AZFc a deletion; the female's not applicable",
-              "- B, AZFc (DAZ copies; gr/gr and b2/b3 leave two of four): **present** (read depth, step 35: 2 of 4 copies)"
-              in md and "- B, AZFa: **absent**" in md and "- A, AZF regions: not applicable (no Y chromosome)" in md
-              and "- A, AZFa" not in md, lines)
+              "- B, AZFc deletion (DAZ copies; gr/gr and b2/b3 leave two of four): **present** (read depth, step 35: "
+              "2 of 4 copies)" in md and "- B, AZFa deletion: **absent** (read depth, step 35: 1 of 1 copies)" in md
+              and "- A, AZF regions: not applicable (no Y chromosome)" in md and "- A, AZFa" not in md, lines)
         rc, log = run("screen", "--pedigree", ped, "--genes", GENES, "--clinvar", f"A={a_hits}", "--clinvar",
                       f"B={b_hits}", "--out-dir", f"{t}/nocn")
         check("cn alleles: without --cn-intervals no allele section is written",
