@@ -14,7 +14,14 @@ Checks:
      a CPSR count, a section that stopped running, a new ClinVar file date
      and a new versions.env tag: each is listed once, and the reclassified
      hit names the ClinVar file date as the reason;
-  5. the HTML escapes what it prints.
+  5. the HTML escapes what it prints;
+  6. with a previous run the delta says "New since <the previous run's date>",
+     names the sections whose results changed (new_since_sections), and adds
+     the last database re-check (recheck/state.json beside the summary) as its
+     recheck block; with no previous run there is no previous_utc, and the
+     re-check line is still printed in the text and the HTML. Each of these
+     checks is run again against a planted mistake in a copy of run_delta.py
+     and must fail there.
 
 Run: python3 tests/test_run_delta.py
 """
@@ -97,9 +104,9 @@ def set_row(manifest, sec_, key, value):
     return [(s, k, value if (s, k) == (sec_, key) else v) for s, k, v in manifest]
 
 
-def delta(w, prev_dir, cur_dir, name):
+def delta(w, prev_dir, cur_dir, name, tool=None):
     out = os.path.join(w, name)
-    args = [sys.executable, TOOL, "--sample", "S", "--summary", os.path.join(cur_dir, "summary.json"),
+    args = [sys.executable, tool or TOOL, "--sample", "S", "--summary", os.path.join(cur_dir, "summary.json"),
             "--manifest", os.path.join(cur_dir, "run_manifest.tsv"), "--out", out]
     if prev_dir:
         args += ["--previous", prev_dir]
@@ -233,6 +240,109 @@ def main():
         write_run(cur, s, MANIFEST)
         _, _, page = delta(w, prev, cur, "escape")
         check("the HTML escapes the values", "&lt;b&gt;x&lt;/b&gt;" in page and "<b>x</b>" not in page, page[-600:])
+
+        # 6. new since, the changed sections and the database re-check
+        s = summary("2026-02-01T00:00:00Z")
+        s["sections"]["clinvar"]["data"]["hits"][1]["significance"] = "Benign"
+        s["sections"]["roh"]["state"] = "missing"
+        write_run(cur, s, MANIFEST)
+        os.makedirs(os.path.join(cur, "recheck"), exist_ok=True)
+        with open(os.path.join(cur, "recheck", "state.json"), "w") as f:
+            json.dump({"checked_utc": "2026-02-02T00:00:00Z", "affected_steps": ["06", "24"], "items": [
+                {"item": "clinvar_file_date", "label": "ClinVar", "class": "refresh-available", "action": "refresh it"},
+                {"item": "VEP_CACHE_RELEASE", "label": "VEP", "class": "no-newer-release"}]}, f)
+        new_checks = {
+            "new since: previous_utc is the previous run's date": lambda d, t: d.get("previous_utc") == "2026-01-01T00:00:00Z",
+            "new since: the text heads the changes with it": lambda d, t: "New since 2026-01-01T00:00:00Z: 2 change(s):" in t,
+            "new since: the changed sections are clinvar and roh": lambda d, t: d.get("new_since_sections") == ["roh", "clinvar"],
+            "new since: the re-check is in the delta": lambda d, t: (d.get("recheck") or {}).get("affected_steps") == ["06", "24"]
+            and "Database re-check of 2026-02-02T00:00:00Z: 1 item(s) to look at" in t and "ClinVar: refresh-available" in t,
+        }
+        d, txt, _ = delta(w, prev, cur, "newsince")
+        for name, fn in new_checks.items():
+            check(name, fn(d, txt), {k: d.get(k) for k in ("previous_utc", "new_since_sections", "recheck")})
+        d, txt, _ = delta(w, None, cur, "newsince-first")
+        check("new since: no previous run, no previous_utc and no changed sections",
+              "previous_utc" not in d and "new_since_sections" not in d and "New since" not in txt, d)
+        src = open(TOOL).read()
+        # A first run still shows the database re-check, in the text and in the HTML.
+        first_checks = {
+            "first run: the text shows the re-check": lambda t, p: "Database re-check of 2026-02-02T00:00:00Z" in t,
+            "first run: the HTML shows the re-check": lambda t, p: "Database re-check of 2026-02-02T00:00:00Z" in p,
+        }
+        first_planted = {
+            "first run: the text shows the re-check": (
+                'compared with.")\n        w.extend(recheck_text(d.get("recheck")))', 'compared with.")'),
+            "first run: the HTML shows the re-check": (
+                '    rc = recheck_text(d.get("recheck"))\n', '    rc = recheck_text(d.get("recheck")) if d["previous"] else []\n'),
+        }
+        _, txt, page = delta(w, None, cur, "recheck-first")
+        for name, fn in first_checks.items():
+            check(name, fn(txt, page), (txt, page[-600:]))
+            a, b = first_planted[name]
+            check(f"planted mistake is in the copy: {name}", a in src, a)
+            mtool = os.path.join(w, "run_delta_mutant.py")
+            with open(mtool, "w") as f:
+                f.write(src.replace(a, b))
+            _, mtxt, mpage = delta(w, None, cur, "recheck-first-mutant", tool=mtool)
+            check(f"fails on a planted mistake: {name}", not fn(mtxt, mpage), "passed on the mutant")
+        planted = {
+            "new since: previous_utc is the previous run's date": ('d["previous_utc"] = prev.get("generated_utc")', 'd["previous_utc"] = None'),
+            "new since: the text heads the changes with it": ("New since {d['previous_utc'] or 'the previous run'}: ", ""),
+            "new since: the changed sections are clinvar and roh": ('ch["section"] = SECTION_OF_AREA.get(ch["area"], area)', "pass"),
+            "new since: the re-check is in the delta": ('d["recheck"] = recheck', "pass"),
+        }
+        for name, (a, b) in planted.items():
+            mtool = os.path.join(w, "run_delta_mutant.py")
+            check(f"planted mistake is in the copy: {name}", a in src, a)
+            with open(mtool, "w") as f:
+                f.write(src.replace(a, b))
+            d, txt, _ = delta(w, prev, cur, "mutant", tool=mtool)
+            check(f"fails on a planted mistake: {name}", not new_checks[name](d, txt), "passed on the mutant")
+
+        # 7. a check older than the run's manifest describes an earlier run, so it is left out; a rerun
+        # block that is not an object is dropped and the delta is still written.
+        late, odd = os.path.join(w, "late"), os.path.join(w, "odd")
+        write_run(late, s, set_row(MANIFEST, "run", "written_utc", "2026-03-01 00:00:00 UTC"))
+        write_run(odd, s, MANIFEST)
+        st = json.load(open(os.path.join(cur, "recheck", "state.json")))
+        for d_, rerun in ((late, None), (odd, [1])):
+            os.makedirs(os.path.join(d_, "recheck"))
+            with open(os.path.join(d_, "recheck", "state.json"), "w") as f:
+                json.dump(dict(st, rerun=rerun), f)
+        recheck_checks = {
+            "re-check: one older than the run's manifest is left out":
+                (late, lambda rc, d, t: rc == 0 and "recheck" not in d and "Database re-check" not in t),
+            "re-check: a rerun block that is not an object is dropped, the delta still written":
+                (odd, lambda rc, d, t: rc == 0 and (d.get("recheck") or {}).get("affected_steps") == ["06", "24"]
+                 and d["recheck"].get("rerun") is None),
+        }
+        recheck_planted = {
+            "re-check: one older than the run's manifest is left out":
+                ('if utc14(man.get(("run", "written_utc"))) > utc14(st.get("checked_utc")):', "if False:"),
+            "re-check: a rerun block that is not an object is dropped, the delta still written":
+                ('"rerun": st.get("rerun") if isinstance(st.get("rerun"), dict) else None}', '"rerun": st.get("rerun")}'),
+        }
+
+        def quiet_delta(cur_dir, name, tool=TOOL):
+            out = os.path.join(w, name)
+            p = subprocess.run([sys.executable, tool, "--sample", "S", "--summary", os.path.join(cur_dir, "summary.json"),
+                                "--manifest", os.path.join(cur_dir, "run_manifest.tsv"), "--out", out, "--previous", prev],
+                               capture_output=True, text=True)
+            try:
+                return p.returncode, json.load(open(out + ".json")), open(out + ".txt").read()
+            except (OSError, ValueError):
+                return p.returncode, {}, ""
+        for name, (d_, fn) in recheck_checks.items():
+            rc, d, txt = quiet_delta(d_, "rc-" + os.path.basename(d_))
+            check(name, fn(rc, d, txt), (rc, d.get("recheck")))
+            a_, b_ = recheck_planted[name]
+            check(f"planted mistake is in the copy: {name}", a_ in src, a_)
+            mtool = os.path.join(w, "run_delta_mutant.py")
+            with open(mtool, "w") as f:
+                f.write(src.replace(a_, b_))
+            rc, d, txt = quiet_delta(d_, "rc-mutant-" + os.path.basename(d_), tool=mtool)
+            check(f"fails on a planted mistake: {name}", not fn(rc, d, txt), "passed on the mutant")
     finally:
         shutil.rmtree(w)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
