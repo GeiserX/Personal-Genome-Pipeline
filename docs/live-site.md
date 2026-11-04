@@ -8,6 +8,8 @@ A full run takes a day or more. The live site shows it while it goes, in a brows
 
 https://geiserx.github.io/OwnGenome/demo/ is the live site on DEMO-001, the invented sample of the docs pictures. It replays a made-up run from the first task to the database re-check after it: press Play, or drag the slider. Every number, result and family member in it is made up.
 
+![The live page of DEMO-001 at the end of the demo run: the run marked finished above a Play button and a time slider, the step map with every step done and a dot on the steps a newer ClinVar would change, and the Found so far list with one line per finished section, starting with the read and variant calling steps and the ClinVar screen's hits with its caveat](images/demo-live-site.png){ loading=lazy }
+
 The page and its plugins are the files of `assets/live/`, unchanged. Each moment of the replay is the server's own `state.json` at that moment: `tests/demo/build_live_demo.py` loads every plugin, stores the made-up messages of `tests/fixtures/live/demo-001.weblog.jsonl` one by one as the ingest port would, and reads the state after each. The charts, the search box, the run-health card, the database re-check and the family page work as they do on your own site. The genome viewer does not: it opens your own reads on your own computer, so its links lead to a page that says it is not in the demo.
 
 What differs from your own site:
