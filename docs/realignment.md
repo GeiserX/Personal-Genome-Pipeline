@@ -181,7 +181,7 @@ export REF_FASTA=reference/GRCh38_no_alt_analysis_set_maskedGRC.fasta
 
 Step 02 builds its own minimap2 index for it the first time, `GRCh38_no_alt_analysis_set_maskedGRC.sr.mmi`. MEGAnE's k-mer set (step 50) is built from the reference, so run `setup.sh --megane-kmers` again with the same `REF_FASTA`.
 
-`validate-setup.sh` cannot tell a BAM aligned to the default reference from one aligned to the masked one: the names and lengths it compares are the same. The `@PG` line of minimap2 can, as it names the index:
+`validate-setup.sh` cannot tell a BAM aligned to the default reference from one aligned to the masked one: the names and lengths it compares are the same. The `@PG` line of minimap2 can, as it names the index. With `sam` and `BAM` defined as in [the checks above](#checks-that-prove-a-bam-is-on-the-new-reference):
 
 ```bash
 sam view -H "$BAM" | grep '^@PG' | grep -o 'GRCh38_no_alt_analysis_set[^ ]*\.sr\.mmi'   # ..._maskedGRC.sr.mmi on the masked reference
