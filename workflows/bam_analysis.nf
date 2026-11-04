@@ -80,6 +80,7 @@ workflow BAM_ANALYSIS {
     ch_hla_concordance  = Channel.empty()   // [meta, <id>_hla_concordance.tsv] when OptiType typed reads
     ch_smn_copy_number  = Channel.empty()
     ch_hba_copy_number  = Channel.empty()
+    ch_parascopy_tables = Channel.empty()
     ch_paraphase_cn     = Channel.empty()
     ch_paraphase_vars   = Channel.empty()
     ch_sample_qc        = Channel.empty()
@@ -236,6 +237,11 @@ workflow BAM_ANALYSIS {
         PARASCOPY(ch_bam, ch_reference, ch_reference_fai, ch_parascopy_data, ch_parascopy_bed)
         ch_smn_copy_number = PARASCOPY.out.copy_number
         ch_hba_copy_number = PARASCOPY.out.hba
+        // every other catalog row's table: SMN1's and HBA's come apart, above
+        ch_parascopy_tables = PARASCOPY.out.tables.map { meta, fs ->
+            def apart = ["${meta.id}_smn_copy_number.tsv", "${meta.id}_hba_copy_number.tsv"].collect { n -> n.toString() }
+            [meta, (fs instanceof List ? fs : [fs]).findAll { f -> !(f.name in apart) }]
+        }
         ch_versions        = ch_versions.mix(PARASCOPY.out.versions)
     }
 
@@ -250,7 +256,7 @@ workflow BAM_ANALYSIS {
         PARAPHASE_CHECK(ch_bam)
         ch_paraphase_bam = ch_bam.join(PARAPHASE_CHECK.out.ok).map { meta, bam, bai, _ok -> [meta, bam, bai] }
         PARAPHASE(ch_paraphase_bam, ch_reference, ch_reference_fai)
-        PARAPHASE_REPORT(PARAPHASE.out.results)
+        PARAPHASE_REPORT(PARAPHASE.out.results, file("${projectDir}/assets/paraphase_genes.tsv", checkIfExists: true))
         ch_paraphase_cn   = PARAPHASE_REPORT.out.copy_number
         ch_paraphase_vars = PARAPHASE_REPORT.out.variants
         ch_versions     = ch_versions.mix(PARAPHASE_CHECK.out.versions, PARAPHASE.out.versions,
@@ -386,6 +392,7 @@ workflow BAM_ANALYSIS {
     hla_concordance  = ch_hla_concordance // [meta, <id>_hla_concordance.tsv] (--hla_qc, reads typed)
     smn_copy_number  = ch_smn_copy_number // [meta, <id>_smn_copy_number.tsv]
     hba_copy_number  = ch_hba_copy_number // [meta, <id>_hba_copy_number.tsv]
+    parascopy_tables = ch_parascopy_tables // [meta, [<id>_<table>_copy_number.tsv, ...]]: the other catalog rows' tables
     paraphase_cn     = ch_paraphase_cn    // [meta, <id>_paraphase_copy_number.tsv]
     paraphase_vars   = ch_paraphase_vars  // [meta, <id>_paraphase_variants.tsv]
     sample_qc        = ch_sample_qc       // [meta, <id>_sample_qc.tsv]
