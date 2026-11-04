@@ -2104,7 +2104,8 @@ def ugt1a1_reading(by, d, s):
         pc = (row.get("Diplotype") or "").strip() or "."
         alleles = pc.split("/")
         if len(alleles) == 2 and "possible" not in pc and (row.get("Status") or "") != "not called":
-            n = sum(any(x in re.split(r"[+ ]", a) for x in UGT1A1_DECREASED) for a in alleles)
+            # A combination allele reads "*80+*28" or "[*80 + *28]".
+            n = sum(any(x in re.split(r"[+ \[\]]", a) for x in UGT1A1_DECREASED) for a in alleles)
             agreement = "agrees" if n == dec else "differs"
     if agreement == "agrees":
         reading += f" PharmCAT (step 7) called {pc}: the same number of *28 and *37 copies."
@@ -2149,8 +2150,10 @@ def sec_expansions(d, s):
         info = info_map(r[7])
         # A locus of several repeats (CFTR: CFTR_TG and CFTR_T) writes one
         # record per repeat, each with the locus as REPID and its own VARID:
-        # the record is named by its VARID, and looked up in the catalog and
-        # the ranges by the locus. A one-repeat locus has VARID = REPID.
+        # the record is named by its VARID and looked up by that name in the
+        # ranges and motif tables (the pathogenic repeat of a multi-repeat
+        # locus carries the locus name), and in the catalog's NoThresholds by
+        # its locus (REPID). A one-repeat locus has VARID = REPID.
         lid = info.get("REPID") or info.get("VARID") or f"{r[0]}:{r[1]}"
         rep = info.get("VARID") or lid
         fmt = r[8].split(":")

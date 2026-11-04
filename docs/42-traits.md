@@ -66,6 +66,7 @@ Both reports have a Traits section: every row with its genotype, reading, note a
 | Bilirubin, Gilbert syndrome genotype | rs887829 (UGT1A1) | 19414484, 37456363 |
 | Nicotine breakdown | rs1801272 (CYP2A6*2) | 2322567, 9827545 |
 | Lp(a) level | rs10455872, rs3798220 (LPA); [step 46](46-lpa.md) adds the KIV-2 repeat count, and the report's Lp(a) section reads the three together | 20032323, 36036785, 29973585 |
+| CFTR R117H, read with the poly-T tract of [step 9](09-str-expansions.md) | rs78655421 (CFTR) | 32404922 |
 | APOE ε2/ε3/ε4 | rs429358, rs7412 | 8346443, 9343467 |
 
 Variants whose effect allele the papers we could read did not state were left out, among them SLC24A4 rs12896399 and TYR rs1393350 of the eye-colour panels.

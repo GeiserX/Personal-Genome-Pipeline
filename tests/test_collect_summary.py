@@ -1352,6 +1352,12 @@ def str_extra_readings(work, schema):
     check("extra repeats: 5T on both copies with R117H is in cis; UGT1A1 6/9 units is *36/*37",
           rd["CFTR"].get("phase") == "in_cis" and rd["UGT1A1"]["genotype"] == "*36/*37", rd)
 
+    # PharmCAT's combination alleles, in both forms step 27's table can carry: one *28 copy agrees with TA6/TA7.
+    for name, pc in (("EXF", "*80+*28/*1"), ("EXG", "[*80 + *28]/*1")):
+        _, _, rd, _, _ = made_up(name, None, None, "7/8", ugt_pc=pc)
+        check(f"extra repeats: UGT1A1 TA6/TA7 agrees with PharmCAT's {pc}",
+              (rd["UGT1A1"]["genotype"], rd["UGT1A1"]["agreement"]) == ("*1/*28", "agrees"), rd["UGT1A1"])
+
     # Without the opt-in the extra loci are not in step 09's output.
     _, ed, rd, txt, _ = made_up("EXE", None, None, None)
     check("extra repeats: without the loci CFTR and UGT1A1 are not sized and say how to add them",
