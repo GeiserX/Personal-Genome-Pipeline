@@ -19,9 +19,10 @@ reads DIR/DEMO-001 after steps 24, 27 and 28 ran on it and writes
                            the whole file as `cat` prints it
   demo-multiqc-report.png  the top 1600 x 1118 pixels of the step 28 report
   demo-live-site.png       (--only live, never by default) the live-site demo
-                           that tests/demo/build_live_demo.py builds from
-                           DIR/DEMO-001, at the last moment of its replay, in
-                           a 1280 x 1000 browser window
+                           as the docs workflow publishes it: built by
+                           tests/demo/build_live_demo.py on a DEMO-001 it
+                           writes itself (--genome-dir is not read), at the
+                           last moment of its replay, in a 1280 x 1000 window
 
 Every PNG is written again from its pixels alone, so it holds no text, time
 or EXIF chunk. Needs playwright (with its Chromium) and pillow;
@@ -94,8 +95,8 @@ def html_pictures(sample_dir, out, stop_titles):
         browser.close()
 
 
-def live_picture(genome_dir, out):
-    """demo-live-site.png: the live-site demo of DIR/DEMO-001, served as a static host serves it."""
+def live_picture(out):
+    """demo-live-site.png: the live-site demo as the docs publish it, served as a static host serves it."""
     import functools
     import shutil
     import tempfile
@@ -108,7 +109,7 @@ def live_picture(genome_dir, out):
     tmp = tempfile.mkdtemp(prefix="owngenome-live-picture.")
     try:
         site = os.path.join(tmp, "demo")
-        build_live_demo.build(site, genome_dir=genome_dir)
+        build_live_demo.build(site)
         handler = functools.partial(type("Quiet", (SimpleHTTPRequestHandler,), {"log_message": lambda *a: None}),
                                     directory=site)
         srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -186,7 +187,7 @@ def cpic_picture(sample_dir, out, font_path, head, full):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--genome-dir", required=True)
+    ap.add_argument("--genome-dir", help="the folder holding DEMO-001 (required, except with --only live)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--font", help="monospace TrueType font for the CPIC picture (default: Menlo, else DejaVu Sans Mono)")
     ap.add_argument("--html-stop-before", default=",".join(STOP_BEFORE),
@@ -204,8 +205,11 @@ def main(argv=None):
     sample_dir = os.path.join(a.genome_dir, SAMPLE)
     os.makedirs(a.out, exist_ok=True)
     if a.only == "live":
-        live_picture(a.genome_dir, a.out)
+        os.makedirs(a.out, exist_ok=True)
+        live_picture(a.out)
         return 0
+    if not a.genome_dir:
+        ap.error("--genome-dir is required")
     if a.only != "html":
         cpic_picture(sample_dir, a.out, font, a.cpic_head, a.cpic_full)
     if a.only != "cpic":
