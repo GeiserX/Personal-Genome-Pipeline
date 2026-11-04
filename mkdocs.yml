@@ -218,6 +218,7 @@ nav:
           - "Step 34: CRAM Archive": 34-cram-archive.md
   - Guides:
       - Interpreting Your Results: interpreting-results.md
+      - What the Pipeline Does Not Report: not-reported.md
       - "Genome Viewer: See the Reads Behind a Finding": viewer.md
       - Watch a Run Live: live-site.md
       - Multi-Sample Comparison Guide: multi-sample.md
