@@ -199,17 +199,16 @@ def main(argv=None):
                     help="draw only these pictures (html: the step 24 and MultiQC ones; live: the live-site demo, "
                          "drawn only when asked)")
     a = ap.parse_args(argv)
-    font = a.font or next((f for f in FONTS if os.path.isfile(f)), None)
-    if not font:
-        ap.error("no monospace font found: give --font")
-    sample_dir = os.path.join(a.genome_dir, SAMPLE)
     os.makedirs(a.out, exist_ok=True)
     if a.only == "live":
-        os.makedirs(a.out, exist_ok=True)
         live_picture(a.out)
         return 0
     if not a.genome_dir:
         ap.error("--genome-dir is required")
+    font = a.font or next((f for f in FONTS if os.path.isfile(f)), None)
+    if not font:
+        ap.error("no monospace font found: give --font")
+    sample_dir = os.path.join(a.genome_dir, SAMPLE)
     if a.only != "html":
         cpic_picture(sample_dir, a.out, font, a.cpic_head, a.cpic_full)
     if a.only != "cpic":
