@@ -14,12 +14,16 @@ Checks:
   4. TAR syndrome: step 35's 1q21.1 deletion plus the RBM8A low-expression
      allele (rs139428292, assets/carrier_genes.tsv) gives the TAR line;
   5. a hit called 1/1 inside a called deletion is shown as hemizygous, in the
-     carrier list and in the SF tier;
+     carrier list and in the SF tier; a 1/1 hit at AnnotSV's SV_start (the
+     base before the deleted bases) stays homozygous;
   6. SMN1: one SMN1 copy (Parascopy) plus an SMN1 hit, and HBA: three alpha
      genes plus an HBA2 hit, each give a "possibly biallelic" line;
   7. without any deletion caller's output the hit gives no line, and the
      summary names the callers it could not read;
-  8. both reports print the two-hit line and the hemizygous genotype.
+  8. both reports print the two-hit line and the hemizygous genotype;
+  9. the couple screen (step 39): the RBM8A low-expression allele in one
+     partner and a deletion of RBM8A in the other is a shared gene (TAR risk
+     for a child); the allele in both partners, or in one alone, is set aside.
 """
 import gzip
 import os
@@ -30,6 +34,7 @@ import tempfile
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "bin"))
 import collect_summary  # noqa: E402
+import couple_report  # noqa: E402
 import render_report  # noqa: E402
 
 FAILS = []
@@ -181,6 +186,13 @@ def main():
         d = sample(work, "hom_out", [hit(SNV, "MUTYH", "1/1")], sv(DEL, "MUTYH"))
         item = [x for x in carrier(d)["carriers"] if x["gene"] == "MUTYH"]
         check("1/1 outside the deletion stays hom", item and item[0]["genotype"] == "hom", item)
+        # AnnotSV's SV_start is the base before the deleted bases: a 1/1 hit there is not inside
+        d = sample(work, "hom_edge", [hit(("chr1", DEL[1], "G", "A"), "MUTYH", "1/1")], sv(DEL, "MUTYH"))
+        item = [x for x in carrier(d)["carriers"] if x["gene"] == "MUTYH"]
+        check("1/1 at AnnotSV's SV_start (the padding base) stays hom", item and item[0]["genotype"] == "hom", item)
+        d = sample(work, "hom_first", [hit(("chr1", DEL[1] + 1, "G", "A"), "MUTYH", "1/1")], sv(DEL, "MUTYH"))
+        item = [x for x in carrier(d)["carriers"] if x["gene"] == "MUTYH"]
+        check("1/1 at the first deleted base is hemizygous", item and item[0]["genotype"] == "hemizygous", item)
 
         # 6. SMN1 and HBA
         d = sample(work, "smn", [hit(("chr5", 70951950, "G", "A"), "SMN1", "0/1")])
@@ -219,6 +231,25 @@ def main():
         check("HTML report: the two-hit line", "Biallelic: MUTYH" in html)
         check("text report: the hemizygous genotype", "45336000 G&gt;A" not in txt and "hemizygous (called homozygous "
               "inside DEL" in txt, txt[-3000:])
+
+        # 9. the couple screen: hypomorph x null is a shared gene, hypomorph x hypomorph is not
+        genes = couple_report.read_genes(os.path.join(REPO, "assets", "carrier_genes.tsv"))
+        tar = sample(work, "couple_tar", [hit(TAR_ALLELE, "RBM8A", "0/1")])
+        fa, _ = couple_report.clinvar_findings(f"{tar}/clinvar/S_clinvar_hits.vcf", genes, "female", {}, [])
+        null = couple_report.finding("RBM8A", "deletion chr1:145700000-146000000 (300.0 kb) het, 6 exons of the "
+                                     "gene (Delly)", 1)
+        sexes = {"A": "female", "B": "male"}
+        rows = couple_report.screen_couple("A", "B", sexes, {"A": fa, "B": [null]}, genes)
+        r = [x for x in rows if x["gene"] == "RBM8A"]
+        check("couple: RBM8A allele in A + RBM8A deletion in B is a shared gene, 1 in 4",
+              len(r) == 1 and r[0]["result"] == "shared" and r[0]["offspring_risk"] == "1 in 4 per pregnancy"
+              and "rs139428292" in r[0]["findings_a"] and "hypomorph" in r[0]["explanation"], rows)
+        rows = couple_report.screen_couple("A", "B", sexes, {"A": fa, "B": list(fa)}, genes)
+        check("couple: the RBM8A allele in both partners is set aside, no row",
+              not [x for x in rows if x["gene"] == "RBM8A"], rows)
+        rows = couple_report.screen_couple("A", "B", sexes, {"A": fa, "B": []}, genes)
+        check("couple: the RBM8A allele in one partner alone is set aside, no row",
+              not [x for x in rows if x["gene"] == "RBM8A"], rows)
     finally:
         shutil.rmtree(work, ignore_errors=True)
     print(f"\n{len(FAILS)} failed" if FAILS else "\nall passed")

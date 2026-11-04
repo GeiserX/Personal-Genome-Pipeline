@@ -3395,8 +3395,11 @@ def gene_deletions(d, s, spans):
             if x["type"] != "DEL" or x["common"] or not (a.isdigit() and b.isdigit()):
                 continue
             chrom = chrom if chrom.startswith("chr") else "chr" + chrom
-            for g in sorted(set(x["genes"]) | set(over(chrom, int(a), int(b)))):
-                add(g, {"chrom": chrom, "start": int(a), "end": int(b), "inside": True,
+            # SV_start is the base before the deleted bases (annotsv_postfilter.sv_span):
+            # they are SV_start+1 to SV_end, 1-based. The text keeps AnnotSV's coordinates.
+            first = int(a) + 1
+            for g in sorted(set(x["genes"]) | set(over(chrom, first, int(b)))):
+                add(g, {"chrom": chrom, "start": first, "end": int(b), "inside": True,
                         "text": f"DEL {chrom}:{a}-{b} (AnnotSV class {x['acmg_class']}, {x['caller']})",
                         "gt": x.get("gt"), "ps": x.get("ps")})
     elif not unread:

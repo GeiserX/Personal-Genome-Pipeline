@@ -15,7 +15,8 @@
 #   hypomorph or pseudodeficiency, then chrom:pos:ref:alt (GRCh38), then a name; "." for none. Such
 #   an allele never makes a carrier finding on its own (the couple screen, step 39, and the
 #   carrier list of the sample report). With a called deletion of the gene it is a second hit (the
-#   two-hit lines of the sample report, bin/collect_summary.py two_hits).
+#   two-hit lines of the sample report, bin/collect_summary.py two_hits). In the couple screen a
+#   hypomorph beside a full loss of function in the other partner's same gene is a shared gene.
 # Rebuilt with: couple_report.py genes (docs/39-couple.md says how).
 gene	chrom	start	end	inheritance	lists	condition	severity
 ISG15	chr1	1001138	1014540	AR	Orphanet	Mendelian susceptibility to mycobacterial diseases due to complete ISG15 deficiency	.
