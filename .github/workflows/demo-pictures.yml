@@ -4,7 +4,9 @@ name: Demo pictures
 # (docs/testing.md, "Retaking the report pictures"), with
 # tests/demo/retake-screenshots.sh: it writes the sample from a fixed seed,
 # runs steps 36, 27, 24 and 28 on it with the pinned images, draws the
-# pictures and checks them. The pictures come back as the artifact
+# pictures and checks them. A fourth picture, demo-live-site.png
+# (docs/live-site.md), is the live-site demo built from that same sample by
+# tests/demo/build_live_demo.py. The pictures come back as the artifact
 # `demo-pictures`; look at them and commit them into docs/images/ by hand.
 # Nothing here writes to the repository.
 #
@@ -23,6 +25,8 @@ on:
     branches: [main]
     paths:
       - 'tests/demo/**'
+      - 'tests/fixtures/live/demo-001.weblog.jsonl'
+      - 'tests/fixtures/live/demo/**'
       - '.github/workflows/demo-pictures.yml'
   workflow_dispatch:
 
@@ -55,6 +59,15 @@ jobs:
         env:
           PLAYWRIGHT_WITH_DEPS: '1'
         run: tests/demo/retake-screenshots.sh "$RUNNER_TEMP/demo" "$RUNNER_TEMP/pictures"
+
+      # The venv and the Chromium the step above installed.
+      - name: Take the live-site picture
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/demo/venv/browsers
+        run: |
+          py="$RUNNER_TEMP/demo/venv/bin/python"
+          "$py" tests/demo/render_pictures.py --genome-dir "$RUNNER_TEMP/demo/genome" --out "$RUNNER_TEMP/pictures" --only live
+          "$py" tests/demo/check_pictures.py "$RUNNER_TEMP/pictures/demo-live-site.png"
 
       - name: Upload the pictures
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
