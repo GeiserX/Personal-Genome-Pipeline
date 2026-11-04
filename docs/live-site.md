@@ -4,6 +4,18 @@ A full run takes a day or more. The live site shows it while it goes, in a brows
 
 `bin/owngenome_live.py` is the server. It uses Python's standard library only, so the `python3` on the host is enough, and it has its own password, access log and limits, so it needs no web server in front of it.
 
+## Try the demo
+
+https://geiserx.github.io/OwnGenome/demo/ is the live site on DEMO-001, the invented sample of the docs pictures. It replays a made-up run from the first task to the database re-check after it: press Play, or drag the slider. Every number, result and family member in it is made up.
+
+The page and its plugins are the files of `assets/live/`, unchanged. Each moment of the replay is the server's own `state.json` at that moment: `tests/demo/build_live_demo.py` loads every plugin, stores the made-up messages of `tests/fixtures/live/demo-001.weblog.jsonl` one by one as the ingest port would, and reads the state after each. The charts, the search box, the run-health card, the database re-check and the family page work as they do on your own site. The genome viewer does not: it opens your own reads on your own computer, so its links lead to a page that says it is not in the demo.
+
+What differs from your own site:
+
+- It is a static folder published with these docs, so it has no password and no access log. Nothing in it is private.
+- The run-health card measures an invented machine (64 GiB of RAM, a 2 TiB disk 55% used), not the one that built the page.
+- The CPIC recommendations and the gene callability table have no file in the demo sample, so the demo shows those two sections as missing.
+
 ## Start it
 
 ```bash
