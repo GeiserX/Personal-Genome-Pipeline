@@ -59,7 +59,7 @@ step_block male
 T="${W}/paralogs/${P}_cn_intervals.tsv"
 cp "$T" "${CASE_TMP}/male.tsv"
 awk -F'\t' '$1 ~ /^(AZF|22q11.2_DGS_proximal_A-B)/' "$T"
-check_ge "the table lists every interval row" "$(($(wc -l < "$T") - 1))" 88
+check_ge "the table lists every interval row" "$(($(wc -l < "$T") - 1))" 90
 for r in AZFa AZFb; do
   check_eq "male: ${r} called" "$(col "$T" "$r" status)" called
   check_eq "male: ${r} 1 copy of 1, no change" "$(col "$T" "$r" copies)/$(col "$T" "$r" expected)/$(col "$T" "$r" change)" \
