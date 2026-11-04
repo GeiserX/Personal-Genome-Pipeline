@@ -733,10 +733,10 @@ def comphet_phase_html(d):
     out = [stat("Pairs in trans / cis / unknown", f"{ph.get('trans', 0)} / {ph.get('cis', 0)} / {ph.get('unknown', 0)}")]
     trans = d.get("compound_het_trans") or []
     if trans:
-        out += ["    <table>", "      <tr><th>Gene</th><th>Pair in trans</th><th>Reads</th></tr>"]
-        out += [f"      <tr><td>{E(x['gene'])}</td><td>{E(x['variants'])}</td><td>{E(x['reads'])}</td></tr>"
-                for x in trans]
-        out.append("    </table>")
+        out += ["    <table>", f"      <tr><th>Gene</th><th>Pair in trans</th><th>Reads</th>{VIEWER_TH}</tr>"]
+        out += [f"      <tr><td>{E(x['gene'])}</td><td>{E(x['variants'])}</td><td>{E(x['reads'])}</td>"
+                f"{viewer_td_of(x['variants'])}</tr>" for x in trans]
+        out += ["    </table>", VIEWER_NOTE]
     return out + [small_note(COMPHET_NOTE)]
 
 
@@ -1938,9 +1938,10 @@ def mosaic_mca_body(d):
     if d.get("status") != "assessed":
         return [stat("Status", badge("Not assessed", "gray")), small_note(d.get("message", ".")), small_note(MCA_NOTE)]
     rows = "".join(f"<tr><td>{E(x['type'])}</td><td>{E(x['arms'])}</td><td>{E(x['chrom'])}:{E(x['start'])}-{E(x['end'])}</td>"
-                   f"<td>{E(x['length_mb'])}</td><td>{E(x['cell_fraction'])}</td></tr>" for x in d.get("calls", []))
-    table = ("    <table><tr><th>Type</th><th>Arm</th><th>Region</th><th>Mb</th><th>Cell fraction</th></tr>"
-             + rows + "</table>") if rows else small_note("No mosaic alteration reported.")
+                   f"<td>{E(x['length_mb'])}</td><td>{E(x['cell_fraction'])}</td>{viewer_td(x['chrom'], x['start'], x['end'])}</tr>"
+                   for x in d.get("calls", []))
+    table = (f"    <table><tr><th>Type</th><th>Arm</th><th>Region</th><th>Mb</th><th>Cell fraction</th>{VIEWER_TH}</tr>"
+             + rows + "</table>\n" + VIEWER_NOTE) if rows else small_note("No mosaic alteration reported.")
     lines = mosaic_mca_lines(d)
     return [stat("Calls reported", E(d.get("calls_reported", "0"))), stat("Cell-fraction floor", E(d.get("floor", "."))),
             table, small_note(lines[0]), small_note(MCA_NOTE)]
@@ -2139,25 +2140,37 @@ def mito_extended_lines(d):
 
 
 # scripts/owngenome-view.sh serves the genome viewer here (OWNGENOME_VIEW_PORT's default);
-# the part after '#' is the locus it opens at.
+# the part after '#' is the locus it opens at. The live site's viewer plugin
+# (bin/owngenome_live_viewer.py) points this address and VIEWER_NOTE at its own viewer
+# in the report it serves.
 VIEWER_URL = "http://127.0.0.1:8765/"
+# Every findings table ends with a Viewer column: one link per row, to the row's locus. A column
+# of its own leaves every other cell's text as it was.
+VIEWER_TH = "<th>Viewer</th>"
+VIEWER_NOTE = ('    <p class="viewer">The Viewer column opens the reads at each row in the genome viewer '
+               "on this computer (start it first: scripts/owngenome-view.sh &lt;sample&gt;, docs/viewer.md).</p>")
+LOCUS_IN_TEXT = re.compile(r"([A-Za-z0-9_.]+):([0-9]+)(?:-([0-9]+))?(?![0-9])")
 
 
-def viewer_links(sites):
-    """One line under a findings table: each (chrom, pos, label) as a link that
-    opens the reads at chrom:pos in the local genome viewer. Empty for none."""
-    links = [f'<a href="{VIEWER_URL}#{E(str(c))}:{E(str(p))}" target="_blank" rel="noopener noreferrer">{E(str(t))}</a>'
-             for c, p, t in sites if c and p]
-    if not links:
-        return []
-    return ['    <p class="viewer">See the reads in the genome viewer on this computer (start it first: '
-            "scripts/owngenome-view.sh &lt;sample&gt;, docs/viewer.md): " + " &middot; ".join(links) + "</p>"]
+def viewer_td(chrom, start, end=None):
+    """The Viewer cell of a row: a link that opens chrom:start, or chrom:start-end, in the
+    genome viewer; an empty cell without a position."""
+    if not chrom or not start:
+        return "<td></td>"
+    where = f"{chrom}:{start}" + (f"-{end}" if end and str(end) != str(start) else "")
+    return (f'<td><a class="locus" href="{VIEWER_URL}#{E(where)}" target="_blank" rel="noopener noreferrer">'
+            f"{E(where)}</a></td>")
 
 
-def variant_site(variant):
-    """(chrom, pos) of a "chrom:pos ref>alt" text, (None, None) for any other."""
-    m = re.match(r"^([A-Za-z0-9._-]+):([0-9]+) ", variant or "")
-    return (m.group(1), m.group(2)) if m else (None, None)
+def viewer_td_of(text):
+    """The Viewer cell of a row whose locus is written in text ("chr1:100 A>G", "DEL chr1:5-90",
+    "chr1:50 A>G + chr1:90 C>T"): the span of every position on the first one's chromosome."""
+    found = LOCUS_IN_TEXT.findall(str(text or ""))
+    if not found:
+        return "<td></td>"
+    chrom = found[0][0]
+    pos = [int(x) for c, a, b in found if c == chrom for x in (a, b) if x]
+    return viewer_td(chrom, min(pos), max(pos))
 
 
 EXPLORE_NOTE = ("Nothing is uploaded by this pipeline. The docs link lists the files each service reads, "
@@ -2424,22 +2437,24 @@ def html_report(s, index=None):
         av = S["annotsv"]["data"]
         body = [stat("Status", done_badge(S["annotsv"]))] + ([small_note(x) for x in annotsv_lines(av)] if av else [])
         if av.get("rows"):
-            body.append("    <table><tr><th>SV</th><th>Class</th><th>Genes</th><th>Callers</th><th>Checks</th></tr>"
+            body.append(f"    <table><tr><th>SV</th><th>Class</th><th>Genes</th><th>Callers</th><th>Checks</th>{VIEWER_TH}</tr>"
                         + "".join(f"<tr><td>{E(x['type'] + ' ' + x['sv'])}</td><td>{E(x['acmg_class'])}</td>"
                                   f"<td>{E(annotsv_genes_text(x))}</td><td>{E(annotsv_support_text(x))}</td>"
-                                  f"<td>{E('; '.join(annotsv_flags(x)) or 'none')}</td></tr>" for x in av["rows"])
+                                  f"<td>{E('; '.join(annotsv_flags(x)) or 'none')}</td>{viewer_td_of(x['sv'])}</tr>"
+                                  for x in av["rows"])
                         + "</table>")
         if av.get("downgraded"):
             body.append("    <h3>Moved to class 3 by step 05's rules</h3>")
             body.append("    <table><tr><th>SV</th><th>AnnotSV class</th><th>Class</th><th>Genes</th><th>Rule</th>"
-                        "<th>Why</th></tr>"
+                        f"<th>Why</th>{VIEWER_TH}</tr>"
                         + "".join(f"<tr><td>{E(x['type'] + ' ' + x['sv'])}</td><td>{E(x['annotsv_class'])}</td>"
                                   f"<td>{E(x['acmg_class'])}</td><td>{E(annotsv_genes_text(x))}</td>"
-                                  f"<td>{E(x['rule'] or 'not named')}</td><td>{E(x['rule_detail'] or 'no detail')}</td></tr>"
+                                  f"<td>{E(x['rule'] or 'not named')}</td><td>{E(x['rule_detail'] or 'no detail')}</td>"
+                                  f"{viewer_td_of(x['sv'])}</tr>"
                                   for x in av["downgraded"])
                         + "</table>")
         if av.get("rows") or av.get("downgraded"):
-            body.append(small_note(ANNOTSV_NOTE))
+            body += [VIEWER_NOTE, small_note(ANNOTSV_NOTE)]
         a("annotsv", card(S["annotsv"], "Structural Variants, Class 4 and 5 (AnnotSV)", body, full=True))
 
     cs = S["cpsr"]["data"]
@@ -2583,13 +2598,13 @@ def html_report(s, index=None):
         if ma.get("variants"):
             mito_body.append("    <table><tr>" + "".join(f"<th>{c}</th>" for c in (
                 "Variant", "AF", "ClinVar", "Review", "Condition", "gnomAD AF hom", "gnomAD AF het", "Poly-C tract"))
-                + "</tr>" + "".join(
+                + VIEWER_TH + "</tr>" + "".join(
                     "<tr>" + "".join(f"<td>{E(str(x))}</td>" for x in (
                         f"chrM:{v['pos']} {v['ref']}>{v['alt']}", v.get("af"), v.get("clinvar_significance"),
                         v.get("clinvar_review"), v.get("clinvar_condition"), v.get("gnomad_af_hom"),
-                        v.get("gnomad_af_het"), "yes" if v.get("polyc") else "")) + "</tr>"
+                        v.get("gnomad_af_het"), "yes" if v.get("polyc") else "")) + viewer_td("chrM", v["pos"]) + "</tr>"
                     for v in ma["variants"]) + "</table>")
-            mito_body += viewer_links(("chrM", v["pos"], f"chrM:{v['pos']}") for v in ma["variants"])
+            mito_body.append(VIEWER_NOTE)
         mito_body.append(small_note(f"ClinVar {ma.get('clinvar') or 'unknown'}; gnomAD {ma.get('gnomad') or 'unknown'}"))
     elif ma.get("note"):
         mito_body.append(small_note(f"ClinVar and gnomAD: not annotated ({ma['note']})"))
@@ -2629,14 +2644,13 @@ def html_report(s, index=None):
     sf = cl.get("acmg_sf")
     if sf and (sf["clinvar_hits"] or sf["high_impact"] or sf.get("structural") or sf.get("not_reported")
                or sf.get("unavailable")):
-        rows = "".join(f"<tr><td>{E(g)}</td><td>{E(v)}</td><td>{E(z)}</td><td>{E(ev)}</td></tr>\n"
+        rows = "".join(f"<tr><td>{E(g)}</td><td>{E(v)}</td><td>{E(z)}</td><td>{E(ev)}</td>{viewer_td_of(v)}</tr>\n"
                        for g, v, z, ev in sf_rows(sf))
         a("clinical", card(S["clinical"], f"Secondary-Findings Genes ({sf['version']})",
-               ["    <table>", "      <tr><th>Gene</th><th>Variant</th><th>Genotype</th><th>Evidence</th></tr>",
+               ["    <table>", f"      <tr><th>Gene</th><th>Variant</th><th>Genotype</th><th>Evidence</th>{VIEWER_TH}</tr>",
                 rows.rstrip("\n"), "    </table>"]
                + [f"    <p>{E(line)}</p>" for line in sf_apart_lines(sf)]
-               + viewer_links((*variant_site(x["variant"]), f"{x['gene']} {x['variant'].split(' ')[0]}")
-                              for x in sf["clinvar_hits"] + sf["high_impact"])
+               + ([VIEWER_NOTE] if rows else [])
                + [f"    <p>{E(ACMG_NOTE)}</p>"], full=True))
 
     sl = S["slivar"]["data"]
@@ -2734,7 +2748,7 @@ def html_report(s, index=None):
                 f"<td>{E(combined_cell(h))}</td>"
                 + (f"<td>{E(af_text(h))}</td>" if freq else "")
                 + (f"<td>{E(call_text(h))}</td>" if call else "")
-                + (f"<td>{E(cdna_text(h))}</td>" if reads else "") + "</tr>"
+                + (f"<td>{E(cdna_text(h))}</td>" if reads else "") + viewer_td(h["chrom"], h["pos"]) + "</tr>"
                 for h in c["hits"][:report_charts.HITS_SHOWN]]
         a("clinvar", card(S["clinvar"], f"ClinVar Hits (best-reviewed first, {min(nh, 50)} of {nh})",
                # The anchor the charts link a listed hit to (report_charts.hit_anchor).
@@ -2743,29 +2757,30 @@ def html_report(s, index=None):
                 "<th>Significance</th><th>Review status</th><th>Stars</th><th>Combined allele</th>"
                 + ("<th>gnomAD frequency</th>" if freq else "")
                 + ("<th>Call quality</th>" if call else "")
-                + ("<th>cDNA read check</th>" if reads else "") + "</tr>"]
+                + ("<th>cDNA read check</th>" if reads else "") + VIEWER_TH + "</tr>"]
                + ["      " + x for x in rows] + ["    </table>"]
                + [small_note("Hit at a known lab-construct site past the first 50: " + construct_past_cap_text(h))
                   for h in construct_past_cap(c["hits"], report_charts.HITS_SHOWN)]
-               + viewer_links((h["chrom"], h["pos"], f"{h['gene']} {h['chrom']}:{h['pos']}") for h in c["hits"][:50]),
+               + ([VIEWER_NOTE] if rows else []),
                full=True))
 
     if S["clinvar"]["state"] in ("ok", "stale") and ("deep_intronic" in c or c.get("cdna_scan")):
         body = []
         if "deep_intronic" in c:
-            body += ["    <table>", "      <tr><th>Gene</th><th>Variant</th><th>Position</th><th>Call</th></tr>"]
+            body += ["    <table>", f"      <tr><th>Gene</th><th>Variant</th><th>Position</th><th>Call</th>{VIEWER_TH}</tr>"]
             body += [f"      <tr><td>{E(x['gene'])}</td><td>{E(x['hgvs'])}</td>"
                      f"<td>{E(x['chrom'])}:{x['pos']} {E(x['ref'])}&gt;{E(x['alt'])}</td>"
-                     f"<td>{E(deep_intronic_call(x))}</td></tr>" for x in c["deep_intronic"]]
-            body += ["    </table>", small_note(DEEP_INTRONIC_NOTE)]
+                     f"<td>{E(deep_intronic_call(x))}</td>{viewer_td(x['chrom'], x['pos'])}</tr>" for x in c["deep_intronic"]]
+            body += ["    </table>", VIEWER_NOTE, small_note(DEEP_INTRONIC_NOTE)]
         scan = cdna_scan_lines(c)
         if scan:
             body.append(f"    <p>{E(scan[0])}</p>")
             if len(scan) > 1:
-                body += ["    <table>", "      <tr><th>Locus</th><th>Junctions</th><th>Reads</th></tr>"]
+                body += ["    <table>", f"      <tr><th>Locus</th><th>Junctions</th><th>Reads</th>{VIEWER_TH}</tr>"]
                 body += [f"      <tr><td>{E(x['chrom'])}:{x['start']}-{x['end']}</td><td>{x['junctions']}</td>"
-                         f"<td>{x['reads']}</td></tr>" for x in c["cdna_scan"]["loci"][:20]]
-                body += ["    </table>", small_note(CDNA_SCAN_NOTE)]
+                         f"<td>{x['reads']}</td>{viewer_td(x['chrom'], x['start'], x['end'])}</tr>"
+                         for x in c["cdna_scan"]["loci"][:20]]
+                body += ["    </table>", VIEWER_NOTE, small_note(CDNA_SCAN_NOTE)]
         a("clinvar", card(S["clinvar"], "Known Deep Intronic Sites and the cDNA Scan", body, full=True))
 
     add_charts(parts, chart_specs(s))
