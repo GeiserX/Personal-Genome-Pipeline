@@ -68,6 +68,7 @@ clinvar-combined-allele-1	shard	20	-
 clinvar-cpsr-quality-1	shard	4	clinvar-clip-check-1
 cn-engine-1-parity	shard	20	-
 comphet-phasing-1-reads	shard	13	clinical-filter-mane-and-quality-1-tiers
+construct-scan-1-both	shard	49	-
 consumer-export-1	shard	55	-
 containers-software-versions	shard	0	-
 couple-carrier-1	shard	88	-
