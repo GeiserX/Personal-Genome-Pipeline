@@ -38,6 +38,12 @@
     no pinned caller models) go the same way, total copies only, one
     line per locus in <id>_cn_dosage.tsv (docs/cn-loci.md).
 
+    The interval rows of that catalog (ClinGen's recurrent CNV regions, the
+    carrier deletion alleles and the Y chromosome AZF regions) take one more
+    bedcov pass over all their segments, one line per row in
+    <id>_cn_intervals.tsv; the chrX and chrY rows read the samplesheet's sex
+    (meta.sex; without it they are not assessed).
+
     Equivalent to: scripts/35-paralogs.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -73,6 +79,7 @@ process PARASCOPY {
     tuple val(meta), path("${meta.id}_hba_copy_number.tsv"), emit: hba
     tuple val(meta), path("${meta.id}_*_copy_number.tsv"),   emit: tables  // every catalog row's table, and HBA's
     tuple val(meta), path("${meta.id}_cn_dosage.tsv"),       emit: dosage  // HP, LCE3BC, CCL3L1 from depth
+    tuple val(meta), path("${meta.id}_cn_intervals.tsv"),    emit: intervals  // the interval rows from depth
     path "versions.yml",                                     emit: versions
 
     when:
@@ -81,6 +88,7 @@ process PARASCOPY {
     script:
     def background = depth_bed ? "-b ${depth_bed} --no-gc" : '-g GRCh38'
     def loci = paralogSpecs()
+    def sex = meta.sex in ['male', 'female'] ? meta.sex : 'unknown'
     """
     # Paralog loci (as scripts/35-paralogs.sh): the background depth once, then
     # one cn-using per catalog row, one table per row with one row per region of
@@ -169,6 +177,16 @@ process PARASCOPY {
     done
     mv cn_dosage.part ${meta.id}_cn_dosage.tsv
 
+    # Interval rows of bin/cn_loci.tsv (as scripts/35-paralogs.sh): one bedcov over every row's segments,
+    # then the verdict; a failed pass writes every row as not assessed (check_failed)
+    if ! { copy_number.py bed --kind interval > interval_regions.bed \
+            && samtools bedcov interval_regions.bed ${bam} > interval_bedcov.tsv \
+            && copy_number.py intervals --bedcov interval_bedcov.tsv --sex ${sex} --out ${meta.id}_cn_intervals.tsv; }; then
+        echo "WARNING: the interval depth check failed; ${meta.id}_cn_intervals.tsv lists every row as not assessed." >&2
+        copy_number.py intervals --failed --out ${meta.id}_cn_intervals.tsv
+    fi
+    rm -f interval_regions.bed interval_bedcov.tsv
+
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         parascopy: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
@@ -187,6 +205,7 @@ process PARASCOPY {
     printf 'metric\\tvalue\\nstatus\\tnot assessed\\nalpha_globin_genes\\t.\\nestimate\\t.\\nhba2_depth\\t0\\nhba1_depth\\t0\\nflank_left_depth\\t0\\nflank_right_depth\\t0\\nmapq0_share\\t0\\nmessage\\tstub\\n' \\
         > ${meta.id}_hba_copy_number.tsv
     printf 'locus\\tstatus\\tcopies\\testimate\\treason\\treading\\n' > ${meta.id}_cn_dosage.tsv
+    printf 'locus\\tname\\tchrom\\tstart\\tend\\tstatus\\tcopies\\texpected\\tchange\\testimate\\treason\\n' > ${meta.id}_cn_intervals.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

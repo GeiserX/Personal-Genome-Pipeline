@@ -23,6 +23,10 @@ Each section has a state:
 
 The run manifest (S/run_manifest.tsv, bin/write_manifest.sh) is copied in for
 the report footer, with the ClinVar release date and the HLA database release.
+Two optional keys, for the report's run facts and badges: recheck, the last
+database re-check (S/recheck/state.json, bin/owngenome_recheck.py), and new_since,
+the date of the previous run kept in S/history/ and the sections whose results
+changed since it (bin/run_delta.py's comparison).
 
   collect_summary.py sample-qc --sample S --somalier-samples F --selfsm F [...]
 
@@ -74,6 +78,7 @@ import paraphase_report  # noqa: E402  step 35b's tables and its SMN1 rule besid
 import clip_check  # noqa: E402  CPSR's variant ids and class names, as step 17's read check reads them
 import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step 22 support join
 import chip_report  # noqa: E402  step 49's detection limit at the median depth
+import run_delta  # noqa: E402  the comparison with the previous run, for the "New since" badges
 import traits_report  # noqa: E402  step 42's genotype-rules columns and the rules the traits table holds
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
@@ -797,18 +802,36 @@ def sec_parascopy(d, s):
         reading = f"{NO_SMN_TABLE}: no carrier reading"
     others = {n: t for n, t in tables.items() if n != "smn"}
     catalog = {r["table"]: r for r in asset_rows("paralog_loci.tsv")} if others else {}
+    ip = os.path.join(d, "paralogs", f"{s}_cn_intervals.tsv")
     return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
                "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
                "rows": len(rows),
                # HBA1/HBA2 from depth (bin/hba_copy_number.py); None when
                # step 35 wrote no HBA table (a run from before the check)
                "hba": read_hba(hp) if os.path.isfile(hp) else None,
+               # the interval rows of bin/cn_loci.tsv (recurrent CNV regions,
+               # carrier deletions, AZF); None without step 35's table
+               "cn_intervals": read_cn_intervals(ip) if os.path.isfile(ip) else None,
                "reading": reading,
                # every other catalog table, in the catalog's order (a table the
                # catalog does not name, from a PARALOG_LOCI of the user's, last)
                "loci": [parascopy_locus(n, others[n], catalog.get(n))
                         for n in sorted(others, key=lambda n: (list(catalog).index(n) if n in catalog
                                                                else len(catalog), n))]}
+
+
+def read_cn_intervals(path):
+    """Step 35's interval table (bin/copy_number.py intervals): the rows with
+    a deletion or a duplication, and a count of the rows by status."""
+    rows = read_tsv(path)
+    if rows and not {"locus", "name", "status", "copies", "expected", "change"} <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(path)} lacks the locus, name, status, copies, expected or change column")
+    counts = {}
+    for r in rows:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    return {"rows": len(rows), "by_status": counts,
+            "changes": [{k: r[k] for k in ("locus", "name", "chrom", "start", "end", "copies", "expected", "change")}
+                        for r in rows if r["change"] in ("deletion", "duplication")]}
 
 
 def read_hba(path):
@@ -4210,7 +4233,29 @@ def collect(sample, sample_dir, declared_sex=None):
            else [VNTYPER_NOT_ASSESSED])
         + ([] if sections["mosaic"]["data"].get("status") == "assessed" else [MCA_NOT_ASSESSED]),
     }
+    recheck = run_delta.read_recheck(os.path.join(sample_dir, "recheck", "state.json"))
+    if recheck:
+        summary["recheck"] = recheck
+    since = new_since(sample_dir, summary)
+    if since:
+        summary["new_since"] = since
     return summary
+
+
+def new_since(sample_dir, summary):
+    """{previous_utc, sections}: what changed since the newest run kept in history/ (generate-report.sh
+    keeps one per run), or None without one. A folder that cannot be read counts as none."""
+    prev_dir = run_delta.newest_history(sample_dir)
+    if not prev_dir:
+        return None
+    try:
+        with open(os.path.join(prev_dir, "summary.json")) as f:
+            prev = json.load(f)
+        changes = run_delta.compare(prev, run_delta.read_manifest(os.path.join(prev_dir, "run_manifest.tsv")),
+                                    summary, run_delta.read_manifest(os.path.join(sample_dir, "run_manifest.tsv")))
+    except (OSError, ValueError, AttributeError, TypeError, KeyError):
+        return None
+    return {"previous_utc": prev.get("generated_utc"), "sections": run_delta.changed_sections(changes)}
 
 
 def sample_qc_main(argv):

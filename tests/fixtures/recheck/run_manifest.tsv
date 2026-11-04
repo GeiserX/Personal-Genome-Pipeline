@@ -1,0 +1,14 @@
+run	written_utc	2026-09-02 12:00:00 UTC
+run	written_by	run-all.sh
+run	git_commit	0000000000000000000000000000000000000000
+run	declared_sex	female
+version	VEP_CACHE_RELEASE	116
+version	PCGR_DATA_BUNDLE	20260620
+version	PYPGX_BUNDLE_VERSION	0.26.0
+version	PHARMCAT_IMAGE	pgkb/pharmcat:3.4.0
+image	pgkb/pharmcat:3.4.0	not pulled
+data	clinvar_file_date	20260901 (clinvar/clinvar_pathogenic_chr.vcf.gz)
+data	vep_cache	116_GRCh38
+data	cpsr_clinvar_release	20260301
+data	hla_database	IPD-IMGT/HLA 3.66.0
+data	pgs:PGS000001	pgs_id=PGS000001;trait_reported=Breast cancer;HmPOS_build=GRCh38;HmPOS_date=2022-07-29

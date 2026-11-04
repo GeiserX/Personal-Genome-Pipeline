@@ -1,0 +1,9 @@
+{
+ "clinvar_file_date": {"upstream": "20260901"},
+ "VEP_CACHE_RELEASE": {"upstream": "1"},
+ "PCGR_DATA_BUNDLE": {"upstream": "20000101"},
+ "PYPGX_BUNDLE_VERSION": {"upstream": "0.0.1"},
+ "PHARMCAT_IMAGE": {"upstream": "0.0.1"},
+ "hla_database": {"upstream": "0.0.1"},
+ "release": {"tag": "v0.0.1", "pins": {}}
+}

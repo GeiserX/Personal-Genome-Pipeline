@@ -821,6 +821,15 @@ def section_keys(sid):
     return next(keys for _, _, _, secs in CHAPTERS for x, _, keys in secs if x == sid)
 
 
+def recheck_line(r):
+    """One line of run facts from the last database re-check (bin/owngenome_recheck.py)."""
+    newer = [i for i in r.get("items") or [] if i.get("class") not in ("no-newer-release", None)]
+    head = f"Database re-check: {r.get('checked_utc') or 'unknown date'}: "
+    if not newer:
+        return head + "nothing newer than this run"
+    return head + "; ".join(f"{i.get('label') or i.get('item')} {i.get('class')}" for i in newer)
+
+
 def text_report(s):
     S = s["sections"]
     # Each block writes into its section's list (at(key), or head(key));
@@ -847,6 +856,9 @@ def text_report(s):
     w(f"  Generated: {s['generated_utc']}")
     if s["run"]["started_utc"]:
         w(f"  Latest run-all.sh run: {s['run']['started_utc']}")
+    if s.get("recheck"):
+        w(f"  {recheck_line(s['recheck'])}")
+    ns = s.get("new_since") or {}
     w("=" * 80)
     w("")
 
@@ -857,6 +869,8 @@ def text_report(s):
             return False
         w(f"## {title or sec['title']}")
         w("---")
+        if key in (ns.get("sections") or []):
+            w(f"  [New since {ns.get('previous_utc') or 'the previous run'}]")
         note = stale_note(sec)
         if note:
             w(f"  [{note}]")
@@ -871,6 +885,8 @@ def text_report(s):
     if any(sec["state"] != "missing" for sec in (cov, sexc, sqc, rdc)):
         w("## Quality control")
         w("---")
+        if any(k in (ns.get("sections") or []) for k in ("coverage", "sex_check", "sample_qc", "read_count")):
+            w(f"  [New since {ns.get('previous_utc') or 'the previous run'}]")
         for sec in (cov, sexc, sqc, rdc):
             if stale_note(sec):
                 w(f"  [{sec['title']}: {stale_note(sec)}]")
@@ -1009,6 +1025,8 @@ def text_report(s):
     if any(calls.values()) or verdict:
         w("## CYP2D6 across callers")
         w("---")
+        if any(k in (ns.get("sections") or []) for k in ("pypgx", "cyrius")):  # the consensus change is filed under pypgx
+            w(f"  [New since {ns.get('previous_utc') or 'the previous run'}]")
         for k, v in calls.items():
             w(f"  {CYP2D6_LABELS.get(k, k):<26} {v or 'not run'}")
         agree = s["cyp2d6"]["agree"]
@@ -2819,9 +2837,10 @@ def step_files(S, sample, sid):
     return out
 
 
-def frame(S, sample, sid, lines, keys=None, always=False):
+def frame(S, sample, sid, lines, keys=None, always=False, since=None):
     """One section: an anchor, the step, state and file date under its first
-    card title, each caveat under its card's title, the cards, then links to
+    card title (and "New since <date>" when its result changed since the
+    previous run), each caveat under its card's title, the cards, then links to
     the step's own files."""
     secs = [S.get(k, MISSING) for k in keys or ()]
     meta = None
@@ -2831,6 +2850,7 @@ def frame(S, sample, sid, lines, keys=None, always=False):
         dates = [x["file_date"] for x in secs if x.get("file_date")]
         meta = (f'    <p class="sec-meta">Step{"s" if len(steps) > 1 else ""} {E(", ".join(steps))} &middot; '
                 f"{badge(label, colour)}" + (f" &middot; file date {E(max(dates))}" if dates else "")
+                + (f" &middot; {badge(f'New since {since}', 'yellow')}" if since else "")
                 + f' &middot; <a class="anchor" href="#{sid}">link to this section</a></p>')
     wide = len([x for x in lines if x.strip().startswith("<h2>")]) > 1 or any(x.startswith('  <div class="card full-width"') for x in lines)
     files = step_files(S, sample, sid)
@@ -2886,6 +2906,8 @@ def html_page(s, parts, index=None):
     m = s["manifest"]
     commit = next((r[2] for r in m if r[0] == "run" and r[1] == "git_commit"), None) if m else None
     db = s["databases"]
+    ns = s.get("new_since") or {}
+    changed = set(ns.get("sections") or [])
     toc, body = ['<nav class="toc" aria-label="Contents">', '  <h2 class="toc-title">Contents</h2>', "  <ol>"], []
     for cid, title, question, secs in CHAPTERS:
         shown = [(sid, t, keys) for sid, t, keys in secs if parts.get(sid)]
@@ -2898,7 +2920,8 @@ def html_page(s, parts, index=None):
             state = frame_state([S.get(k, MISSING) for k in keys])
             toc.append(f'        <li><a href="#{sid}"><span class="dot dot-{state}" '
                        f'title="{STATE_BADGE[state][0]}"></span>{E(t)}</a></li>')
-            body += frame(S, s["sample"], sid, parts[sid], keys)
+            body += frame(S, s["sample"], sid, parts[sid], keys,
+                          since=(ns.get("previous_utc") or "the previous run") if changed & set(keys) else None)
         toc += ["      </ol>", "    </li>"]
         body += ["  </div>", "</section>"]
     cid, title, question = LIMITS
@@ -2931,7 +2954,8 @@ def html_page(s, parts, index=None):
            f"    Pipeline commit: {E(commit or 'unknown')} &nbsp;|&nbsp; ClinVar file: {E(db['clinvar_release'] or 'unknown')}"
            f" &nbsp;|&nbsp; ClinVar in CPSR's bundle: {E(db['cpsr_clinvar_release'] or 'unknown')}"
            f" &nbsp;|&nbsp; HLA database: {E(db['hla_database'] or 'unknown')}",
-           "  </div>", "</header>",
+           "  </div>"] + ([f'  <div class="meta">{E(recheck_line(s["recheck"]))}</div>'] if s.get("recheck") else []) + [
+           "</header>",
            '<p class="print-hint">To print one section, open it from the contents (or its "link to this section"), '
            "then print: the printout holds that section, this header, the list of what is not assessed and the "
            "disclaimer. A chapter prints the same way. In a browser without CSS :has() the whole report prints.</p>"]

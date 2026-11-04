@@ -1,0 +1,510 @@
+name: Public evidence
+
+# Runs two opt-in steps whole, on public data only (GIAB's HG002 and the
+# public archaic and ancient panels), and writes what they measured to the
+# job summary. Not a gate.
+#
+#   archaic-sites      the 1000 Genomes sites file setup.sh --archaic reads,
+#                      downloaded once (its md5 checked) and indexed, for
+#                      every chromosome job.
+#   archaic-hg002      setup.sh --archaic and step 43 on HG002's GIAB v4.2.1
+#                      genotypes, one job per autosome (about 150 GB of
+#                      archaic downloads in all; each job fetches its three
+#                      files side by side first, and setup.sh resumes them
+#                      and checks their md5), then archaic-share joins the
+#                      22 into one report per population and prints HG002's
+#                      Neanderthal and Denisovan shares, and how many of
+#                      HG002's positions carry two records, one an SNV.
+#                      The job "empty" is the red control: an empty region
+#                      list must make it fail.
+#   ancient-footprint  setup.sh --ancient-panel on the full AADR 1240K files,
+#                      then step 44 on HG002, each with the peak memory of
+#                      its containers (the cgroup's memory.peak), the peak
+#                      disk use and the time.
+#
+# It runs by hand only (workflow_dispatch). Public repo: the GitHub-hosted
+# runner is free here.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NCBI_REF: https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids
+  GIAB_HG002: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/NISTv4.2.1/GRCh38/HG002_GRCh38_1_22_v4.2.1_benchmark
+
+jobs:
+  archaic-sites:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The 1000 Genomes phase 3 sites file and its index
+        run: |
+          set -euo pipefail
+          . ./versions.env
+          url=$(sed -n 's/^ARCHAIC_1KG_SITES_URL=//p' scripts/setup.sh)
+          mkdir -p sites
+          curl -fsSL --retry 5 -o sites/1kg_sites.vcf.gz "$url"
+          [ "$(md5sum sites/1kg_sites.vcf.gz | cut -d' ' -f1)" = "$ARCHAIC_1KG_SITES_MD5" ] || { echo "md5 of ${url} is not ARCHAIC_1KG_SITES_MD5"; exit 1; }
+          docker run --rm -u "$(id -u):$(id -g)" -v "${PWD}/sites:/s" "$BCFTOOLS_IMAGE" bcftools index -t /s/1kg_sites.vcf.gz
+          ls -l sites
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archaic-1kg-sites
+          path: sites
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
+  archaic-hg002:
+    name: archaic-hg002 (${{ matrix.part }})
+    needs: archaic-sites
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      # Eight at a time, so the other pull requests keep runners.
+      max-parallel: 8
+      matrix:
+        part: [empty, '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17',
+               '18', '19', '20', '21', '22']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Free disk space and pick the work area
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h / /mnt
+          work="${RUNNER_TEMP}/ev"
+          if [ "$(df --output=avail -k /mnt | tail -1)" -gt "$(df --output=avail -k / | tail -1)" ]; then
+            work=/mnt/ev
+            sudo mkdir -p "$work" && sudo chown "$(id -u):$(id -g)" "$work"
+          fi
+          echo "EV=${work}" >> "$GITHUB_ENV"
+
+      - name: The GRCh38 reference, its index and dictionary
+        run: |
+          set -euo pipefail
+          . ./versions.env
+          R="${EV}/genome/reference"
+          mkdir -p "$R"
+          f=GCA_000001405.15_GRCh38_no_alt_analysis_set.fna
+          curl -fsSL --retry 5 -o "${R}/md5.txt" "${NCBI_REF}/md5checksums.txt"
+          curl -fsSL --retry 5 -o "${R}/${f}.gz" "${NCBI_REF}/${f}.gz"
+          curl -fsSL --retry 5 -o "${R}/GRCh38_no_alt_analysis_set.fasta.fai" "${NCBI_REF}/${f}.fai"
+          want=$(awk -v n="./${f}.gz" '$2 == n {print $1}' "${R}/md5.txt")
+          [ -n "$want" ] && [ "$(md5sum "${R}/${f}.gz" | cut -d' ' -f1)" = "$want" ] || { echo "md5 of ${f}.gz is not NCBI's"; exit 1; }
+          want=$(awk -v n="./${f}.fai" '$2 == n {print $1}' "${R}/md5.txt")
+          [ -n "$want" ] && [ "$(md5sum "${R}/GRCh38_no_alt_analysis_set.fasta.fai" | cut -d' ' -f1)" = "$want" ] || { echo "md5 of ${f}.fai is not NCBI's"; exit 1; }
+          gzip -dc "${R}/${f}.gz" > "${R}/GRCh38_no_alt_analysis_set.fasta"
+          rm -f "${R}/${f}.gz"
+          docker run --rm -u "$(id -u):$(id -g)" -v "${R}:/r" "$SAMTOOLS_IMAGE" \
+            samtools dict -o /r/GRCh38_no_alt_analysis_set.dict /r/GRCh38_no_alt_analysis_set.fasta
+          ls -l "$R"
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: archaic-1kg-sites
+          path: sites
+
+      - name: setup.sh --archaic and step 43 on HG002 (chromosome ${{ matrix.part }})
+        id: run
+        continue-on-error: ${{ matrix.part == 'empty' }}
+        env:
+          PART: ${{ matrix.part }}
+          THREADS: '4'
+        run: |
+          set -euo pipefail
+          . ./versions.env
+          G="${EV}/genome" OUT="${EV}/out/${PART}"
+          CHROMS=$PART
+          [ "$PART" != empty ] || CHROMS=""
+          DATA="${G}/reference/archaic/${ARCHAIC_DATA_VERSION}"
+          mkdir -p "$OUT" "${DATA}/download"
+          mv sites/1kg_sites.vcf.gz sites/1kg_sites.vcf.gz.tbi "${DATA}/download/"
+          # The whole GRCh37 chromosome; the empty job writes an empty list.
+          : > "${EV}/regions37.bed"
+          for c in $CHROMS; do printf '%s\t0\t300000000\n' "$c" >> "${EV}/regions37.bed"; done
+          # The three archaic files side by side, under the names setup.sh's
+          # fetch resumes (it checks each against the pinned md5 list).
+          DL0=$(date +%s)
+          for c in $CHROMS; do
+            T0=$(date +%s)
+            for g in Altai Vindija33.19 Denisova; do
+              curl -fsSL --retry 5 -C - -o "${DATA}/download/${g}.chr${c}.vcf.gz.part" \
+                "https://cdna.eva.mpg.de/neandertal/Vindija/VCF/${g}/chr${c}_mq25_mapab100.vcf.gz" &
+            done
+            wait
+            du -cb "${DATA}"/download/*.chr"${c}".vcf.gz.part | tail -1 | cut -f1 > "${EV}/dl_bytes"
+            echo "chr${c}: $(cat "${EV}/dl_bytes") bytes in $(( $(date +%s) - T0 )) s"
+          done
+          T0=$(date +%s)
+          if ! ARCHAIC_REGIONS="${EV}/regions37.bed" scripts/setup.sh --archaic "$G" 2>&1 | tee "${OUT}/setup.log"; then
+            echo "setup.sh --archaic failed"; exit 1
+          fi
+          printf 'download_seconds\t%s\ndownload_bytes\t%s\n' "$(( T0 - DL0 ))" \
+            "$(cat "${EV}/dl_bytes" 2>/dev/null || echo 0)" > "${OUT}/setup.tsv"
+          printf 'setup_seconds\t%s\ntable_bytes\t%s\ntable_rows\t%s\n' "$(( $(date +%s) - T0 ))" \
+            "$(du -sb "$DATA" | cut -f1)" "$(for t in "${DATA}"/chr*.tsv.gz; do gzip -dc "$t" | tail -n +2; done | wc -l)" \
+            >> "${OUT}/setup.tsv"
+          cat "${OUT}/setup.tsv"
+
+          mkdir -p "${G}/HG002/vcf"
+          curl -fsSL --retry 5 -o "${G}/HG002/vcf/HG002.vcf.gz" "${GIAB_HG002}.vcf.gz"
+          curl -fsSL --retry 5 -o "${G}/HG002/vcf/HG002.vcf.gz.tbi" "${GIAB_HG002}.vcf.gz.tbi"
+          for pop in ALL EUR; do
+            if ! ARCHAIC_POP=$pop GENOME_DIR="$G" scripts/43-archaic.sh HG002 2>&1 | tee "${OUT}/step43-${pop}.log"; then
+              echo "step 43 (${pop}) failed"; exit 1
+            fi
+            mkdir -p "${OUT}/${pop}"
+            cp "${G}/HG002/archaic/work/ibdmix/"chr*.txt "${G}/HG002/archaic/work/ibdmix/spans.tsv" "${OUT}/${pop}/"
+            sites=$(awk -F'\t' 'NR > 1 {n += $4} END {print n + 0}' "${OUT}/${pop}/spans.tsv")
+            chroms=$(awk 'NR > 1' "${OUT}/${pop}/spans.tsv" | wc -l)
+            echo "step 43 (${pop}): ${chroms} chromosomes, ${sites} sites"
+            [ "$sites" -gt 0 ] || { echo "step 43 (${pop}) analysed no site"; exit 1; }
+            [ "$chroms" -eq "$(echo "$CHROMS" | wc -w)" ] || { echo "step 43 (${pop}) analysed ${chroms} of the part's chromosomes"; exit 1; }
+          done
+
+          # The positions of this part where HG002 has two records or more, one
+          # of them an SNV, as GIAB writes the VCF and split with bcftools
+          # norm -m-, and how many of them are rows of the table (the rows the
+          # same-position rule of archaic_report.py decides).
+          docker run --rm -u "$(id -u):$(id -g)" -v "${G}:/g" "$BCFTOOLS_IMAGE" \
+            bcftools norm -m- -Oz -o /g/HG002/split.vcf.gz /g/HG002/vcf/HG002.vcf.gz
+          python3 -I - "${G}/HG002/vcf/HG002.vcf.gz" "${G}/HG002/split.vcf.gz" "$DATA" "$OUT/affected.tsv" <<'PY'
+          import glob, gzip, os, sys
+          raw, split, data, out = sys.argv[1:]
+          tables = sorted(glob.glob(os.path.join(data, "chr*.tsv.gz")))
+          chroms = {os.path.basename(t)[:-7] for t in tables}  # this part's chromosomes only
+          def clashes(path):
+              """Positions of this part with two records or more, one an SNV (the VCF is sorted)."""
+              hit, key, n, snvs = set(), None, 0, 0
+              for line in gzip.open(path, "rt"):
+                  if line.startswith("#"):
+                      continue
+                  c = line.split("\t", 6)
+                  if c[0] not in chroms:
+                      continue
+                  k = (c[0], int(c[1]))
+                  if k != key:
+                      key, n, snvs = k, 0, 0
+                  n += 1
+                  snvs += len(c[3]) == 1 and len(c[4]) == 1
+                  if n >= 2 and snvs >= 1:
+                      hit.add(key)
+              return hit
+          sets = {"raw": clashes(raw), "split": clashes(split)}
+          on_table = {k: 0 for k in sets}
+          for t in tables:
+              chrom = os.path.basename(t)[:-7]
+              want = {k: {p for c, p in v if c == chrom} for k, v in sets.items()}
+              if not any(want.values()):
+                  continue
+              for line in gzip.open(t, "rt"):
+                  c = line.split("\t", 2)
+                  if c[0] != chrom:
+                      continue
+                  p = int(c[1])
+                  for k in want:
+                      if p in want[k]:
+                          on_table[k] += 1
+          with open(out, "w") as f:
+              for k in sets:
+                  f.write(f"{k}_positions\t{len(sets[k])}\n{k}_on_table\t{on_table[k]}\n")
+          PY
+          cat "$OUT/affected.tsv"
+
+      - name: The red control failed, as it must
+        if: matrix.part == 'empty'
+        env:
+          OUTCOME: ${{ steps.run.outcome }}
+          PART: ${{ matrix.part }}
+        run: |
+          echo "outcome of the run on an empty region list: ${OUTCOME}"
+          [ "$OUTCOME" = failure ]
+          # and for that reason, not an earlier download or install failure
+          grep -F 'regions37.bed is not a file' "${EV}/out/${PART}/setup.log"
+
+      - name: Upload the part
+        if: matrix.part != 'empty'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archaic-part-${{ matrix.part }}
+          path: ${{ env.EV }}/out/${{ matrix.part }}
+          if-no-files-found: error
+
+  archaic-share:
+    needs: archaic-hg002
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: archaic-part-*
+          path: parts
+      - name: One report per population, over the 22 autosomes
+        run: |
+          set -euo pipefail
+          {
+            echo "### Step 43 on HG002, whole genome (GIAB v4.2.1 genotypes)"
+            echo ""
+            echo "| chromosome | archaic download GB | download seconds | setup seconds | table GB | table rows |"
+            echo "|---|---|---|---|---|---|"
+            for p in parts/archaic-part-*; do
+              kv() { awk -F'\t' -v k="$1" '$1 == k {print $2}' "${p}/setup.tsv"; }
+              echo "| ${p##*-} | $(awk -v b="$(kv download_bytes)" 'BEGIN {printf "%.2f", b / 1e9}') | $(kv download_seconds) | $(kv setup_seconds) | $(awk -v b="$(kv table_bytes)" 'BEGIN {printf "%.2f", b / 1e9}') | $(kv table_rows) |"
+            done
+            cat parts/archaic-part-*/setup.tsv | awk -F'\t' '{t[$1] += $2}
+              END {printf "| all | %.2f | %d | %d | %.2f | %d |\n", t["download_bytes"] / 1e9, t["download_seconds"],
+                   t["setup_seconds"], t["table_bytes"] / 1e9, t["table_rows"]}'
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          for pop in ALL EUR; do
+            d="joined/${pop}"
+            mkdir -p "${d}/ibdmix"
+            cp parts/archaic-part-*/"${pop}"/chr*.txt "${d}/ibdmix/"
+            { printf 'chrom\tfirst\tlast\tsites\n'; for s in parts/archaic-part-*/"${pop}"/spans.tsv; do tail -n +2 "$s" | cut -f1-4; done; } > "${d}/spans.tsv"
+            python3 bin/archaic_report.py report --sample HG002 --ibdmix-dir "${d}/ibdmix" --spans "${d}/spans.tsv" \
+              --pop "$pop" --out-dir "${d}/out"
+            kv() { awk -F'\t' -v k="$1" '$1 == k {print $2}' "${d}/out/HG002_archaic.tsv"; }
+            [ "$(kv analysed_chromosomes)" -eq 22 ] || { echo "${pop}: $(kv analysed_chromosomes) chromosomes, want 22"; exit 1; }
+            [ "$(kv analysed_sites)" -gt 0 ] || { echo "${pop}: no site analysed"; exit 1; }
+            nea=$(kv neanderthal_percent)
+            {
+              echo "**1000 Genomes ${pop} frequencies:** Neanderthal ${nea}% ($(kv neanderthal_segments) segments, longest $(kv neanderthal_longest_bp) bp), Denisovan $(kv denisovan_percent)% ($(kv denisovan_segments) segments), over $(kv analysed_chromosomes) autosomes, $(kv analysed_bp) bp, $(kv analysed_sites) sites. Compare this share only with other shares from this step, not with published figures (see docs/43-archaic.md)."
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
+          {
+            echo "HG002 positions with two records or more, one an SNV, and how many are table rows:"
+            echo ""
+            echo "| VCF | positions | on table rows |"
+            echo "|---|---|---|"
+            for k in raw split; do
+              pos=$(cat parts/archaic-part-*/affected.tsv | awk -F'\t' -v k="${k}_positions" '$1 == k {n += $2} END {print n + 0}')
+              tab=$(cat parts/archaic-part-*/affected.tsv | awk -F'\t' -v k="${k}_on_table" '$1 == k {n += $2} END {print n + 0}')
+              case "$k" in raw) what="as GIAB writes it" ;; *) what="split with bcftools norm -m-" ;; esac
+              echo "| ${what} | ${pos} | ${tab} |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"
+
+  ancient-footprint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Free disk space, add swap and pick the work area
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          # Swap keeps the runner alive if the panel's smartpca passes its RAM;
+          # the job then reports the swap it used.
+          sudo fallocate -l 8G /mnt/swap-ev && sudo chmod 600 /mnt/swap-ev && sudo mkswap /mnt/swap-ev && sudo swapon /mnt/swap-ev
+          df -h / /mnt
+          free -m
+          nproc
+          [ -x /usr/bin/time ] || { sudo apt-get update -q && sudo apt-get install -yq time; }
+          work="${RUNNER_TEMP}/ev"
+          if [ "$(df --output=avail -k /mnt | tail -1)" -gt "$(df --output=avail -k / | tail -1)" ]; then
+            work=/mnt/ev
+            sudo mkdir -p "$work" && sudo chown "$(id -u):$(id -g)" "$work"
+          fi
+          echo "EV=${work}" >> "$GITHUB_ENV"
+
+      - name: The GRCh38 reference and its index
+        run: |
+          set -euo pipefail
+          R="${EV}/genome/reference"
+          mkdir -p "$R"
+          f=GCA_000001405.15_GRCh38_no_alt_analysis_set.fna
+          curl -fsSL --retry 5 -o "${R}/md5.txt" "${NCBI_REF}/md5checksums.txt"
+          curl -fsSL --retry 5 -o "${R}/${f}.gz" "${NCBI_REF}/${f}.gz"
+          curl -fsSL --retry 5 -o "${R}/GRCh38_no_alt_analysis_set.fasta.fai" "${NCBI_REF}/${f}.fai"
+          want=$(awk -v n="./${f}.gz" '$2 == n {print $1}' "${R}/md5.txt")
+          [ -n "$want" ] && [ "$(md5sum "${R}/${f}.gz" | cut -d' ' -f1)" = "$want" ] || { echo "md5 of ${f}.gz is not NCBI's"; exit 1; }
+          want=$(awk -v n="./${f}.fai" '$2 == n {print $1}' "${R}/md5.txt")
+          [ -n "$want" ] && [ "$(md5sum "${R}/GRCh38_no_alt_analysis_set.fasta.fai" | cut -d' ' -f1)" = "$want" ] || { echo "md5 of ${f}.fai is not NCBI's"; exit 1; }
+          gzip -dc "${R}/${f}.gz" > "${R}/GRCh38_no_alt_analysis_set.fasta"
+          rm -f "${R}/${f}.gz"
+
+      - name: setup.sh --ancient-panel and step 44 on HG002, measured
+        env:
+          THREADS: '4'
+        run: |
+          set -euo pipefail
+          . ./versions.env
+          G="${EV}/genome" M="${EV}/measure"
+          export GENOME_DIR="$G"
+          mkdir -p "$M"
+          # measure NAME: every 2 s, into M/NAME.peak until stopped, the peak of
+          # any running container's memory.peak (its whole cgroup charge, file
+          # cache included, which the kernel drops before it kills a task at
+          # the limit), of the anonymous memory in its memory.stat (what the
+          # tool itself holds, sampled), of memory.swap.peak, and of the
+          # growth of used space on the filesystem that holds G (df: other
+          # writers count, a file made and deleted within 2 s does not); and
+          # the container's memory.max.
+          measure() {
+            local out="${M}/$1.peak" mem=0 anon=0 swap=0 disk=0 limit=0 base v id f
+            base=$(df --output=used -k "$G" | tail -1)
+            while :; do
+              for id in $(docker ps -q --no-trunc); do
+                for f in "/sys/fs/cgroup/system.slice/docker-${id}.scope" "/sys/fs/cgroup/docker/${id}"; do
+                  [ -r "${f}/memory.peak" ] || continue
+                  v=$(cat "${f}/memory.peak" 2>/dev/null || echo 0)
+                  [ "$v" -le "$mem" ] || { mem=$v; limit=$(cat "${f}/memory.max" 2>/dev/null || echo "$limit"); }
+                  v=$(awk '$1 == "anon" {print $2}' "${f}/memory.stat" 2>/dev/null || true); [ "${v:-0}" -le "$anon" ] || anon=$v
+                  v=$(cat "${f}/memory.swap.peak" 2>/dev/null || echo 0); [ "$v" -le "$swap" ] || swap=$v
+                done
+              done
+              v=$(( $(df --output=used -k "$G" | tail -1) - base )); [ "$v" -le "$disk" ] || disk=$v
+              printf 'mem_bytes\t%s\nanon_bytes\t%s\nswap_bytes\t%s\ndisk_kb\t%s\nlimit\t%s\n' \
+                "$mem" "$anon" "$swap" "$disk" "$limit" > "$out"
+              sleep 2
+            done
+          }
+          # timed NAME CMD...: CMD under /usr/bin/time -v with the sampler beside it.
+          timed() {
+            local name=$1 rc pid T0 secs
+            shift
+            measure "$name" &
+            pid=$!
+            T0=$(date +%s)
+            set +e
+            /usr/bin/time -v -o "${M}/${name}.time" "$@" 2>&1 | tee "${M}/${name}.log"
+            rc=${PIPESTATUS[0]}
+            set -e
+            secs=$(( $(date +%s) - T0 ))
+            sleep 3
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            printf '%s\t%s\n' seconds "${secs}" >> "${M}/${name}.peak"
+            cat "${M}/${name}.peak"
+            grep -E 'Maximum resident|Elapsed' "${M}/${name}.time" || true
+            [ "$rc" -eq 0 ] || { echo "${name} exited ${rc}"; exit 1; }
+            [ "$(awk -F'\t' '$1 == "mem_bytes" {print $2}' "${M}/${name}.peak")" -gt 0 ] \
+              || { echo "${name}: the sampler saw no container memory; the measurement is void"; exit 1; }
+          }
+
+          timed setup scripts/setup.sh --ancient-panel "$G"
+          PANEL="${G}/reference/ancient/aadr_${AADR_VERSION}"
+          [ -s "${PANEL}/DONE" ] || { echo "no finished panel at ${PANEL}"; exit 1; }
+          {
+            printf '%s\t%s\n' panel_bytes "$(du -sb "$PANEL" | cut -f1)"
+            printf '%s\t%s\n' panel_sites "$(awk -F'\t' '$1 == "sites_grch38" {print $2}' "${PANEL}/DONE")"
+            printf '%s\t%s\n' moderns "$(wc -l < "${PANEL}/moderns.ind")"
+            printf '%s\t%s\n' ancients "$(( $(wc -l < "${PANEL}/ancients.tsv") - 1 ))"
+          } >> "${M}/setup.peak"
+
+          # HG002 as a gVCF at the panel's sites: GIAB's v4.2.1 genotypes, and
+          # a one-base reference block at every other panel site inside GIAB's
+          # benchmark regions, where GIAB states HG002 matches the reference.
+          mkdir -p "${G}/HG002/vcf"
+          curl -fsSL --retry 5 -o "${EV}/truth.vcf.gz" "${GIAB_HG002}.vcf.gz"
+          curl -fsSL --retry 5 -o "${EV}/truth.bed" "${GIAB_HG002}_noinconsistent.bed"
+          python3 -I - "${EV}/truth.vcf.gz" "${EV}/truth.bed" "${G}/reference/GRCh38_no_alt_analysis_set.fasta" \
+              "${PANEL}/sites_grch38.tsv" "${EV}/hg002.unsorted.vcf" <<'PY'
+          import bisect, gzip, sys
+          truth, bed, ref, sites, out = sys.argv[1:]
+          fai = {l.split("\t")[0]: [int(x) for x in l.split("\t")[1:5]] for l in open(ref + ".fai")}
+          fa = open(ref, "rb")
+          def base(c, p):
+              n, off, lb, lw = fai[c]
+              fa.seek(off + ((p - 1) // lb) * lw + (p - 1) % lb)
+              return fa.read(1).decode().upper()
+          conf = {}
+          for l in open(bed):
+              c, s, e = l.split()[:3]
+              conf.setdefault(c, []).append((int(s), int(e)))
+          starts = {c: [s for s, _ in sorted(v)] for c, v in conf.items()}
+          ends = {c: [e for _, e in sorted(v)] for c, v in conf.items()}
+          def confident(c, p):
+              i = bisect.bisect_right(starts.get(c, []), p - 1) - 1
+              return i >= 0 and ends[c][i] >= p
+          covered, head, body = {}, [], []
+          for l in gzip.open(truth, "rt"):
+              if l.startswith("##"):
+                  head.append(l)
+                  continue
+              if l.startswith("#"):
+                  head.append('##INFO=<ID=END,Number=1,Type=Integer,Description="End of the reference block">\n')
+                  head.append('##ALT=<ID=*,Description="Any other allele">\n')
+                  head.append(l)
+                  continue
+              f = l.split("\t", 5)
+              p = int(f[1])
+              covered.setdefault(f[0], set()).update(range(p, p + len(f[3])))
+              body.append(l)
+          blocks = 0
+          with open(sites) as s:
+              next(s)
+              for l in s:
+                  _, c, p = l.split("\t")[:3]
+                  p = int(p)
+                  if c not in fai or p in covered.get(c, ()) or not confident(c, p):
+                      continue
+                  b = base(c, p)
+                  if b not in "ACGT":
+                      continue
+                  body.append(f"{c}\t{p}\t.\t{b}\t<*>\t.\t.\tEND={p}\tGT\t0/0\n")
+                  blocks += 1
+          with open(out, "w") as o:
+              o.writelines(head)
+              o.writelines(body)
+          print(f"gVCF: {len(body) - blocks} GIAB records, {blocks} reference blocks at panel sites")
+          PY
+          docker run --rm -u "$(id -u):$(id -g)" -v "${EV}:/ev" -v "${G}:/g" "$BCFTOOLS_IMAGE" bash -euo pipefail -c '
+            bcftools sort -m 2G -T /ev/sort -Oz -o /g/HG002/vcf/HG002.g.vcf.gz /ev/hg002.unsorted.vcf
+            bcftools index -t /g/HG002/vcf/HG002.g.vcf.gz'
+          rm -f "${EV}/hg002.unsorted.vcf"
+
+          timed step44 scripts/44-ancient.sh HG002
+          INFO="${G}/HG002/ancient/HG002_ancient_info.tsv"
+          used=$(awk -F'\t' '$1 == "sites_used" {print $2}' "$INFO")
+          printf '%s\t%s\n' sites_used "${used}" >> "${M}/step44.peak"
+          [ "${used:-0}" -gt 0 ] || { echo "step 44 used no site"; exit 1; }
+
+          {
+            echo "### setup.sh --ancient-panel (AADR ${AADR_VERSION}, full 1240K) and step 44 on HG002"
+            echo ""
+            echo "Runner: $(nproc) CPUs, $(free -g | awk '/^Mem:/ {print $2}') GB RAM, 8 GB swap added. THREADS=4."
+            echo ""
+            echo "| run | wall time | peak cgroup memory (cache included) | that container's limit | peak anonymous memory (sampled) | peak swap | peak growth of used disk (df) | RSS of the host script (/usr/bin/time) |"
+            echo "|---|---|---|---|---|---|---|---|"
+            for n in setup step44; do
+              kv() { awk -F'\t' -v k="$1" '$1 == k {v = $2} END {print v}' "${M}/${n}.peak"; }
+              rss=$(awk -F': ' '/Maximum resident/ {printf "%.2f GiB", $2 / 1048576}' "${M}/${n}.time")
+              gib() { awk -v b="$1" 'BEGIN {if (b ~ /^[0-9]+$/) printf "%.2f GiB", b / 1073741824; else print b}'; }
+              echo "| ${n} | $(( $(kv seconds) / 60 )) min | $(gib "$(kv mem_bytes)") | $(gib "$(kv limit)") | $(gib "$(kv anon_bytes)") | $(gib "$(kv swap_bytes)") | $(awk -v k="$(kv disk_kb)" 'BEGIN {printf "%.1f GiB", k / 1048576}') | ${rss} |"
+            done
+            echo ""
+            kv() { awk -F'\t' -v k="$1" '$1 == k {print $2}' "${M}/setup.peak"; }
+            echo "Installed panel: $(awk -v b="$(kv panel_bytes)" 'BEGIN {printf "%.2f GiB", b / 1073741824}'), $(kv panel_sites) GRCh38 sites, $(kv moderns) present-day people, $(kv ancients) ancient people. Step 44 used $(awk -F'\t' '$1 == "sites_used" {print $2}' "${M}/step44.peak") sites of HG002."
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the measurements
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ancient-footprint
+          path: ${{ env.EV }}/measure
+          if-no-files-found: ignore

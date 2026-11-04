@@ -90,12 +90,17 @@ Checks:
      same order; the card titles are the golden list of the report before
      the chapters; each caveat sits once, under its card title. Every
      detector is run on a planted bad input as well, which it must catch.
+     With a previous run on record (summary new_since), a "New since <date>"
+     badge sits on the sections whose results changed and nowhere else (a
+     badge on every section is caught), the card titles stay the golden list,
+     and the last database re-check is one line of run facts with no caveat.
 
 Run: python3 tests/test_render_report.py
 """
 import contextlib
 import glob
 import gzip
+import importlib.util
 import io
 import json
 import os
@@ -321,6 +326,90 @@ def chapter_checks(work):
           sorted(set(got) ^ set(GOLDEN_TITLES)))
     check("chapters: red control: a dropped card is caught",
           sorted(re.findall(r"<h2>([^<]*)</h2>", html.replace("<h2>Traits</h2>", ""))) != GOLDEN_TITLES)
+
+    # "New since" and the database re-check (bin/owngenome_recheck.py, bin/run_delta.py through collect_summary)
+    since = json.loads(json.dumps(summ))
+    since["new_since"] = {"previous_utc": "2026-01-01T00:00:00Z", "sections": ["clinvar"]}
+    since["recheck"] = {"checked_utc": "2026-02-02T00:00:00Z", "affected_steps": ["06", "24"], "rerun": None,
+                        "items": [{"item": "clinvar_file_date", "label": "ClinVar", "class": "refresh-available"},
+                                  {"item": "VEP_CACHE_RELEASE", "label": "VEP", "class": "no-newer-release"}]}
+    h2, t2 = render_report.html_report(since), render_report.text_report(since)
+    badge = "New since 2026-01-01T00:00:00Z"
+
+    def badge_problems(page, want_sids):
+        got = [sid for sid in sids if badge in frame_of(page, sid)]
+        return [] if got == want_sids and page.count(badge) == len(want_sids) else got
+    check("new since: the badge only on the section whose result changed", badge_problems(h2, ["clinvar"]) == [],
+          badge_problems(h2, ["clinvar"]))
+    check("new since: no badge without a previous run", "New since" not in html and "New since" not in txt)
+    every = json.loads(json.dumps(since))
+    every["new_since"]["sections"] = [k for k, *_ in collect_summary.SECTIONS]
+    check("new since: red control: a badge on every section is caught",
+          badge_problems(render_report.html_report(every), ["clinvar"]) != [])
+    def text_with(sections, missing=None, mod=render_report):
+        x = json.loads(json.dumps(since))
+        if missing:
+            x["sections"][missing]["state"] = "missing"
+        x["new_since"] = dict(since["new_since"], sections=sections)
+        return mod.html_report(x), mod.text_report(x)
+
+    def under(txt, title):
+        i = txt.find(title)
+        return txt[i:i + 120] if i >= 0 else ""
+    marks = {
+        "new since: the text Quality control block carries the badge when coverage changed":
+            (["coverage"], None, lambda h, t: f"[{badge}]" in under(t, "## Quality control") and t.count(badge) == 1),
+        "new since: the text CYP2D6 block carries the badge when pypgx changed":
+            (["pypgx"], None, lambda h, t: f"[{badge}]" in under(t, "## CYP2D6 across callers")),
+        "new since: a section gone missing keeps its badge on its HTML card, the text leaves the section out":
+            (["roh"], "roh", lambda h, t: badge in frame_of(h, "roh") and "Not run" in frame_of(h, "roh")
+             and "## Runs of Homozygosity" not in t and badge not in t),
+    }
+    for name, (secs, miss, fn) in marks.items():
+        check(name, fn(*text_with(secs, miss)), under(text_with(secs, miss)[1], "## "))
+    rsrc = open(os.path.join(REPO, "bin", "render_report.py")).read()
+    planted = {
+        "new since: the text Quality control block carries the badge when coverage changed":
+            'for k in ("coverage", "sex_check", "sample_qc", "read_count")):',
+        "new since: the text CYP2D6 block carries the badge when pypgx changed":
+            'for k in ("pypgx", "cyrius")):',
+        "new since: a section gone missing keeps its badge on its HTML card, the text leaves the section out":
+            '(f" &middot; {badge(f\'New since {since}\', \'yellow\')}" if since else "")',
+    }
+    for name, needle in planted.items():
+        check(f"planted mistake is in the copy: {name}", needle in rsrc, needle)
+        mut = rsrc.replace(needle, "for k in ()):" if needle.startswith("for k") else '""')
+        mdir = tempfile.mkdtemp(prefix="render-mutant.", dir=work)
+        open(os.path.join(mdir, "render_report_mutant.py"), "w").write(mut)
+        spec = importlib.util.spec_from_file_location("render_report_mutant", os.path.join(mdir, "render_report_mutant.py"))
+        mm = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mm)
+        secs, miss, fn = marks[name]
+        check(f"fails on a planted mistake: {name}", not fn(*text_with(secs, miss, mod=mm)), "passed on the mutant")
+    check("new since: the card titles stay the golden list", sorted(re.findall(r"<h2>([^<]*)</h2>", h2)) == GOLDEN_TITLES,
+          sorted(set(re.findall(r"<h2>([^<]*)</h2>", h2)) ^ set(GOLDEN_TITLES)))
+    rc_line = "Database re-check: 2026-02-02T00:00:00Z: ClinVar refresh-available"
+    check("new since: the re-check is one line of run facts in both reports, and no caveat",
+          rc_line in h2.split("</header>", 1)[0] and rc_line in t2.split("#" * 80, 1)[0]
+          and h2.count('<p class="caveat">') == html.count('<p class="caveat">'), t2[:800])
+    hist = f"{g}/DEMO-001/history/2026-01-01T000000Z"
+    os.makedirs(hist)
+    old = json.loads(json.dumps(summ))
+    old["generated_utc"] = "2026-01-01T00:00:00Z"
+    if old["sections"]["clinvar"]["data"].get("hits"):
+        old["sections"]["clinvar"]["data"]["hits"][0]["significance"] = "Uncertain significance"
+    with open(f"{hist}/summary.json", "w") as f:
+        json.dump(old, f)
+    if os.path.isfile(f"{g}/DEMO-001/run_manifest.tsv"):
+        shutil.copy(f"{g}/DEMO-001/run_manifest.tsv", hist)
+    again = collect_summary.collect("DEMO-001", f"{g}/DEMO-001")
+    shutil.rmtree(f"{g}/DEMO-001/history")
+    check("new since: collect_summary compares with the newest history/ folder",
+          bool(summ["sections"]["clinvar"]["data"].get("hits")) and "new_since" not in summ
+          and again.get("new_since") == {"previous_utc": "2026-01-01T00:00:00Z", "sections": ["clinvar"]},
+          again.get("new_since"))
+    check("new since: the text marks the ClinVar section once", t2.count(f"[{badge}]") == 1
+          and f"## ClinVar Pathogenic Screen\n---\n  [{badge}]" in t2, t2.count(f"[{badge}]"))
     shown = [n for n in render_report.caveat_notes() if render_report.E(n) in html]
     # PRS_ANCESTRY_NOTE is part of the PRS caption's sentence (prs_note), not a line of its own.
     loose = [n[:40] for n in shown if n != render_report.PRS_ANCESTRY_NOTE
