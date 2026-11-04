@@ -1279,14 +1279,13 @@ def str_extra_readings(work, schema):
     import html as htmlmod
     fmt = "GT:REPCN"
 
-    def sample(name, tg, t, ugt, r117h=None, ugt_pc=None, stranger=False):
+    def made_up(name, tg, t, ugt, r117h=None, ugt_pc=None, stranger=False):
         x = os.path.join(work, "str-extra", name)
         eh = (f"chr7\t117548606\t.\tT\t<STR>\t.\tPASS\tEND=117548628;REPID=CFTR;VARID=CFTR_TG\t{fmt}\t0/1:{tg}\n"
               f"chr7\t117548628\t.\tT\t<STR>\t.\tPASS\tEND=117548635;REPID=CFTR;VARID=CFTR_T\t{fmt}\t0/1:{t}\n"
               if tg else "")
         eh += (f"chr2\t233760234\t.\tA\t<STR>\t.\tPASS\tEND=233760248;REPID=UGT1A1;VARID=UGT1A1\t{fmt}\t0/1:{ugt}\n"
                if ugt else "")
-        eh += f"chr4\t3074876\t.\tC\t<STR>\t.\tPASS\tEND=3074933;REPID=HTT;VARID=HTT\t{fmt}\t0/0:17/17\n"
         put(f"{x}/expansion_hunter/{name}_eh.vcf", VCF_HEAD.replace("\tS\n", f"\t{name}\n") + eh, age_days=2)
         if stranger:
             put(f"{x}/expansion_hunter/{name}_eh_stranger.vcf", VCF_HEAD.replace("\tS\n", f"\t{name}\n") + eh,
@@ -1305,7 +1304,7 @@ def str_extra_readings(work, schema):
         return summ, ed, {r["locus"]: r for r in ed.get("readings") or []}, txt, htmlmod.unescape(html_)
 
     # TG12-5T on one copy and TG11-7T on the other, no R117H; UGT1A1 TA6/TA7.
-    summ, ed, rd, txt, html_ = sample("EXA", "11/12", "7/5", "7/8", r117h="G/G", ugt_pc="*1/*28", stranger=True)
+    summ, ed, rd, txt, html_ = made_up("EXA", "11/12", "7/5", "7/8", r117h="G/G", ugt_pc="*1/*28", stranger=True)
     c, u = rd.get("CFTR", {}), rd.get("UGT1A1", {})
     check("extra repeats: the two CFTR records are named by VARID, CFTR_TG and CFTR_T",
           [l["locus"] for l in ed["loci"] if l["locus"].startswith("CFTR")] == ["CFTR_T", "CFTR_TG"],
@@ -1333,7 +1332,7 @@ def str_extra_readings(work, schema):
           validate.validate(schema, json.loads(json.dumps(summ))))
 
     # Red control: TG11-7T on both copies gives no 5T line.
-    _, _, rd, txt, _ = sample("EXB", "11/11", "7/7", "7/7")
+    _, _, rd, txt, _ = made_up("EXB", "11/11", "7/7", "7/7")
     c = rd.get("CFTR", {})
     check("extra repeats red control: TG11-7T/TG11-7T has no 5T line",
           (c.get("genotype"), c.get("five_t")) == ("TG11-7T/TG11-7T", False) and "5T:" not in txt
@@ -1342,19 +1341,19 @@ def str_extra_readings(work, schema):
           (rd["UGT1A1"]["genotype"], rd["UGT1A1"]["agreement"]) == ("*1/*1", "not_compared"), rd["UGT1A1"])
 
     # One R117H copy and one 5T copy, one TG count: the pairing is known, the R117H phase is not.
-    _, _, rd, _, _ = sample("EXC", "12/12", "5/7", "8/8", r117h="G/A", ugt_pc="*1/*1")
+    _, _, rd, _, _ = made_up("EXC", "12/12", "5/7", "8/8", r117h="G/A", ugt_pc="*1/*1")
     c = rd.get("CFTR", {})
     check("extra repeats: TG12/TG12 5T/7T reads as TG12-5T/TG12-7T, R117H phase unknown",
           c.get("genotype") == "TG12-5T/TG12-7T" and c.get("phase") == "unknown" and "phase unknown" in c["reading"]
           and "TG12 on the 5T copy" in c["reading"], c)
     check("extra repeats: UGT1A1 *28/*28 differs from PharmCAT's *1/*1",
           (rd["UGT1A1"]["genotype"], rd["UGT1A1"]["agreement"]) == ("*28/*28", "differs"), rd["UGT1A1"])
-    _, _, rd, _, _ = sample("EXD", "11/12", "5/5", "6/9", r117h="G/A")
+    _, _, rd, _, _ = made_up("EXD", "11/12", "5/5", "6/9", r117h="G/A")
     check("extra repeats: 5T on both copies with R117H is in cis; UGT1A1 6/9 units is *36/*37",
           rd["CFTR"].get("phase") == "in_cis" and rd["UGT1A1"]["genotype"] == "*36/*37", rd)
 
     # Without the opt-in the extra loci are not in step 09's output.
-    _, ed, rd, txt, _ = sample("EXE", None, None, None)
+    _, ed, rd, txt, _ = made_up("EXE", None, None, None)
     check("extra repeats: without the loci CFTR and UGT1A1 are not sized and say how to add them",
           [rd[k]["status"] for k in ("CFTR", "UGT1A1", "SLC6A4")] == ["not_sized", "not_sized", "not_tested"]
           and "STR_EXTRA_LOCI=yes" in rd["CFTR"]["reading"] and "CFTR intron 9 (legacy IVS8) TG and poly-T tract: "
