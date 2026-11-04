@@ -17,8 +17,9 @@ Paraphase reads it, with exit 3 and the reason.
 
 turns Paraphase's JSON into one row per gene (copy number, call status, what
 the region-specific fields say) and its per-region VCFs into one row per
-variant a haplotype carries, with the reads behind it. The genes of
-GENE_ROWS get their own rows; every other region Paraphase ran gets one row:
+variant a haplotype carries, with the reads behind it. The regions of
+assets/paraphase_genes.tsv (or --genes FILE) get the rows that catalog names,
+each from the JSON field it names; every other region Paraphase ran gets one row:
 the gene's own copies where Paraphase labels haplotypes gene1 (the gene) and
 gene2 (its pseudogene), as for GBA and OTOA, else the gene family's copies.
 
@@ -42,15 +43,37 @@ import zlib
 CN_HEADER = ["region", "gene", "copy_number", "status", "detail", "total_cn", "region_depth", "genome_depth"]
 VARIANT_HEADER = ["region", "chrom", "pos", "ref", "alt", "filter", "haplotypes", "support"]
 
-# Region-specific copy-number fields, per Paraphase region (data/38/config.yaml
-# names). A field that is null is a no-call: Paraphase saw one haplotype and
-# the depth did not settle one copy or two.
-GENE_ROWS = {
-    "smn1": [("SMN1", "smn1_cn"), ("SMN2", "smn2_cn"), ("SMN exon 7-8 deletion", "smn_del78_cn")],
-    "pms2": [("PMS2", "gene_cn")],
-    "strc": [("STRC", "gene_cn")],
-    "ncf1": [("NCF1", "gene_cn")],
-}
+# The regions the report shows gene by gene, and where each row's copy number
+# comes from: assets/paraphase_genes.tsv (region, gene, field, reading,
+# source), the repository's assets/ folder beside bin/ unless --genes names
+# another file (step 35b and PARAPHASE_REPORT mount or stage it).
+GENES_TSV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets",
+                         "paraphase_genes.tsv")
+GENES_COLUMNS = ["region", "gene", "field", "reading", "source"]
+# Fields read by their own rule; every other field is a number in region_specific_info.
+RULE_FIELDS = ("genotype", "annotated_alleles", "final_haplotypes", "total_cn", "sv_called", "repeat_name",
+               "fusions_called")
+# Fields that live in region_specific_info, so a region without one is not assessed there.
+RSI_FIELDS = ("sv_called", "repeat_name", "fusions_called")
+
+
+def load_genes(path=None):
+    """{region: [(gene, field)]} of assets/paraphase_genes.tsv, in the file's order."""
+    path = path or GENES_TSV
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = [x.rstrip("\n").split("\t") for x in f if x.strip() and not x.startswith("#")]
+    except OSError as e:
+        raise Unreadable(f"the region catalog {path}: {e}") from e
+    if not lines or lines[0] != GENES_COLUMNS:
+        raise Unreadable(f"{path}: header {lines[0] if lines else None}, want {GENES_COLUMNS}")
+    out = {}
+    for n, c in enumerate(lines[1:], 2):
+        if len(c) != len(GENES_COLUMNS) or not all(x.strip() for x in c):
+            raise Unreadable(f"{path}: row {n} does not have the five columns filled")
+        out.setdefault(c[0], []).append((c[1], c[2]))
+    return out
+
 
 # HBA structural variants Paraphase names from a hybrid haplotype (sv_called).
 HBA_SV = {
@@ -211,21 +234,90 @@ def generic_rows(name, region):
     return [(gene, cn, "called" if cn is not None else "no call", "; ".join(detail))]
 
 
-def gene_rows(name, region):
-    if name == "hba":
-        return hba_rows(region)
-    if name == "rccx":
-        return rccx_rows(region)
-    if name in GENE_ROWS:
-        rsi = region.get("region_specific_info") or {}
-        rows = []
-        for gene, field in GENE_ROWS[name]:
-            cn = rsi.get(field)
-            detail = ("one haplotype seen and the depth does not settle one copy or two"
-                      if cn is None and field in rsi else "")
-            rows.append((gene, cn, "called" if cn is not None else "no call", detail))
-        return rows
-    return generic_rows(name, region)
+def not_assessed(gene, field):
+    return (gene, None, "not assessed", f"not assessed: Paraphase wrote no {field} for this region")
+
+
+def number_row(gene, field, rsi):
+    """A copy number Paraphase writes in region_specific_info."""
+    if field not in rsi:
+        return not_assessed(gene, field)
+    cn = rsi.get(field)
+    detail = "one haplotype seen and the depth does not settle one copy or two" if cn is None else ""
+    dels = rsi.get("deletion_haplotypes")
+    if dels:
+        detail = "; ".join(x for x in (detail, "haplotypes with the 11.7 kb deletion: " + ", ".join(map(str, dels))) if x)
+    return (gene, cn, "called" if cn is not None else "no call", detail)
+
+
+def sv_row(gene, region):
+    """F8 intron 22: the homology region's copies, and the SVs Paraphase names."""
+    rsi = region.get("region_specific_info") or {}
+    if "sv_called" not in rsi:
+        return not_assessed(gene, "sv_called")
+    svs = rsi.get("sv_called") or {}
+    cn = region.get("total_cn")
+    detail = ("; ".join(f"{kind} ({hap})" for hap, kind in sorted(svs.items())) if svs
+              else "no intron 22 inversion or h1/h2 deletion found")
+    return (gene, cn, "called" if cn is not None else "no call", detail)
+
+
+def repeat_row(gene, region):
+    """NEB: the copies of the triplicate repeat, with the haplotypes of each TRI copy."""
+    rsi = region.get("region_specific_info") or {}
+    if "repeat_name" not in rsi:
+        return not_assessed(gene, "repeat_name")
+    names = rsi.get("repeat_name") or {}
+    cn = region.get("total_cn")
+    detail = "; ".join(f"{k.upper()}: {len(v) if isinstance(v, list) else v} haplotype(s)" for k, v in sorted(names.items()))
+    return (gene, cn, "called" if cn is not None else "no call", detail or "no haplotype assigned to a repeat copy")
+
+
+def fusion_row(gene, name, region):
+    """A gene family's copies, with the fusions (deletions, duplications) Paraphase names."""
+    rsi = region.get("region_specific_info") or {}
+    if "fusions_called" not in rsi:
+        return not_assessed(gene, "fusions_called")
+    fusions = rsi.get("fusions_called") or {}
+    cn = region.get("total_cn")
+    detail = ["copies of the whole gene family (gene and paralogs together)"]
+    if fusions:
+        detail.append("; ".join(f"{(v or {}).get('type') or 'fusion'} ({hap})" if isinstance(v, dict) else f"{v} ({hap})"
+                                for hap, v in sorted(fusions.items())))
+    else:
+        detail.append("no deletion or duplication between the copies found")
+    return (gene, cn, "called" if cn is not None else "no call", "; ".join(detail))
+
+
+def gene_rows(name, region, genes=None):
+    """The rows of one region: its catalog rows, or one generic row."""
+    catalog = load_genes() if genes is None else genes
+    entries = catalog.get(name)
+    if not entries:
+        return generic_rows(name, region)
+    rsi = region.get("region_specific_info") or {}
+    rows = []
+    for gene, field in entries:
+        if field == "genotype":
+            rows += [r for r in hba_rows(region) if r[0] == gene]
+        elif field == "annotated_alleles":
+            rows += [(gene,) + r[1:] for r in rccx_rows(region)]
+        elif field in ("final_haplotypes", "total_cn"):
+            rows += [(gene,) + r[1:] for r in generic_rows(name, region)]
+        elif field == "sv_called":
+            rows.append(sv_row(gene, region))
+        elif field == "repeat_name":
+            rows.append(repeat_row(gene, region))
+        elif field == "fusions_called":
+            rows.append(fusion_row(gene, name, region))
+        else:
+            rows.append(number_row(gene, field, rsi))
+    return rows
+
+
+def first_regions(genes):
+    """Regions listed first in the table: those whose rows come from a field of their own."""
+    return {r for r, entries in genes.items() if any(f not in ("final_haplotypes", "total_cn") for _, f in entries)}
 
 
 def load_json(path):
@@ -239,14 +331,16 @@ def load_json(path):
     return data
 
 
-def cn_table(data):
+def cn_table(data, genes=None):
     """Rows (CN_HEADER order) for every region of Paraphase's JSON."""
+    genes = load_genes() if genes is None else genes
+    first = first_regions(genes)
     out = []
-    for name in sorted(data, key=lambda k: (k not in GENE_ROWS and k not in ("hba", "rccx"), k.lower())):
+    for name in sorted(data, key=lambda k: (k not in first, k.lower())):
         region = data[name]
         if not isinstance(region, dict):
             continue
-        for gene, cn, status, detail in gene_rows(name, region):
+        for gene, cn, status, detail in gene_rows(name, region, genes):
             out.append([name, gene, text(cn), status, detail or ".", text(region.get("total_cn")),
                         depth_text(region), text(region.get("genome_depth"))])
     return out
@@ -366,13 +460,15 @@ def main(argv=None):
     t.add_argument("--vcf-dir")
     t.add_argument("--out-cn", required=True)
     t.add_argument("--out-variants", required=True)
+    t.add_argument("--genes", help="the region catalog (default: assets/paraphase_genes.tsv beside bin/)")
     a = ap.parse_args(argv)
     try:
         if a.cmd == "check-bam":
             ok, msg = check_bam(a.bam)
             print(msg if ok else f"ERROR: {msg}", file=sys.stdout if ok else sys.stderr)
             return 0 if ok else 3
-        rows = cn_table(load_json(a.json))
+        genes = load_genes(a.genes)
+        rows = cn_table(load_json(a.json), genes)
         variants = variants_table(a.vcf_dir, a.sample)
     except Unreadable as e:
         print(f"ERROR: {e}", file=sys.stderr)
@@ -383,7 +479,7 @@ def main(argv=None):
     write_tsv(a.out_cn, CN_HEADER, rows)
     write_tsv(a.out_variants, VARIANT_HEADER, variants)
     for r in rows:
-        if r[0] in GENE_ROWS or r[0] in ("hba", "rccx", "GBA", "OTOA"):
+        if r[0] in genes:
             print(f"  {r[1]}: {r[2]} ({r[3]})")
     print(f"  {len(rows)} gene rows, {len(variants)} variant rows")
     return 0
