@@ -19,6 +19,7 @@
 #        ./scripts/setup.sh --chip-data <genome_dir>
 #        ./scripts/setup.sh --megane-kmers <genome_dir>
 #        ./scripts/setup.sh --mocha-data <genome_dir>
+#        ./scripts/setup.sh --locityper-data <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
 #                                            homology table and models plus its
@@ -38,7 +39,10 @@
 #                                            reference plus its image (step 50), the
 #                                            STRchive catalog of steps 09 and 9b
 #                                            (also part of a full setup), MoChA's
-#                                            phasing panel plus its images (step 51)
+#                                            phasing panel plus its images (step 51),
+#                                            Locityper's database of the loci of
+#                                            assets/locityper_loci.bed plus its
+#                                            image (step 53)
 #        ./scripts/setup.sh --archaic <genome_dir>
 #                                            the archaic genomes and 1000 Genomes
 #                                            frequencies of step 43, as one table
@@ -96,7 +100,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--exomiser-data|--chip-data|--strchive-data|--megane-kmers|--mocha-data|--vep-cache|--annotsv-data|--archaic)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--exomiser-data|--chip-data|--strchive-data|--megane-kmers|--mocha-data|--locityper-data|--vep-cache|--annotsv-data|--archaic)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -121,7 +125,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --exomiser-data | --chip-data | --strchive-data | --megane-kmers | --mocha-data | --archaic | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --exomiser-data | --chip-data | --strchive-data | --megane-kmers | --mocha-data | --locityper-data | --archaic | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -168,6 +172,10 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                image (~6.4 GB) and exit."
   echo "  --mocha-data  Install MoChA's phasing panel for step 51 (1000 Genomes high coverage, ${MOCHA_PANEL_VERSION:-}: ~30 GB read,"
   echo "                one chromosome at a time) and the genetic map, pull its images and exit."
+  echo "  --locityper-data"
+  echo "                Build Locityper's database for step 53: the k-mer counts of the reference (several GB of RAM"
+  echo "                once, a few GB on disk), the HPRC ${LOCITYPER_PANEL_VERSION:-} haplotypes of the loci in"
+  echo "                assets/locityper_loci.bed (read over https, tens of MB), their pairwise alignments; pull its image and exit."
   echo "  --annotsv-data"
   echo "                Install AnnotSV's data for step 5 and exit: the bundle when it is missing (~5.3 GB), then"
   echo "                gnomAD-SV ${GNOMAD_SV_VERSION:-}'s common SVs (~1.7 GB download) and MANE ${MANE_RELEASE:-}'s Select transcripts."
@@ -1234,6 +1242,111 @@ with zipfile.ZipFile(z) as f:
   echo "[OK] MoChA's phasing panel (step 51, ${chroms% }): ${dir} ($(du -sh "$dir" | cut -f1), $(wc -l < "${dir}/cnps.bed" | tr -d ' ') common CNVs)"
 }
 
+# install_locityper_data: the database of step 53 in
+# reference/locityper-LOCITYPER_PANEL_VERSION (LOCITYPER_DATA: another folder
+# inside GENOME_DIR), as the Locityper documentation builds one from a
+# pangenome VCF (locityper.vercel.app, "Preparing targets"):
+#   counts.jf    jellyfish's canonical 25-mer counts of REF_FASTA, the
+#                documentation's command (counts of 2 or more); rebuilt when
+#                the reference's .fai changes
+#   panel.vcf.gz the HPRC VCF of LOCITYPER_PANEL_URL, read over https 250 kb
+#                either side of each locus through its .tbi, whose sha256
+#                LOCITYPER_PANEL_TBI_SHA256 pins (Locityper extends a locus by
+#                up to 200 kb to clear the variants on its edges)
+#   db/          `locityper target` on those loci (GRCh38 is the panel's
+#                reference haplotype), then `locityper augment`: the pairwise
+#                alignments of the haplotypes, from which Locityper's weighted
+#                distance is an edit distance
+#   loci.bed     the loci it was built for, without comments
+# LOCITYPER_LOCI (a BED file of chrom, start, end, name) replaces
+# assets/locityper_loci.bed, for a smaller set of loci.
+# DONE names the inputs, so a changed one builds again.
+install_locityper_data() {
+  local dir=${LOCITYPER_DATA:-${GENOME_DIR}/reference/locityper-${LOCITYPER_PANEL_VERSION}}
+  local loci=${LOCITYPER_LOCI:-${PGP_ROOT}/assets/locityper_loci.bed} stamp jstamp n regions bad name
+  case "$dir" in /*) ;; *) dir="${GENOME_DIR}/${dir}" ;; esac
+  cpath "$dir" >/dev/null || return 1
+  if [ ! -s "$REF_FASTA" ] || [ ! -s "${REF_FASTA}.fai" ]; then
+    echo "[WARN] Step 53's database is built from the reference, and ${REF_FASTA} (with its .fai) is not there yet: run ./scripts/setup.sh ${GENOME_DIR} first."
+    return 1
+  fi
+  [ -s "$loci" ] || { echo "[WARN] ${loci} is not a file"; return 1; }
+  echo "Building Locityper's database (step 53, panel ${LOCITYPER_PANEL_VERSION}) in ${dir}"
+  ensure_image LOCITYPER_IMAGE 53 || return 1
+  mkdir -p "$dir"
+  bad=$(awk -F'\t' '!/^#/ && NF && (NF < 4 || $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/ || $4 == "") {print FILENAME ":" FNR; exit}' "$loci")
+  [ -z "$bad" ] || { echo "[WARN] ${bad}: want chrom, start, end, name (tab separated)"; return 1; }
+  awk -F'\t' -v OFS='\t' '!/^#/ && NF {print $1, $2, $3, $4}' "$loci" > "${dir}/loci.bed.new"
+  n=$(wc -l < "${dir}/loci.bed.new" | tr -d ' ')
+  jstamp="fai=$(_digest sha256 "${REF_FASTA}.fai") image=${LOCITYPER_IMAGE}"
+  stamp="${jstamp} panel=${LOCITYPER_PANEL_TBI_SHA256} loci=$(_digest sha256 "${dir}/loci.bed.new")"
+  if [ "$(cat "${dir}/DONE" 2>/dev/null)" = "$stamp" ] && [ -d "${dir}/db" ]; then
+    rm -f "${dir}/loci.bed.new"
+    echo "[OK] Locityper's database (step 53, ${n} loci) already built: ${dir}"
+    return 0
+  fi
+  rm -f "${dir}/DONE"
+
+  if [ ! -s "${dir}/counts.jf" ] || [ "$(cat "${dir}/counts.stamp" 2>/dev/null)" != "$jstamp" ]; then
+    echo "  k-mer counts of $(basename "$REF_FASTA") (jellyfish, several GB of RAM for GRCh38)..."
+    rm -f "${dir}/counts.jf" "${dir}/counts.stamp"
+    if ! run_in --rw "$dir" "$LOCITYPER_IMAGE" jellyfish count --canonical --lower-count 2 --out-counter-len 2 \
+        --mer-len 25 --threads "$THREADS" --size 3G --output "$(cpath "${dir}/counts.jf.part")" "$REF_FASTA_C"; then
+      rm -f "${dir}/counts.jf.part"
+      echo "[WARN] jellyfish could not count the reference's k-mers"
+      return 1
+    fi
+    mv "${dir}/counts.jf.part" "${dir}/counts.jf"
+    echo "$jstamp" > "${dir}/counts.stamp"
+  fi
+
+  fetch "${LOCITYPER_PANEL_URL}.tbi" "${dir}/panel.remote.tbi" sha256 "$LOCITYPER_PANEL_TBI_SHA256" \
+    || { echo "[WARN] Could not download the panel's index; run: $0 --locityper-data ${GENOME_DIR}"; return 1; }
+  # The loci 250 kb either side, merged where they meet, as chrom:start-end.
+  regions=$(awk -F'\t' -v OFS='\t' '{s = $2 - 250000; if (s < 0) s = 0; print $1, s, $3 + 250000}' "${dir}/loci.bed.new" \
+    | sort -k1,1 -k2,2n \
+    | awk -F'\t' '$1 == c && $2 <= e {if ($3 > e) e = $3; next} {if (c != "") print c ":" s + 1 "-" e; c = $1; s = $2; e = $3}
+                  END {if (c != "") print c ":" s + 1 "-" e}' | tr '\n' ' ')
+  echo "  The panel's haplotypes over ${regions% }..."
+  # --net: the panel is read over https. SC2016: $1 to $3 belong to the
+  # inner bash; SC2086: one argument per region.
+  # shellcheck disable=SC2016,SC2086
+  if ! run_in --net --rw "$dir" "$LOCITYPER_IMAGE" bash -euo pipefail -c '
+        url=$1 idx=$2 out=$3; shift 3
+        tabix -h "${url}##idx##${idx}" "$@" | bgzip > "${out}.part"
+        tabix -f -p vcf "${out}.part"
+        mv "${out}.part.tbi" "${out}.tbi"; mv "${out}.part" "$out"' \
+      _ "$LOCITYPER_PANEL_URL" "$(cpath "${dir}/panel.remote.tbi")" "$(cpath "${dir}/panel.vcf.gz")" $regions; then
+    rm -f "${dir}/panel.vcf.gz.part" "${dir}/panel.vcf.gz.part.tbi"
+    echo "[WARN] Could not read the panel over https; run: $0 --locityper-data ${GENOME_DIR}"
+    return 1
+  fi
+
+  echo "  locityper target and augment on ${n} loci (the pairwise alignments take the longest)..."
+  rm -rf "${dir}/db" "${dir}/db.part"
+  # shellcheck disable=SC2016  # $1 to $5 belong to the inner bash
+  if ! run_in --rw "$dir" "$LOCITYPER_IMAGE" bash -euo pipefail -c '
+        locityper target -d "$1/db.part" -r "$2" -j "$1/counts.jf" -v "$1/panel.vcf.gz" -g GRCh38 -L "$3" -@ "$4" > "$5" 2>&1
+        locityper augment -d "$1/db.part" -@ "$4" >> "$5" 2>&1' \
+      _ "$(cpath "$dir")" "$REF_FASTA_C" "$(cpath "${dir}/loci.bed.new")" "$THREADS" "$(cpath "${dir}/build.log")"; then
+    echo "[WARN] Locityper could not build the database; the last lines of ${dir}/build.log:"
+    tail -n 20 "${dir}/build.log" || true
+    return 1
+  fi
+  bad=""
+  while IFS=$'\t' read -r _ _ _ name; do
+    [ -e "${dir}/db.part/loci/${name}/success" ] || bad+="${name} "
+  done < "${dir}/loci.bed.new"
+  if [ -n "$bad" ]; then
+    echo "[WARN] Locityper built no database for: ${bad% } (see ${dir}/build.log)"
+    return 1
+  fi
+  mv "${dir}/db.part" "${dir}/db"
+  mv "${dir}/loci.bed.new" "${dir}/loci.bed"
+  echo "$stamp" > "${dir}/DONE"
+  echo "[OK] Locityper's database (step 53, ${n} loci, panel ${LOCITYPER_PANEL_VERSION}): ${dir} ($(du -sh "$dir" | cut -f1))"
+}
+
 # pull_image IMAGE: docker pull, tried FETCH_TRIES times (default 3),
 # FETCH_WAIT seconds apart (default 5, then 10, ...), the knobs fetch uses.
 # Docker's own message goes to the terminal: a rate limit (toomanyrequests)
@@ -1698,6 +1811,7 @@ case "$OPT_IN" in
   strchive-data) install_strchive_data; exit $? ;;
   megane-kmers) ensure_image MEGANE_IMAGE 50 && install_megane_kmers; exit $? ;;
   mocha-data) install_mocha_data; exit $? ;;
+  locityper-data) install_locityper_data; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
   annotsv-data) install_annotsv_data; exit $? ;;
   archaic) install_archaic; exit $? ;;
