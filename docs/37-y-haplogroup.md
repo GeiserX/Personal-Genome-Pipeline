@@ -14,7 +14,7 @@ The mitochondrial haplogroup (step 12) traces the maternal line only. The Y chro
 
 - **The current YFull YTree** (release 14.06.0 of 22 September 2026, CC BY 4.0, [github.com/YFullTeam/YTree](https://github.com/YFullTeam/YTree)), walked by `bin/y_tree_place.py`. It is newer than Yleaf's v14.01, and the second position table below places SNPs Yleaf's own table does not have, so the branch it reports can sit below the one Yleaf reports. It also writes the path from the root with the calls of every level. The SNPs on YFull's tree have names only; their GRCh38 positions and bases come from two tables of Yleaf 4.1.6 (GPL-3.0): `ftdna_positions_hg38.txt` (made for FamilyTreeDNA's tree, the widest of its tables) first, then `new_positions.txt` (the one Yleaf 4 uses for its YFull v14 tree). SNP names are shared between the trees, so a name is looked up as it stands. Together they place 85% of the tree's 459,468 SNPs (76% from the first table alone), counted on 2026-10-25.
 
-The step reports both results, each with the tree it comes from.
+The step reports both results, each with the tree it comes from. Both reports (step 24, text and HTML) show them as two sections side by side: "Y-Chromosome Haplogroup (Yleaf)" with Yleaf's call, and "Y Placement on the Current Public Tree" with this one, its level, the derived, ancestral and no-call counts along the path, any ancestral SNP inside the terminal branch or outvoted above it, and one row per level of the path.
 
 ## Docker Image
 
@@ -27,6 +27,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 ## Input
 
 - `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai` (`ALIGN_DIR` as for the other BAM steps)
+- `${SAMPLE}/vcf/${SAMPLE}.vcf.gz` from step 03, for the private-SNP list only. Without it the rest of the step runs and that one file is skipped with a line saying so.
 - `${SAMPLE}/indexcov/indexcov-indexcov.ped` from step 16: the sex indexcov infers from the reads. The step runs only when it is male, and asks for no sex of its own. A female or undetermined sample is skipped with one line and exit 0.
 
 In the Nextflow pipeline (`y_haplogroup` in `--tools`) the process runs for the rows whose samplesheet sex is male. `INDEXCOV` has checked that sex against the reads before any BAM step starts, and a mismatch stops the run (unless `--sex_check warn`).
@@ -53,6 +54,7 @@ Yleaf downloads the whole hg38 FASTA on its first run unless its config file nam
 | `y_haplogroup/positions.txt` | the marker positions the pileup was made at |
 | `y_haplogroup/${SAMPLE}_y_tree.txt` | the placement on the current tree: `Hg` (the terminal branch, YFull's name), `Level` (its depth below the root), `Path_derived`, `Path_ancestral`, `Path_no_call` (the SNP calls of every branch on the path), `Ancestral_in_terminal`, `SNPs_called`, `Min_depth`, `Tree` and `Positions` (the tree release and the position tables it used), and `Outvoted_ancestral` (below; `.` when none) |
 | `y_haplogroup/${SAMPLE}_y_tree_path.tsv` | one row per branch from the root to the terminal one: `SNPs` (its defining SNPs), `On_tables` (those the tables place), `Derived`, `Ancestral`, `No_call`, and the names of its ancestral SNPs |
+| `y_haplogroup/${SAMPLE}_y_private_snps.tsv` | the chrY SNVs no public SNP table names: `Pos`, `Ref`, `Alt`, `Depth`, `Alt_fraction`, `GQ`, `Genotype`, with the gates and the dropped counts in the header lines ("Private SNPs" below) |
 | `y_haplogroup/${SAMPLE}_chrY.bam` and `.bai` | the BAM's chrY reads only, the file the services below read; the Nextflow pipeline publishes the same file there (`Y_PILEUP`) |
 
 The chrY BAM is written every time this step runs on a male sample. Expect it to be about 1 to 2 percent of the analysis BAM, so a few hundred megabytes to a gigabyte on a 30x genome. That is an estimate from chrY's share of the reads; we have not measured it on a full genome. If you do not need it, delete it and its `.bai`.
@@ -85,7 +87,20 @@ The two volunteer projects older guides name:
 
 Names differ between trees. Yleaf names branches the YFull way; FamilyTreeDNA keeps its own tree. If Discover shows no page for your branch, type the branch name, or the SNP after the dash, into Discover's search: it offers the nearest branch it has (a search for YFull's `A0-T` returns FamilyTreeDNA's `A-L1098`).
 
-**Private SNPs**, the Y mutations you carry that are on no public tree, are what would place you below your branch, next to the men closest to you. This pipeline does not list them yet: that needs the callable regions of chrY and a public SNP list beyond the markers Yleaf ships. YFull's analysis reports them as novel SNPs.
+**Private SNPs**, the Y mutations you carry that are on no public tree, are what would place you below your branch, next to the men closest to you. The step lists them in `y_haplogroup/${SAMPLE}_y_private_snps.tsv` (`bin/y_private_snps.py`), from your own chrY calls minus every position the two public SNP tables name. YFull's analysis reports the same kind of thing as novel SNPs; the file is a starting point for a comparison with other men, not a result in itself.
+
+How that list is built, and what each gate removes:
+
+- chrY only, outside the pseudoautosomal regions.
+- one REF base and one ALT base, with no second ALT allele at the site: a private SNP is a single-base change, and a multiallelic chrY record is a mapping artefact on a haploid chromosome.
+- the genotype carries the ALT allele and no REF allele (`1`, `1/1`, `1|1`). Outside PAR the Y is haploid, so a heterozygous call there is an artefact.
+- `FILTER` PASS, depth 10 or more, genotype quality 20 or more, and 90% or more of the reads carrying ALT (`--min-depth`, `--min-gq`, `--min-fraction`; the depth and fraction defaults are Yleaf's own `-r 10` and `-b 90`).
+- depth no more than twice the median depth of the sample's own chrY calls (`--max-depth-factor`, 0 turns it off). Where reads from more than one part of the genome pile up on one place, depth runs high and the call is not from a single-copy region. The repetitive part of the Y is found in the sample's own depth, so the list needs no region file from another study.
+- not on a public SNP list: every position in `positions_ftdna_hg38.txt` and `positions_yfull_hg38.txt`, the two tables `setup.sh --yleaf-data` installs, is removed. That subtraction is what makes the list private; without it the file would be mostly the markers the haplogroup call is already built on.
+
+The header lines of the file record the gates, the sample's median chrY depth and how many records each gate dropped, so a surprising count can be traced. **Each row is unconfirmed until another man is found who carries the same mutation.** Some rows are sequencing or mapping errors. Some are real mutations only this line carries, which no tree can place. The count is not a measure of anything on its own: it rises with coverage and falls with every tree release that names one of them.
+
+The scan needs step 03's VCF (`${SAMPLE}/vcf/${SAMPLE}.vcf.gz`) and the current tree's tables. Without either, the step says so in one line and writes the rest of its output as before.
 
 ## Runtime
 
