@@ -1274,13 +1274,18 @@ install_locityper_data() {
   echo "Building Locityper's database (step 53, panel ${LOCITYPER_PANEL_VERSION}) in ${dir}"
   ensure_image LOCITYPER_IMAGE 53 || return 1
   mkdir -p "$dir"
-  bad=$(awk -F'\t' '!/^#/ && NF && (NF < 4 || $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/ || $4 == "") {print FILENAME ":" FNR; exit}' "$loci")
-  [ -z "$bad" ] || { echo "[WARN] ${bad}: want chrom, start, end, name (tab separated)"; return 1; }
+  # Each row: chrom, start, end, name, with start < end inside a contig of the reference's .fai.
+  bad=$(awk -F'\t' 'NR == FNR {len[$1] = $2; next}
+    !/^#/ && NF && (NF < 4 || $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/ || $4 == "" || $2 + 0 >= $3 + 0 || !($1 in len) || $3 + 0 > len[$1] + 0) {
+      print FILENAME ":" FNR; exit}' "${REF_FASTA}.fai" "$loci")
+  [ -z "$bad" ] || { echo "[WARN] ${bad}: want chrom, start, end, name (tab separated), start below end, inside a contig of ${REF_FASTA}"; return 1; }
   awk -F'\t' -v OFS='\t' '!/^#/ && NF {print $1, $2, $3, $4}' "$loci" > "${dir}/loci.bed.new"
   n=$(wc -l < "${dir}/loci.bed.new" | tr -d ' ')
-  jstamp="fai=$(_digest sha256 "${REF_FASTA}.fai") image=${LOCITYPER_IMAGE}"
+  [ "$n" -gt 0 ] || { rm -f "${dir}/loci.bed.new"; echo "[WARN] ${loci} lists no locus"; return 1; }
+  # The reference's .fai and its sequence (a new FASTA with the same contigs is a new reference too).
+  jstamp="fai=$(_digest sha256 "${REF_FASTA}.fai") fasta=$(_digest sha256 "$REF_FASTA") image=${LOCITYPER_IMAGE}"
   stamp="${jstamp} panel=${LOCITYPER_PANEL_TBI_SHA256} loci=$(_digest sha256 "${dir}/loci.bed.new")"
-  if [ "$(cat "${dir}/DONE" 2>/dev/null)" = "$stamp" ] && [ -d "${dir}/db" ]; then
+  if [ "$(cat "${dir}/DONE" 2>/dev/null)" = "$stamp" ] && [ -d "${dir}/db" ] && [ -s "${dir}/counts.jf" ] && [ -s "${dir}/loci.bed" ]; then
     rm -f "${dir}/loci.bed.new"
     echo "[OK] Locityper's database (step 53, ${n} loci) already built: ${dir}"
     return 0

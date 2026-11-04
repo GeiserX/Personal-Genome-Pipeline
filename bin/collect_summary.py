@@ -2403,20 +2403,25 @@ def locityper_primary(sections):
     HLA-DQB1, T1K's KIR pass (KIR=true) for KIR, pypgx (step 32) and Cyrius
     (step 21) for CYP2D6. FCGR has no primary caller here. Locityper names
     pangenome haplotypes, not alleles, so the two are shown, not compared."""
+    def old(key):  # a table older than the last run-all.sh run says so
+        return " (stale: from an earlier run)" if sections[key]["state"] == "stale" else ""
+
     hla = sections["hla"]["data"] if sections["hla"]["state"] in ("ok", "stale") else {}
     by_gene = {x["gene"]: x for x in hla.get("loci", [])}
     out = {}
     for g in ("HLA-DRB1", "HLA-DQB1"):
         x = by_gene.get(g) or by_gene.get(g.replace("HLA-", ""))
-        out[g] = ("T1K (step 08): " + ("/".join(x["alleles"]) or "no allele")) if x else "T1K (step 08) did not run"
+        out[g] = ("T1K (step 08): " + ("/".join(x["alleles"]) or "no allele") + old("hla")) if x else "T1K (step 08) did not run"
     kir = hla.get("kir")
-    out["KIR"] = (f"T1K KIR pass (step 08): {len(kir['typed'])} genes typed" if kir and kir.get("typed")
+    out["KIR"] = (f"T1K KIR pass (step 08): {len(kir['typed'])} genes typed{old('hla')}" if kir and kir.get("typed")
                   else "T1K's KIR pass (step 08, KIR=true) gave no call")
     cyp = []
     if sections["pypgx"]["state"] in ("ok", "stale"):
-        cyp.append(f"pypgx (step 32): {sections['pypgx']['data'].get('cyp2d6', 'not called')}")
+        cyp.append(f"pypgx (step 32): {sections['pypgx']['data'].get('cyp2d6', 'not called')}{old('pypgx')}")
     if sections["cyrius"]["state"] in ("ok", "stale"):
-        cyp.append(f"Cyrius (step 21): {sections['cyrius']['data'].get('genotype', 'none')}")
+        cy = sections["cyrius"]["data"]
+        usable = "" if cy.get("filter") == "PASS" else f" (not usable: Filter {cy.get('filter') or 'missing'})"
+        cyp.append(f"Cyrius (step 21): {cy.get('genotype', 'none')}{usable}{old('cyrius')}")
     out["CYP2D6"] = "; ".join(cyp) or "pypgx (step 32) and Cyrius (step 21) did not run"
     out["FCGR"] = "no other step calls FCGR"
     return out

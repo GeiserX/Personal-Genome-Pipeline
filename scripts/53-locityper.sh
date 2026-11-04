@@ -50,6 +50,10 @@ done
 for f in "${DATA}/DONE" "${DATA}/counts.jf" "${DATA}/loci.bed"; do
   [ -s "$f" ] || { echo "ERROR: Locityper's database not found: ${f} (run: ./scripts/setup.sh --locityper-data ${GENOME_DIR})" >&2; exit 1; }
 done
+# The database's k-mer counts and haplotypes come from one reference: DONE names its .fai.
+FAI_SHA=$(_digest sha256 "${REF_FASTA}.fai")
+grep -q "fai=${FAI_SHA} " "${DATA}/DONE" || {
+  echo "ERROR: Locityper's database ${DATA} was built from another reference than ${REF_FASTA} (run: ./scripts/setup.sh --locityper-data ${GENOME_DIR})" >&2; exit 1; }
 echo "BAM: ${BAM}"
 echo "Database: ${DATA} ($(grep -vc '^#' "${DATA}/loci.bed") loci)"
 mkdir -p "$OUTDIR"

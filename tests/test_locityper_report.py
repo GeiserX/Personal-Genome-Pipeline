@@ -68,10 +68,14 @@ def res(genotype="HG00733.1,NA19240.2", quality=27.8, total=900, unexpl=12, wd=0
     return r
 
 
-def gt_dir(root, locus, result=None, success=True, raw=None):
+def gt_dir(root, locus, result=None, success=True, raw=None, truncate=False):
     d = os.path.join(root, "loci", locus)
     os.makedirs(d, exist_ok=True)
-    if result is not None or raw is not None:
+    if truncate:  # a gzip cut in half, as a full disk leaves it
+        whole = gzip.compress(json.dumps(result).encode())
+        with open(os.path.join(d, "res.json.gz"), "wb") as f:
+            f.write(whole[:len(whole) // 2])
+    elif result is not None or raw is not None:
         with gzip.open(os.path.join(d, "res.json.gz"), "wb") as f:
             f.write(raw if raw is not None else json.dumps(result).encode())
     if success:
@@ -83,10 +87,10 @@ def cases(mod, t):
     out = []
     n = [0]
 
-    def row(result=None, success=True, raw=None, exit_code=0):
+    def row(result=None, success=True, raw=None, exit_code=0, truncate=False):
         n[0] += 1
         root = os.path.join(t, f"c{n[0]}")
-        gt_dir(root, "CYP2D6", result, success, raw)
+        gt_dir(root, "CYP2D6", result, success, raw, truncate)
         return mod.row_for("CYP2D6", "chr22:42122285-42152960", root, exit_code)
 
     r = row(res())
@@ -117,6 +121,12 @@ def cases(mod, t):
     out.append(("3. one haplotype only: not called", r["status"] == "not called" and "no diploid" in r["reason"], r))
     r = row(raw=b"{not json")
     out.append(("3. an unreadable res.json.gz: not called", r["status"] == "not called"
+                and "cannot be read" in r["reason"], r))
+    try:
+        r = row(res(), truncate=True)
+    except Exception as e:  # the report must never stop on one locus
+        r = {"status": f"raised {type(e).__name__}", "reason": str(e)}
+    out.append(("3. a truncated res.json.gz: not called, the table still written", r["status"] == "not called"
                 and "cannot be read" in r["reason"], r))
     return out
 
@@ -231,6 +241,21 @@ def main():
         check("5. the HTML card has the table and the filter badges",
               "Locityper Second Opinion at Hard Loci</h2>" in html and 'badge-green">pass<' in html
               and 'badge-yellow">fail<' in html and "<th>Primary caller</th>" in html, html[-3000:])
+        os.makedirs(os.path.join(sd, "cyrius"))
+        with open(os.path.join(sd, "cyrius", "S_cyp2d6.tsv"), "w") as f:
+            f.write("Sample\tGenotype\tFilter\nS\t*1/*2\tLowQ_high_CN\n")
+        s = collect_summary.collect("S", sd)
+        cyp = [x for x in s["sections"]["locityper"]["data"]["loci"] if x["locus"] == "CYP2D6"][0]
+        check("5. a Cyrius call without Filter PASS is shown as not usable, as the CYP2D6 block does",
+              "Cyrius (step 21): *1/*2 (not usable: Filter LowQ_high_CN)" in cyp["primary"], cyp)
+        os.makedirs(os.path.join(sd, "logs"))
+        import time
+        with open(os.path.join(sd, "logs", "run_status.tsv"), "w") as f:
+            f.write(f"meta\tstarted_epoch\t{time.time() + 60}\nstep\t53\tok\n")
+        s = collect_summary.collect("S", sd)
+        cyp = [x for x in s["sections"]["locityper"]["data"]["loci"] if x["locus"] == "CYP2D6"][0]
+        check("5. a primary call older than the last run says it is stale", "(stale: from an earlier run)" in cyp["primary"],
+              (s["sections"]["cyrius"]["state"], cyp))
         os.makedirs(os.path.join(t, "none", "S"))
         s = collect_summary.collect("S", os.path.join(t, "none", "S"))
         check("5. without step 53 there is no card and no text section",

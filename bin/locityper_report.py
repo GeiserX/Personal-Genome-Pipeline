@@ -123,8 +123,8 @@ def row_for(name, region, gt_dir, exit_code):
     try:
         with gzip.open(res_path, "rt") as f:
             res = json.load(f)
-    except (OSError, ValueError) as e:
-        blank["reason"] = f"res.json.gz cannot be read: {e}"
+    except (OSError, EOFError, ValueError) as e:  # EOFError: a truncated gzip
+        blank["reason"] = f"res.json.gz cannot be read: {e or type(e).__name__}"
         return blank
     gt = (res.get("genotype") or "").strip()
     haps = [h for h in gt.split(",") if h]

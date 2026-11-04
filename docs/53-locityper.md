@@ -30,7 +30,7 @@ Pinned in `versions.env`; [Image versions](versions.md) lists the current tags. 
 # Creates: ${GENOME_DIR}/reference/locityper-hprc-v2.1-mc-grch38/ (counts.jf, db/, loci.bed, DONE)
 ```
 
-The panel is the HPRC release 2 Minigraph-Cactus pangenome against GRCh38, as a VCF (`LOCITYPER_PANEL_URL`, `LOCITYPER_PANEL_VERSION` in `versions.env`). It holds the two haplotypes of each of its 232 samples. The full VCF is 6.7 GB; `setup.sh` reads only the loci and 250 kb either side, over https, through the VCF's `.tbi`, whose sha256 `LOCITYPER_PANEL_TBI_SHA256` pins. Nothing of it is committed.
+The panel is the HPRC release 2 Minigraph-Cactus pangenome against GRCh38, as a VCF (`LOCITYPER_PANEL_URL`, `LOCITYPER_PANEL_VERSION` in `versions.env`). It holds the two haplotypes of each of its 232 samples. The full VCF is 6.7 GB; `setup.sh` reads only the loci and 250 kb either side, over https, through the VCF's `.tbi`, whose sha256 `LOCITYPER_PANEL_TBI_SHA256` pins. Nothing of it is committed. The pin covers the index, not the records: they are trusted as the HPRC's S3 bucket serves them over https, as for the other data `setup.sh` reads in place. A changed file with the same index would build without an error.
 
 Then it follows Locityper's documentation (https://locityper.vercel.app, "Preparing targets"): jellyfish counts the 25-mers of `REF_FASTA`, `locityper target` cuts the panel's haplotypes at each locus, and `locityper augment` aligns them to each other, which the weighted distance needs. A new reference, image, panel or locus list builds again. `LOCITYPER_DATA` puts the database elsewhere and `LOCITYPER_LOCI` replaces the locus list.
 
