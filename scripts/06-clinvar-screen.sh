@@ -13,6 +13,17 @@
 # clinvar/${SAMPLE}_clinvar_cdna_check.tsv says, for each hit, whether its alt
 # reads look like spliced cDNA (bin/clip_check.py; needs the sample's BAM and
 # the GENCODE exons setup.sh installs, and says "not checked" without them).
+# A hit at a site of assets/construct_variants.tsv (alleles lab constructs and
+# transgenic models carry) is named in its construct_site column and always
+# printed with its read counts. clinvar/${SAMPLE}_clinvar_cdna_scan.tsv lists
+# the loci where reads jump from one exon to another across the whole genome
+# (bin/cdna_scan.py, same inputs; CDNA_SCAN=false skips it).
+# clinvar/${SAMPLE}_clinvar_deep_intronic.tsv gives the sample's call at every
+# site of assets/deep_intronic_sites.tsv (known pathogenic deep intronic
+# alleles), carrier or not: a genotype, "ref" with the GQ of the record or the
+# gVCF block, or why there is no call (CLINVAR_ALWAYS_REPORT names another list).
+# A multiallelic record is split with the other alt allele written as missing
+# (1/2 gives 1/. and ./1), so a hit from it never reads as het.
 # A hit whose call has a genotype quality below CLINVAR_MIN_GQ (default 30) or
 # a depth below CLINVAR_MIN_DP (default 10) is a low-confidence call: it stays
 # in the hits, marked, and the reports count it apart from the others. A floor
@@ -38,6 +49,10 @@ HITS_TSV="${OUTPUT_DIR}/${SAMPLE}_clinvar_hits.tsv"
 CDNA_TSV="${OUTPUT_DIR}/${SAMPLE}_clinvar_cdna_check.tsv"
 BAM="${GENOME_DIR}/${SAMPLE}/${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam"
 EXONS_BED=$(data_file gencode_exons) || true
+GVCF="${GENOME_DIR}/${SAMPLE}/${VCF_DIR}/${SAMPLE}.g.vcf.gz"
+SITES=${CLINVAR_ALWAYS_REPORT:-${PGP_ROOT}/assets/deep_intronic_sites.tsv}
+DEEP_TSV="${OUTPUT_DIR}/${SAMPLE}_clinvar_deep_intronic.tsv"
+SCAN_TSV="${OUTPUT_DIR}/${SAMPLE}_clinvar_cdna_scan.tsv"
 MIN_GQ=${CLINVAR_MIN_GQ:-30}
 MIN_DP=${CLINVAR_MIN_DP:-10}
 for v in "CLINVAR_MIN_GQ=${MIN_GQ}" "CLINVAR_MIN_DP=${MIN_DP}"; do
@@ -46,7 +61,7 @@ done
 
 echo "=== ClinVar Pathogenic Screen: ${SAMPLE} ==="
 
-for f in "$VCF" "${VCF}.tbi" "$CLINVAR" "${CLINVAR}.tbi" "$REF" "${REF}.fai"; do
+for f in "$VCF" "${VCF}.tbi" "$CLINVAR" "${CLINVAR}.tbi" "$REF" "${REF}.fai" "$SITES"; do
   if [ ! -f "$f" ]; then
     echo "ERROR: File not found: ${f}" >&2
     exit 1
@@ -128,10 +143,13 @@ if [ -n "$SAMPLE_DROPPED" ]; then
   rm -f "$DROPPED_REGIONS"
 fi
 
+# --multi-overlaps .: the split of a 1/2 record writes 1/. and ./1, not 1/0
+# and 0/1. The other copy holds the other alt allele, not the reference, so a
+# hit from such a record (one length of a poly-T tract) must not read as het.
 PASS_VCF="${OUTPUT_DIR}/${SAMPLE}_pass.vcf.gz"
 run_in --cpus 2 --memory 2g "$BCFTOOLS_IMAGE" \
   sh -c "set -e; bcftools view -f '${FILTER}' -T '$(cpath "$SAMPLE_TARGETS")' -Ou '$(cpath "$VCF")' \
-    | bcftools norm -m -any -c w -f '$(cpath "$REF")' -Oz -o '$(cpath "$PASS_VCF")' -
+    | bcftools norm -m -any --multi-overlaps . -c w -f '$(cpath "$REF")' -Oz -o '$(cpath "$PASS_VCF")' -
     bcftools index -f -t '$(cpath "$PASS_VCF")'"
 
 PASS_COUNT=$(bcftools_run bcftools index -n "$(cpath "$PASS_VCF")")
@@ -205,12 +223,44 @@ mv "${HITS_TSV}.part" "$HITS_TSV"
 rm -f "$SHARED" "${SHARED}.tbi" "${HITS_TSV}.body" "$CLINVAR_TARGETS" "$SAMPLE_TARGETS" \
   "$JOINED" "${JOINED}.tbi" "$CANDIDATES" "${CANDIDATES}.tbi"
 
+# Step 3b: the always-report list. Every site of the list gets the sample's
+# call: its record in the split PASS records above, else the gVCF record over
+# it (a reference block gives "ref" with the block's GQ), else no call, with
+# why. bin/clinvar_hits.awk (mode=sites) words the genotype as the hits are.
+# query_format FILE: the bcftools query format of bin/clinvar_hits.awk's sites
+# mode, with '.' for a GQ or DP the file's header does not define.
+query_format() {
+  local h gq=. dp=.
+  h=$(bcftools_run bcftools view -h "$(cpath "$1")")
+  grep -q '^##FORMAT=<ID=GQ,' <<< "$h" && gq='[%GQ]'
+  grep -q '^##FORMAT=<ID=DP,' <<< "$h" && dp='[%DP]'
+  printf '%%CHROM\\t%%POS\\t%%END\\t%%REF\\t%%ALT\\t[%%GT]\\t%s\\t%s\\n' "$gq" "$dp"
+}
+SITES_POS="${OUTPUT_DIR}/${SAMPLE}_sites_pos.tsv"
+awk -F'\t' -v OFS='\t' '!/^#/ && $1 != "chrom" && NF >= 7 {print $1, $2}' "$SITES" | sort -k1,1 -k2,2n -u > "$SITES_POS"
+bcftools_run bcftools query -T "$(cpath "$SITES_POS")" -f "$(query_format "$PASS_VCF")" \
+  -o "$(cpath "${DEEP_TSV}.vcf")" "$(cpath "$PASS_VCF")"
+: > "${DEEP_TSV}.gvcf"
+HAS_GVCF=no
+if [ -f "$GVCF" ] && [ -f "${GVCF}.tbi" ]; then
+  HAS_GVCF=yes
+  bcftools_run bcftools query -R "$(cpath "$SITES_POS")" -f "$(query_format "$GVCF")" \
+    -o "$(cpath "${DEEP_TSV}.gvcf")" "$(cpath "$GVCF")"
+fi
+awk -v mode=sites -v gvcf="$HAS_GVCF" -v min_gq="$MIN_GQ" -f "${PGP_ROOT}/bin/clinvar_hits.awk" "$SITES" "${DEEP_TSV}.vcf" "${DEEP_TSV}.gvcf" \
+  > "${DEEP_TSV}.part"
+mv "${DEEP_TSV}.part" "$DEEP_TSV"
+rm -f "$SITES_POS" "${DEEP_TSV}.vcf" "${DEEP_TSV}.gvcf"
+
 # Step 4: the cDNA read check. Spliced cDNA or expression-vector DNA (a lab
 # contaminant) gives reads clipped exactly at an exon edge, with the rest of
 # the read on the next exon; a variant it carries is called like any other.
 # For each hit, bin/clip_check.py counts the alt and ref reads clipped at an
 # exon edge and flags the hit when most alt reads are and few ref reads are.
 # It reads only the reads at the hits. pysam is in PYPGX_IMAGE.
+# Then bin/cdna_scan.py reads the reads over every exon and lists the loci
+# with reads across two or more exon junctions (the same contamination, or a
+# processed retrocopy, where no ClinVar hit is).
 if [ ! -f "$BAM" ] || [ ! -f "${BAM}.bai" ]; then
   CDNA_ARGS=(--skip "no BAM (${ALIGN_DIR:-aligned}/${SAMPLE}_sorted.bam with its .bai)")
 elif [ ! -s "$EXONS_BED" ]; then
@@ -218,8 +268,14 @@ elif [ ! -s "$EXONS_BED" ]; then
 else
   CDNA_ARGS=(--bam "$(cpath "$BAM")" --exons "$(cpath "$EXONS_BED")")
 fi
+SCAN_ARGS=("${CDNA_ARGS[@]}")
+[ "${CDNA_SCAN:-true}" = false ] && SCAN_ARGS=(--skip "CDNA_SCAN=false")
+run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro" "$PYPGX_IMAGE" \
+  python3 /pgp-bin/clip_check.py --hits "$(cpath "$HITS_TSV")" --out "$(cpath "${CDNA_TSV}.part")" \
+  --construct /pgp-assets/construct_variants.tsv "${CDNA_ARGS[@]}"
 run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYPGX_IMAGE" \
-  python3 /pgp-bin/clip_check.py --hits "$(cpath "$HITS_TSV")" --out "$(cpath "${CDNA_TSV}.part")" "${CDNA_ARGS[@]}"
+  python3 /pgp-bin/cdna_scan.py --out "$(cpath "${SCAN_TSV}.part")" "${SCAN_ARGS[@]}"
+mv "${SCAN_TSV}.part" "$SCAN_TSV"
 mv "${CDNA_TSV}.part" "$CDNA_TSV"
 
 HIT_COUNT=$(grep -c -v '^#' "$HITS" || true)
@@ -227,6 +283,9 @@ echo "=== ClinVar screen complete ==="
 echo "Hits: ${HITS} (sample records carrying a ClinVar Pathogenic/Likely_pathogenic allele)"
 echo "Table: ${HITS_TSV}"
 echo "cDNA read check: ${CDNA_TSV}"
+echo "cDNA scan of every exon: ${SCAN_TSV}"
+echo "Known deep intronic sites, always reported: ${DEEP_TSV}"
+awk -F'\t' 'NR > 1 {printf "  %s %s %s:%s %s>%s: %s%s\n", $5, $6, $1, $2, $3, $4, $8, ($9 != "" ? ", " $9 : "")}' "$DEEP_TSV"
 echo "Count: ${HIT_COUNT} pathogenic hits"
 if [ "$HIT_COUNT" -gt 0 ]; then
   LOW_COUNT=$(awk -f "${PGP_ROOT}/bin/clinvar_hits.awk" "$HITS" | awk -F'\t' '$13 == "yes"' | wc -l | tr -d ' ')

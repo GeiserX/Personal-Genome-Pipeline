@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Reads your genotype at a small set of well-replicated variants and prints what each genotype means in plain words: lactase persistence (digesting milk as an adult), caffeine metabolism and coffee intake, alcohol flush, bitter taste, earwax type, the photic sneeze reflex, smelling asparagus in urine, muscle fibre type, eye, hair and skin pigmentation, red hair, hair thickness, folate metabolism, secretor status, vitamin D level, bilirubin (the Gilbert syndrome genotype), nicotine breakdown, two variants linked to a high Lp(a) level, and the APOE ε2/ε3/ε4 alleles. A rule table reads several sites together: the APOE pair and the TAS2R38 bitter-taste haplotypes (PAV, AVI), phased from the reads when that is needed. Each row names the primary paper it comes from. On by default.
+Reads your genotype at a small set of well-replicated variants and prints what each genotype means in plain words: lactase persistence (digesting milk as an adult), caffeine metabolism and coffee intake, alcohol flush, bitter taste, earwax type, the photic sneeze reflex, smelling asparagus in urine, muscle fibre type, eye, hair and skin pigmentation, red hair, hair thickness, folate metabolism, secretor status, vitamin D level, bilirubin (the Gilbert syndrome genotype), nicotine breakdown, two variants linked to a high Lp(a) level, and the APOE ε2/ε3/ε4 alleles. A rule table reads several sites together: the APOE pair, the TAS2R38 bitter-taste haplotypes (PAV, AVI), phased from the reads when that is needed, the APOL1 G1 kidney risk variant, the alpha-1 antitrypsin Pi type (SERPINA1 M, S, Z), the HFE haemochromatosis genotype (C282Y, H63D), the vitamin D-binding protein type (GC), the chromosome 9p21 heart disease haplotype and the 17q21.31 H1/H2 lineage. Each row names the primary paper it comes from. On by default.
 
 ## Why
 
@@ -98,13 +98,28 @@ The rules today:
 |---|---|---|---|
 | APOE | rs429358, rs7412 | ε1, ε2, ε3, ε4 | 8346443, 9343467 |
 | TAS2R38 | rs713598 (codon 49), rs1726866 (262), rs10246939 (296) | PAV (taster), AVI (non-taster) | 12595690, 15723792 |
+| APOL1 | rs73885319 (S342G), rs60910145 (I384M) | G0, G1 | 20647424 |
+| SERPINA1 | rs17580 (S, Glu264Val), rs28929474 (Z, Glu342Lys) | M, S, Z (PiMM to PiZZ) | 14522813 |
+| HFE | rs1800562 (C282Y), rs1799945 (H63D) | wt, C282Y, H63D | 8696333 |
+| GC | rs7041 (Asp432Glu), rs4588 (Thr436Lys) | Gc1F, Gc1S, Gc2 | 24256378 |
+| CAD9p21 | rs10757278, rs1333049 | nonrisk, risk | 17478679, 17554300, 17478681 |
+| MAPT | rs1052553, rs8070723 | H1, H2 | 15654335, 19912324, 21685912 |
+
+The six rules after TAS2R38 need no phase. Their sites lie close together on one copy (the two APOL1 G1 changes were in perfect linkage disequilibrium in Genovese et al. 2010; the 9p21 and 17q21.31 tags each mark one haplotype), or, for HFE, a double heterozygote reads as one change on each copy. A copy the rule does not describe, such as a 9p21 copy with only one of the two risk alleles, is `other_haplotype`, not read. What each rule leaves out, said in its note:
+
+- APOL1 G2 (rs71785313) is a 6-base deletion. The rule table reads single-base sites only, so G2 is not read, and a G0/G1 result says the other copy could still be G2 (the high-risk G1/G2).
+- SERPINA1: M is any copy with neither S nor Z; rarer deficiency and null alleles are not read. A serum level confirms a deficiency.
+- HFE: the C282Y homozygote is also a secondary finding (`assets/acmg_sf.tsv`, [step 23](23-clinical-filter.md)); the rule gives the reading of every genotype.
+- GC: the protein levels are those of Powe et al. (2013), whose monoclonal assay was questioned in later letters. A protein type, not a vitamin D deficiency.
+
+Two more markers of the planned list are not rules here: the LPA KIV-2 4925G>A null allele (Coassin et al. 2017) lies inside the KIV-2 repeat, whose copies a gVCF genotype at one position cannot tell apart, and the SMN1 g.27134T>G marker (Luo et al. 2014) lies in SMN1, whose reads cannot be told from SMN2's at that site. Both need a copy-aware reader beside [step 46](46-lpa.md) and [step 35](35-paralogs.md)'s SMN1 copy number, and are not read today.
 
 Kim et al. (2003) found five TAS2R38 haplotypes worldwide. The rule reads the two common ones. A copy with AAV, AAI, PVI or a rarer one is `other_haplotype`, so the GRCh38 reference itself, which carries AAI (Ala49, Ala262, Ile296), is not read when every site matches it. The readings follow Bufe et al. (2005): PAV/PAV rated PTC and PROP the most bitter, PAV/AVI recognised them as bitter at nearly the same concentrations with a lower and more variable intensity, and AVI/AVI recognised PTC only at far higher concentrations.
 
 ### Checks on the rule table
 
 - `bin/traits_report.py --check-table assets/traits.tsv --rules assets/genotype_rules.tsv` (also run by every step-42 run and by `tests/test_traits_report.py`): every haplotype allele is its site's ref or alt, the combination lines are exactly the pairs the genotypes can give (none missing, none that can never be read), and a site that is also a traits table row has the row's position and bases.
-- `scripts/ci/check-rule-alleles.sh` checks every site against dbSNP: the rsID at that GRCh38 position, ref as dbSNP's REF and alt among its ALT alleles. A pair written the wrong way round, or as the minus-strand bases (TAS2R38 lies on the minus strand, where the papers name the codon bases), fails with the reason. The dbSNP records it compares with sit in the script, taken from dbSNP's GRCh38 VCF of the build `CONSUMER_DBSNP_BUILD` pins in `versions.env` (b157); `--online` reads them again over HTTPS and fails when they differ, and the e2e case `genotype-rules-1-phase` runs it. A C/G or A/T site is its own complement, so there a strand mistake keeps valid alleles: the check prints a note for each such site (rs713598 is one), and its haplotype alleles rest on the codon: Pro49 has C at the first base of codon 49 on the coding strand (NM_176817.5 c.145C, where Ala49 has G), so the PAV base on GRCh38 is its complement, G.
+- `scripts/ci/check-rule-alleles.sh` checks every site against dbSNP: the rsID at that GRCh38 position, ref as dbSNP's REF and alt among its ALT alleles. A pair written the wrong way round, or as the minus-strand bases (TAS2R38 lies on the minus strand, where the papers name the codon bases), fails with the reason. The dbSNP records it compares with sit in the script, taken from dbSNP's GRCh38 VCF of the build `CONSUMER_DBSNP_BUILD` pins in `versions.env` (b157); `--online` reads them again over HTTPS and fails when they differ, and the e2e case `genotype-rules-1-phase` runs it. A C/G or A/T site is its own complement, so there a strand mistake keeps valid alleles: the check prints a note for each such site (rs713598 is one), and its haplotype alleles rest on the codon: Pro49 has C at the first base of codon 49 on the coding strand (NM_176817.5 c.145C, where Ala49 has G), so the PAV base on GRCh38 is its complement, G. The other such sites: rs17580 (SERPINA1 S, minus strand: Glu264 GAA, Val264 GTA, so the S base on GRCh38 is the complement of T, A), rs1799945 (HFE H63D, plus strand: His63 CAT, Asp63 GAT, so D is G) and rs1333049 (no gene; the risk allele C is the plus-strand base of the WTCCC 2007 record).
 
 ### Adding a rule
 
@@ -120,13 +135,13 @@ The APOE line is the APOE rule of `assets/genotype_rules.tsv`, written into the 
 
 ## Runtime
 
-Seconds: bcftools reads the gVCF at the table's positions through its index (35 rows and 5 rule sites), and WhatsHap, when a rule needs it, reads the BAM over three sites within 741 bases.
+Seconds: bcftools reads the gVCF at the table's positions through its index (35 rows and 17 rule sites), and WhatsHap, when a rule needs it, reads the BAM over three sites within 741 bases.
 
 ## Notes
 
 - A reading is what the cited studies found on average in the people they studied. It is not a diagnosis, and for most traits it says little about one person.
 - Rows marked `ancestry` read differently in other populations; their note says how. Lactase persistence is the clearest case: -13910T explains it in Europeans, and the three African alleles have their own rows.
-- Each traits table row is read alone. The genotype rules read several sites together: APOE, and the TAS2R38 taster haplotype with read-backed phase. Two different MC1R red-hair variants on the same or on different copies are still read one by one; their note says so.
+- Each traits table row is read alone. The genotype rules read several sites together: APOE, the TAS2R38 taster haplotype with read-backed phase, and the six rules of the table above. Two different MC1R red-hair variants on the same or on different copies are still read one by one; their note says so.
 - SNVs only; the table has no indel and no chrX, chrY or chrM row.
 - Positions with no genotype (no reads, or a no-call) are listed as not read. On the e2e fixture, a small slice of the HG002 genome, only the table positions inside its slices are read, and the e2e case checks their genotypes against the GIAB truth.
 - The licence: the readings, notes and table are this project's own text, GPL-3.0 like the rest of the repository.

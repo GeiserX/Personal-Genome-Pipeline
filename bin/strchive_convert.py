@@ -11,7 +11,7 @@ on the loci. This writes that file: one entry per ExpansionHunter locus.
 
   strchive_convert.py --eh STRchive-disease-loci-<v>.hg38.expansionhunter.json \\
                       --loci STRchive-loci-<v>.json --release <v> --out catalog.json \\
-                      [--ranges str_ranges.tsv]
+                      [--ranges str_ranges.tsv] [--extra assets/str_extra_loci.json]
 
 Each entry:
   LocusId        the gene in capitals (HTT, FMR1, C9ORF72, RFC1), the names
@@ -58,6 +58,15 @@ intermediate_min and intermediate_max (STRchive's own, as published, empty
 where it gives none) and no_thresholds (the entry's NoThresholds).
 tests/test_str_ranges.py checks it against the catalog.
 
+--extra appends the repeats STRchive leaves out, from a catalog in the same
+ExpansionHunter form (assets/str_extra_loci.json: the CFTR intron 9 TG and
+poly-T tract, the UGT1A1 promoter TA repeat). Each entry is checked
+(EXTRA_FIELDS present; one region per repeat of its LocusStructure, each a
+whole number of motifs; a VariantId per repeat for a locus of several; no
+name STRchive's loci already use; no thresholds, and a NoThresholds reason,
+because they are read by their counts, not graded by Stranger) and copied
+as it is. Its rows in --ranges carry no STRchive ranges.
+
 One correction to STRchive's motif classes: at RFC1 STRchive lists AAAGG as
 pathogenic, and its own notes say why: AAAGG expansions of 600 or more units
 are seen in CANVAS, while 100 to 380 units are seen in unaffected people
@@ -66,8 +75,8 @@ keeps AAAGG benign, as Cortese et al. 2019 (PMID 30926972) classed it.
 STRchive's AAAGGG is six bases long and is not counted at a five-base locus.
 
 Exits 2, writing nothing (neither file), when an ExpansionHunter locus has no STRchive
-record, two loci get one name, or the pathogenic repeat of a locus cannot be
-told.
+record, two loci get one name, the pathogenic repeat of a locus cannot be
+told, or an --extra entry fails its check.
 """
 import argparse
 import json
@@ -224,6 +233,45 @@ def convert(eh, loci, release):
     return out
 
 
+EXTRA_FIELDS = ("LocusId", "LocusStructure", "ReferenceRegion", "VariantType", "NoThresholds", "Disease",
+                "Source", "SourceId", "SourceDisplay")
+
+
+def extra_entries(extra, cat):
+    """The --extra entries, checked, to append to the converted catalog cat."""
+    if not isinstance(extra, list) or not extra:
+        raise Bad("the extra catalog is not a non-empty list of loci")
+    taken = {v for e in cat for v in [e["LocusId"]] + as_list(e.get("VariantId", []))}
+    out = []
+    for e in extra:
+        lid = e.get("LocusId") if isinstance(e, dict) else None
+        where = f"extra locus {lid if lid else repr(e)}"
+        missing = [k for k in EXTRA_FIELDS if not isinstance(e, dict) or not e.get(k)]
+        if missing:
+            raise Bad(f"{where}: no {', '.join(missing)}")
+        mot = motifs_of(e["LocusStructure"])
+        regions = as_list(e["ReferenceRegion"])
+        types = as_list(e["VariantType"])
+        if not mot or len(mot) != len(regions) or len(types) != len(regions):
+            raise Bad(f"{where}: {len(mot)} repeats in {e['LocusStructure']}, {len(regions)} regions, "
+                      f"{len(types)} variant types")
+        vids = as_list(e.get("VariantId", [lid]))
+        if len(regions) > 1 and len(vids) != len(regions):
+            raise Bad(f"{where}: {len(regions)} repeats need {len(regions)} VariantId names")
+        for m, r in zip(mot, regions):
+            _, a, b = region(r)
+            if not re.fullmatch(r"[ACGT]+", m) or b <= a or (b - a) % len(m):
+                raise Bad(f"{where}: region {r} is not a whole number of {m} motifs")
+        for v in set([lid] + vids):
+            if v in taken:
+                raise Bad(f"{where}: the name {v} is already in the catalog")
+            taken.add(v)
+        if "NormalMax" in e or "PathologicMin" in e:
+            raise Bad(f"{where}: an extra locus is read by its counts and takes no Stranger thresholds")
+        out.append(dict(e))
+    return out
+
+
 RANGE_COLUMNS = ["locus", "source_id", "normal_max", "intermediate_min", "intermediate_max", "pathogenic_min",
                  "no_thresholds"]
 
@@ -237,7 +285,7 @@ def ranges(cat, loci, release):
     lines = [f"# STRchive {release} repeat ranges, one row per ExpansionHunter locus (bin/strchive_convert.py)",
              "\t".join(RANGE_COLUMNS)]
     for e in cat:
-        r = by[e["SourceId"]]
+        r = by[e["SourceId"]] if e.get("Source") == "STRchive" else {}  # an --extra locus has no STRchive ranges
         lines.append("\t".join([e["LocusId"], e["SourceId"], cell(e.get("NormalMax")), cell(r.get("intermediate_min")),
                                 cell(r.get("intermediate_max")), cell(e.get("PathologicMin")),
                                 e.get("NoThresholds", "")]))
@@ -258,6 +306,8 @@ def main(argv=None):
     ap.add_argument("--release", required=True, help="the STRchive release, written into SourceDisplay")
     ap.add_argument("--out", required=True)
     ap.add_argument("--ranges", help="also write the size ranges of each locus to this TSV")
+    ap.add_argument("--extra", help="repeats STRchive leaves out, in the same ExpansionHunter form, appended "
+                                    "(assets/str_extra_loci.json)")
     a = ap.parse_args(argv)
     try:
         with open(a.eh) as f:
@@ -265,6 +315,9 @@ def main(argv=None):
         with open(a.loci) as f:
             loci = json.load(f)
         cat = convert(eh, loci, a.release)
+        if a.extra:
+            with open(a.extra) as f:
+                cat += extra_entries(json.load(f), cat)
         table = ranges(cat, loci, a.release) if a.ranges else None
     except (OSError, ValueError, KeyError, Bad) as e:
         print(f"ERROR: {e}", file=sys.stderr)
@@ -273,8 +326,10 @@ def main(argv=None):
         write(a.ranges, table)
     write(a.out, json.dumps(cat, indent=1) + "\n")
     graded = sum("NormalMax" in e for e in cat)
+    extra = sum(e.get("Source") != "STRchive" for e in cat)
     print(f"STRchive {a.release}: {len(cat)} loci, {graded} with Stranger thresholds, "
-          f"{sum('PathogenicMotifs' in e for e in cat)} read by motif: {a.out}")
+          f"{sum('PathogenicMotifs' in e for e in cat)} read by motif"
+          + (f", {extra} from {a.extra}" if a.extra else "") + f": {a.out}")
     return 0
 
 

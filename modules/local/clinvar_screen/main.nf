@@ -27,11 +27,24 @@
     withName: 'CLINVAR_SCREEN' { ext.min_gq = 20; ext.min_dp = 8 }
     (scripts/06 reads CLINVAR_MIN_GQ and CLINVAR_MIN_DP).
 
+    A multiallelic record is split with the other alt allele written as
+    missing (bcftools norm --multi-overlaps .): a 1/2 call gives 1/. and ./1,
+    never a het, since the other copy holds the other alt (one length of a
+    poly-T tract), not the reference.
+
+    <id>_clinvar_deep_intronic.tsv gives the sample's call at every site of
+    assets/deep_intronic_sites.tsv (known pathogenic deep intronic alleles),
+    carrier or not: a genotype, "ref" with the GQ of the record or of the
+    gVCF block over the site, or why there is no call. gvcf and gvcf_index
+    are [] for a sample without a gVCF.
+
     CLINVAR_CDNA_CHECK, below, runs scripts/06's cDNA read check
     (bin/clip_check.py) on these hits: <id>_clinvar_cdna_check.tsv says for
-    each hit whether its alt reads look like spliced cDNA. It needs the
-    sample's BAM and --gencode_exons; without either it writes every hit as
-    not_checked, with the reason, as scripts/06 does.
+    each hit whether its alt reads look like spliced cDNA, and names a hit at
+    a site of assets/construct_variants.tsv. It needs the sample's BAM and
+    --gencode_exons; without either it writes every hit as not_checked, with
+    the reason, as scripts/06 does. It also runs bin/cdna_scan.py over every
+    exon: <id>_clinvar_cdna_scan.tsv.
 
     Equivalent to: scripts/06-clinvar-screen.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -44,11 +57,13 @@ process CLINVAR_SCREEN {
     publishDir { "${params.outdir}/${meta.id}/clinvar" }, mode: params.publish_dir_mode
 
     input:
-    tuple val(meta), path(vcf), path(vcf_index)
+    // Fixed names for the gVCF: [] stages nothing for a sample without one.
+    tuple val(meta), path(vcf), path(vcf_index), path(gvcf, stageAs: 'sample.g.vcf.gz'), path(gvcf_index, stageAs: 'sample.g.vcf.gz.tbi')
     path(clinvar)
     path(clinvar_index)
     path(reference)
     path(reference_fai)
+    path(sites, stageAs: 'deep_intronic_sites.tsv')
 
     output:
     // The emit keeps its old name (isec_dir) so workflows/pgx.nf needs no change;
@@ -57,6 +72,7 @@ process CLINVAR_SCREEN {
     tuple val(meta), path("${meta.id}_clinvar_hits.tsv"), emit: hits_tsv
     tuple val(meta), path("*_pass.vcf.gz"),      emit: pass_vcf
     tuple val(meta), path("*_pass.vcf.gz.tbi"),  emit: pass_vcf_index
+    tuple val(meta), path("${meta.id}_clinvar_deep_intronic.tsv"), emit: deep_intronic
     path "versions.yml",                         emit: versions
 
     when:
@@ -69,6 +85,7 @@ process CLINVAR_SCREEN {
         error "CLINVAR_SCREEN: ext.min_gq and ext.min_dp must be whole numbers, got '${min_gq}' and '${min_dp}'"
     }
     def floor_line = (min_gq.toString() == '30' && min_dp.toString() == '10') ? '' : "##PGP_CALL_FLOOR=GQ=${min_gq},DP=${min_dp}"
+    def has_gvcf = gvcf ? 'yes' : 'no'
     """
     set -euo pipefail
 
@@ -122,8 +139,9 @@ process CLINVAR_SCREEN {
         LEFT_OUT=\$(bcftools view -H -f "\${FILTER}" -R sample_dropped.tsv ${vcf} | wc -l | tr -d ' ')
         echo "NOTICE: \${LEFT_OUT} '\${FILTER}' records left out: they lie on \$(grep -c . sample_dropped.txt) contigs that ClinVar or the reference lacks (first ones: \$(awk 'NR <= 5' sample_dropped.txt | paste -sd, -))"
     fi
+    # --multi-overlaps .: a 1/2 record splits into 1/. and ./1, not 1/0 and 0/1.
     bcftools view -f "\${FILTER}" -T sample_targets.tsv -Ou ${vcf} | \\
-        bcftools norm -m -any -c w -f ${reference} -Oz -o ${meta.id}_pass.vcf.gz -
+        bcftools norm -m -any --multi-overlaps . -c w -f ${reference} -Oz -o ${meta.id}_pass.vcf.gz -
     bcftools index -t ${meta.id}_pass.vcf.gz
     if [ "\$(bcftools index -n ${meta.id}_pass.vcf.gz)" -eq 0 ]; then
         echo "ERROR: no records left after the '\${FILTER}' filter on the shared contigs" >&2
@@ -176,6 +194,29 @@ process CLINVAR_SCREEN {
     bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t[%GT]\\t%ID\\t%INFO/GENEINFO\\t%INFO/CLNSIG\\t%INFO/CLNREVSTAT\\n' \\
         ${meta.id}_clinvar_hits.vcf >> ${meta.id}_clinvar_hits.tsv
 
+    # Step 3b: the always-report list, as scripts/06 builds it: each site's
+    # record among the split PASS records, else the gVCF record over it (a
+    # reference block gives "ref" with its GQ), else no call, with why.
+    # query_format FILE: '.' for a GQ or DP its header does not define.
+    query_format() {
+        gq=.; dp=.
+        bcftools view -h "\$1" > query_header.txt
+        if grep -q '^##FORMAT=<ID=GQ,' query_header.txt; then gq='[%GQ]'; fi
+        if grep -q '^##FORMAT=<ID=DP,' query_header.txt; then dp='[%DP]'; fi
+        printf '%%CHROM\\\\t%%POS\\\\t%%END\\\\t%%REF\\\\t%%ALT\\\\t[%%GT]\\\\t%s\\\\t%s\\\\n' "\$gq" "\$dp"
+    }
+    awk -F'\\t' -v OFS='\\t' '!/^#/ && \$1 != "chrom" && NF >= 7 { print \$1, \$2 }' ${sites} | sort -k1,1 -k2,2n -u > sites_pos.tsv
+    bcftools query -T sites_pos.tsv -f "\$(query_format ${meta.id}_pass.vcf.gz)" -o sites_vcf.txt ${meta.id}_pass.vcf.gz
+    : > sites_gvcf.txt
+    if [ "${has_gvcf}" = yes ]; then
+        bcftools query -R sites_pos.tsv -f "\$(query_format sample.g.vcf.gz)" -o sites_gvcf.txt sample.g.vcf.gz
+    fi
+    awk -v mode=sites -v gvcf=${has_gvcf} -v min_gq=${min_gq} -f "\$(command -v clinvar_hits.awk)" ${sites} sites_vcf.txt sites_gvcf.txt \\
+        > ${meta.id}_clinvar_deep_intronic.tsv
+    echo "Known deep intronic sites, always reported:"
+    awk -F'\\t' 'NR > 1 { printf "  %s %s %s:%s %s>%s: %s%s\\n", \$5, \$6, \$1, \$2, \$3, \$4, \$8, (\$9 != "" ? ", " \$9 : "") }' \\
+        ${meta.id}_clinvar_deep_intronic.tsv
+
     HITS=\$(grep -c -v '^#' ${meta.id}_clinvar_hits.vcf || true)
     echo "ClinVar pathogenic hits: \${HITS}"
     # Grouped by ClinVar review stars, as scripts/06 prints them
@@ -196,7 +237,7 @@ process CLINVAR_SCREEN {
 
     stub:
     """
-    touch ${meta.id}_clinvar_hits.vcf ${meta.id}_clinvar_hits.tsv
+    touch ${meta.id}_clinvar_hits.vcf ${meta.id}_clinvar_hits.tsv ${meta.id}_clinvar_deep_intronic.tsv
     touch ${meta.id}_pass.vcf.gz
     touch ${meta.id}_pass.vcf.gz.tbi
 
@@ -215,7 +256,12 @@ process CLINVAR_SCREEN {
     most alt reads are clipped that way and few ref reads are. It reads only
     the reads at the hits. pysam is in PYPGX_IMAGE (conf/containers.config).
     bam and bai are [] for a sample without a BAM, exons [] without
-    --gencode_exons: the table then says "not checked" and why.
+    --gencode_exons: the table then says "not checked" and why. construct is
+    assets/construct_variants.tsv: a hit at one of its sites is named in the
+    construct_site column and printed with its counts, whatever the verdict.
+    Then bin/cdna_scan.py reads the reads over every exon and writes
+    <id>_clinvar_cdna_scan.tsv, the loci with reads across two or more exon
+    junctions; ext.cdna_scan = false skips it (the table then says so).
 
     Equivalent to: scripts/06-clinvar-screen.sh, step 4
 */
@@ -224,15 +270,17 @@ process CLINVAR_CDNA_CHECK {
     label 'process_single'
 
     // The table only: CLINVAR_SCREEN's versions.yml is the one in clinvar/.
-    publishDir { "${params.outdir}/${meta.id}/clinvar" }, mode: params.publish_dir_mode, pattern: '*_clinvar_cdna_check.tsv'
+    publishDir { "${params.outdir}/${meta.id}/clinvar" }, mode: params.publish_dir_mode, pattern: '*_clinvar_cdna_*.tsv'
 
     input:
     // Fixed names: a samplesheet path may hold any character, and these go on a command line.
     tuple val(meta), path(hits_tsv), path(bam, stageAs: 'sample.bam'), path(bai, stageAs: 'sample.bam.bai')
     path(exons, stageAs: 'exons.bed')
+    path(construct, stageAs: 'construct_variants.tsv')
 
     output:
     tuple val(meta), path("${meta.id}_clinvar_cdna_check.tsv"), emit: cdna_check
+    tuple val(meta), path("${meta.id}_clinvar_cdna_scan.tsv"),  emit: cdna_scan
     path "versions.yml",                                         emit: versions
 
     when:
@@ -242,8 +290,10 @@ process CLINVAR_CDNA_CHECK {
     def reads = !bam ? "--skip 'no BAM for this sample in the samplesheet'" :
                 !exons ? "--skip 'no GENCODE exons (--gencode_exons)'" :
                 "--bam ${bam} --exons ${exons}"
+    def scan = task.ext.cdna_scan == false ? "--skip 'ext.cdna_scan = false'" : reads
     """
-    clip_check.py --hits ${hits_tsv} --out ${meta.id}_clinvar_cdna_check.tsv ${reads}
+    clip_check.py --hits ${hits_tsv} --out ${meta.id}_clinvar_cdna_check.tsv --construct ${construct} ${reads}
+    cdna_scan.py --out ${meta.id}_clinvar_cdna_scan.tsv ${scan}
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -253,7 +303,7 @@ process CLINVAR_CDNA_CHECK {
 
     stub:
     """
-    touch ${meta.id}_clinvar_cdna_check.tsv
+    touch ${meta.id}_clinvar_cdna_check.tsv ${meta.id}_clinvar_cdna_scan.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

@@ -29,7 +29,19 @@ copy-number locus.
      them, cut out and run on tests/fixtures/cn/, writes the known count of
      each, and a row shifted by 1 kb no longer matches its fixture; the
      PARASCOPY module runs the same list; the CCL3L1 reading names no
-     disease (a planted 'HIV' is caught).
+     disease (a planted 'HIV' is caught);
+  9. the interval rows (scripts/ci/build-cn-intervals.py): a small ClinGen
+     BED with a 'chrx' row converts to rows on chrX that load, the same rows
+     left as 'chrx' are refused, and an unknown contig stops the build; the
+     committed rows are the ClinGen regions plus the named hand rows, with
+     no target in a breakpoint row; made-up depths call a 22q11.2 A-D
+     deletion (1 copy), a 17p12 duplication (3) and 2 for both unaltered;
+     AZFc on a male at half its DAZ depth is a deletion, AZFa a male's one
+     copy, every chrY row on a female not applicable and without a sex not
+     assessed; `intervals` over one bedcov table writes one line per row and
+     a row with a broken control does not stop the others; the interval
+     block of step 35, cut out and run, writes that table, and the PARASCOPY
+     module runs the same commands.
 
 Run: python3 tests/test_copy_number.py
 """
@@ -206,7 +218,9 @@ def owner_violations(cat, models):
 def main():
     # 1. the catalog
     cat = cn.load_catalog(CATALOG)
-    check("catalog: the six loci", list(cat) == ["HBA", "LPA_KIV2", "RHD"] + DOSAGE, list(cat))
+    check("catalog: the six gene and dosage loci first, then the interval rows",
+          list(cat)[:6] == ["HBA", "LPA_KIV2", "RHD"] + DOSAGE
+          and all(r["kind"] == "interval" and r["_passes"] == ["."] for r in list(cat.values())[6:]), list(cat)[:8])
     for loc, r in cat.items():
         check(f"catalog {loc}: owner cn-depth, cross_check named, PMIDs numbers or '.'",
               r["owner"] == "cn-depth" and re.fullmatch(r"none|[a-z]+:[A-Za-z0-9_]+(,[a-z]+:[A-Za-z0-9_]+)*",
@@ -467,8 +481,8 @@ def main():
             if loc != "RHD":   # step 41's report imports the engine
                 check(f"{path}: copy_number.py call --locus {loc}", f"copy_number.py call --locus {loc}" in text)
             passes = ["" if p == "." else p for p in cat[loc]["_passes"]]
-            if loc == "HBA":   # and the dosage loop's two passes (section 8)
-                passes += ["", "-Q 1"]
+            if loc == "HBA":   # and the dosage loop's two passes (section 8), and the interval pass (section 9)
+                passes += ["", "-Q 1", ""]
             # the commands only: options, then a path, a quoted argument or a variable
             calls = [o for o, arg in re.findall(r"samtools bedcov((?: -[A-Za-z](?: \d+)?)*) (\S+)", text)
                      if re.match(r'["$/]|\S+\.bed\b', arg)]
@@ -478,6 +492,7 @@ def main():
               not re.search(r"(hba_copy_number|lpa_kiv2)\.py (bed|check|estimate)", text))
 
     dosage(cat, read)
+    intervals(cat, read)
 
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
     return 1 if FAILS else 0
@@ -581,6 +596,207 @@ def dosage(cat, read):
         except ValueError as e:
             got = str(e)
         check(f"dosage {loc}: shifted 1 kb, its fixture is refused", "regions differ" in got, got)
+
+
+# Section 9: the interval rows.
+BUILD = os.path.join(REPO, "scripts", "ci", "build-cn-intervals.py")
+SMALL_BED = """track name="test"
+#chrom\tstart\tend\tname\tscore\tstrand\tthickStart\tthickEnd\titemRgb
+chr22\t18159724\t18924717\tBP-A\t0\t.\t18159724\t18924717\t0,0,0
+chr22\t18924718\t21111383\t22q11.2 recurrent (DGS) region (proximal, A-D) (includes TBX1)\t0\t.\t18924718\t21111383\t255,111,0
+chr22\t21111384\t21562827\tBP-D\t0\t.\t21111384\t21562827\t0,0,0
+chrx\t6527561\t6537770\tXp22.31 distal breakpoint\t0\t.\t6527561\t6537770\t0,0,0
+chrx\t6537771\t8156913\tXp22.31 recurrent region (includes STS)\t0\t.\t6537771\t8156913\t255,111,0
+"""
+HAND = ["1p36_terminal", "Xq28_MECP2", "GJB6_D13S1830", "CFTR_dele2_3", "HBB_exon3_del", "AZFa", "AZFb", "AZFc_DAZ"]
+STUB_IV = r"""
+run_in() {
+  while [ $# -gt 0 ]; do case $1 in -v|--cpus|--memory) shift 2 ;; *) break ;; esac; done
+  shift
+  case "$1 $2" in
+    "python3 /pgp-bin/copy_number.py") shift 2; python3 "${REPO}/bin/copy_number.py" "$@" ;;
+    "samtools bedcov") shift 2; python3 "${FAKECOV}" "$1" ;;
+    *) return 1 ;;
+  esac
+}
+cpath() { printf '%s' "$1"; }
+"""
+# fakecov BED: samtools bedcov over BED at 30x, the segments named in FAKE_HALF at 15x, in FAKE_ZERO at 0.
+FAKECOV = r"""
+import os, sys
+half = set(os.environ.get("FAKE_HALF", "").split(","))
+zero = set(os.environ.get("FAKE_ZERO", "").split(","))
+for line in open(sys.argv[1]):
+    c = line.rstrip("\n").split("\t")
+    d = 0.0 if c[3] in zero else 15.0 if c[3] in half else 30.0
+    print("\t".join(c + [str(int(d * (int(c[2]) - int(c[1]))))]))
+"""
+
+
+def depths(r, target=30.0, control=30.0):
+    tg = {n for n, *_ in r["_targets"]}
+    return {n: target if n in tg else control for *_, n in cn.regions(r)}
+
+
+def intervals(cat, read):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("build_cn_intervals", BUILD)
+    bld = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bld)
+    rows = bld.build(SMALL_BED.splitlines(True), [], [], [], [])
+    check("converter: the two region rows of the small BED, its chrx row on chrX",
+          [(r["locus"], r["chrom"]) for r in rows[:2]] == [("22q11.2_DGS_proximal_A-D", "chr22"), ("Xp22.31", "chrX")],
+          [(r["locus"], r["chrom"]) for r in rows])
+    with tempfile.TemporaryDirectory() as t:
+        p = os.path.join(t, "c.tsv")
+        write_catalog(p, rows)
+        try:
+            got = len(cn.load_catalog(p))
+        except cn.CatalogError as e:
+            got = str(e)
+        check("converter: its rows load", got == len(rows), got)
+        write_catalog(p, [dict(r, chrom="chrx") if r["chrom"] == "chrX" else r for r in rows])
+        try:
+            cn.load_catalog(p)
+            got = "loaded"
+        except cn.CatalogError as e:
+            got = str(e)
+        check("converter: the same rows left as 'chrx' are refused", "chrom 'chrx'" in got, got)
+    try:
+        bld.build(SMALL_BED.replace("chrx", "chrQ").splitlines(True), [], [], [], [])
+        got = "built"
+    except bld.BuildError as e:
+        got = str(e)
+    check("converter: an unknown contig stops the build", "'chrQ' is not a GRCh38 chromosome" in got, got)
+    check("converter: no target piece overlaps a breakpoint row",
+          all(not (s < 18924717 and 18159724 < e) and not (s < 21562827 and 21111384 < e) for r in rows[:1]
+              for _, s, e, _ in cn.parse_row(r)["_targets"]))
+
+    iv = [r for r in cat.values() if r["kind"] == "interval" and r["_passes"] == ["."]]
+    names = [r["locus"] for r in iv]
+    check("interval rows: the ClinGen regions (over 70), then the hand rows", len(iv) > 78 and names[-8:] == HAND,
+          (len(iv), names[-8:]))
+    check("interval rows: each cross-checked by CNVpytor, step 18",
+          all(r["cross_check"] == "cnvpytor:cnvs" for r in iv))
+    check("interval rows: the 15q13.3 rows keep CHRNA7 (a Parascopy model) out of their targets",
+          all(not (32154858 < e and s < 32178018) for r in iv if r["locus"].startswith("15q13.3")
+              for _, s, e, _ in r["_targets"])
+          and any(r["locus"].startswith("15q13.3") for r in iv))
+    hits = [(r["locus"], o["locus"]) for r in iv for _, cs, ce, _ in r["_controls"] for o in iv
+            if o is not r and o["chrom"] == r["chrom"] and any(ts < ce and cs < te for _, ts, te, _ in o["_targets"])]
+    check("interval rows: no row's control sits on another row's target (Xq28's left flank off Xq28_MECP2)",
+          not hits, hits)
+
+    a_d, p17 = cat["22q11.2_DGS_proximal_A-D"], cat["17p12_HNPP_CMT1A"]
+    for r, target, want, change in ((a_d, 15.0, 1, "deletion"), (p17, 45.0, 3, "duplication"),
+                                    (a_d, 30.0, 2, "no change"), (p17, 30.0, 2, "no change")):
+        b = cn.assess(r, depths(r, target))
+        line = cn.interval_line(r, b)
+        check(f"interval {r['locus']}: targets at {target}x over 30x controls is {want} copies, {change}",
+              (b["status"], b["copies"], line[8]) == ("called", want, change), (b, line))
+    az = cat["AZFc_DAZ"]
+    m = depths(az, 15.0 / 4, 15.0)
+    check("AZFc on a male: four DAZ copies at a single copy's depth in all is 4 copies",
+          cn.assess(az, {n: (15.0 if n in {x for x, *_ in az["_targets"]} else 15.0) for n in m}, None, "male")
+          ["copies"] == 4)
+    half = {n: (7.5 if n in {x for x, *_ in az["_targets"]} else 15.0) for n in m}
+    b = cn.assess(az, half, None, "male")
+    check("AZFc on a male at half its DAZ depth: 2 copies, a deletion (gr/gr or b2/b3)",
+          (b["copies"], cn.interval_line(az, b)[8]) == (2, "deletion"), b)
+    b = cn.assess(cat["AZFa"], depths(cat["AZFa"], 15.0, 15.0), None, "male")
+    check("AZFa on a male: one copy, no change", (b["copies"], b["expected"]) == (1, 1), b)
+    b = cn.assess(cat["AZFa"], depths(cat["AZFa"], 0.0, 15.0), None, "male")
+    check("AZFa on a male with no read over it: 0 copies, a deletion",
+          (b["copies"], cn.interval_line(cat["AZFa"], b)[8]) == (0, "deletion"), b)
+    for loc in ("AZFa", "AZFb", "AZFc_DAZ"):
+        b = cn.assess(cat[loc], depths(cat[loc], 15.0, 15.0), None, "female")
+        check(f"{loc} on a female: not applicable", (b["status"], b["reason"]) == ("not applicable", "no_y"), b)
+        b = cn.assess(cat[loc], depths(cat[loc], 15.0, 15.0), None, "unknown")
+        check(f"{loc} with no sex: not assessed", (b["status"], b["reason"]) == ("not assessed", "sex_unknown"), b)
+    xp = cat["Xp22.31"]
+    b = cn.assess(xp, depths(xp, 15.0, 15.0), None, "male")
+    check("Xp22.31 on a male at his one X's depth: 1 copy, no change", (b["copies"], b["expected"]) == (1, 1), b)
+    b = cn.assess(xp, depths(xp, 0.0, 15.0), None, "male")
+    check("Xp22.31 on a male with no read there: 0 copies, a deletion (the STS deletion)", b["copies"] == 0, b)
+
+    with tempfile.TemporaryDirectory() as t:
+        fake = os.path.join(t, "fakecov.py")
+        with open(fake, "w") as f:
+            f.write(FAKECOV)
+        bed = os.path.join(t, "r.bed")
+        out = subprocess.run([sys.executable, SCRIPT, "bed", "--kind", "interval"], capture_output=True, text=True)
+        open(bed, "w").write(out.stdout)
+        check("bed --kind interval: every segment of every interval row, once",
+              out.returncode == 0 and len(out.stdout.splitlines()) == sum(len(cn.regions(r)) for r in iv), out.stderr)
+        halfs = ",".join(n for n, *_ in a_d["_targets"])
+        env = dict(os.environ, FAKE_HALF=halfs, FAKE_ZERO=p17["_controls"][0][0])
+        cov = os.path.join(t, "cov.tsv")
+        with open(cov, "w") as f:
+            subprocess.run([sys.executable, fake, bed], stdout=f, env=env, check=True)
+        tab = os.path.join(t, "iv.tsv")
+        out = subprocess.run([sys.executable, SCRIPT, "intervals", "--bedcov", cov, "--sex", "female", "--out", tab],
+                             capture_output=True, text=True)
+        lines = open(tab).read().splitlines() if os.path.exists(tab) else []
+        rows = {x.split("\t")[0]: x.split("\t") for x in lines[1:]}
+        check("intervals: exit 0, the header, one line per interval row",
+              out.returncode == 0 and lines[:1] == ["\t".join(cn.INTERVAL_COLUMNS)] and list(rows) == names,
+              (out.returncode, out.stderr[-400:], lines[:1]))
+        check("intervals: the 22q11.2 A-D deletion at 1 copy", rows.get(a_d["locus"], [""] * 11)[5:9]
+              == ["called", "1", "2", "deletion"], rows.get(a_d["locus"]))
+        check("intervals: a control with no read leaves 17p12 not assessed (broken_control), the rest called",
+              rows.get(p17["locus"], [""] * 11)[10] == "broken_control"
+              and rows.get("3q29", [""] * 11)[5:9] == ["called", "2", "2", "no change"], rows.get(p17["locus"]))
+        check("intervals: chrY rows on a female are not applicable",
+              all(rows.get(x, [""] * 11)[5] == "not applicable" for x in ("AZFa", "AZFb", "AZFc_DAZ")))
+        out = subprocess.run([sys.executable, SCRIPT, "intervals", "--failed", "--out", tab], capture_output=True, text=True)
+        lines = open(tab).read().splitlines()[1:]
+        check("intervals --failed: every row not assessed, check_failed",
+              out.returncode == 0 and len(lines) == len(iv) and all(x.split("\t")[10] == "check_failed" for x in lines))
+
+        step, module = read("scripts/35-paralogs.sh"), read("modules/local/parascopy/main.nf")
+        blk = re.search(r'\n(INTERVAL_OUT=.*?\nrm -rf "\$INTERVAL_WORK"\n)', step, re.S)
+        check("step 35 holds the interval block", blk is not None)
+        env = dict(os.environ, REPO=REPO, FAKECOV=fake, OUTDIR=t, SAMPLE="S", PGP_ROOT=REPO, PARASCOPY_IMAGE="img",
+                   BAM=os.path.join(t, "S.bam"), SEX="male", FAKE_HALF=",".join(n for n, *_ in az["_targets"]))
+        out = subprocess.run(["bash", "-euo", "pipefail", "-c", STUB_IV + (blk.group(1) if blk else "false\n")],
+                             capture_output=True, text=True, env=env)
+        tab = os.path.join(t, "S_cn_intervals.tsv")
+        rows = {x.split("\t")[0]: x.split("\t") for x in open(tab).read().splitlines()[1:]} if os.path.exists(tab) else {}
+        check("step 35 interval block: exit 0, one line per interval row", out.returncode == 0 and list(rows) == names,
+              (out.returncode, out.stderr[-600:]))
+        # AZFc's DAZ at 15x against controls at 30x on a male: 4 x 15 / 30 = 2 copies of 4.
+        check("step 35 interval block on a male: AZFc at half its depth is a deletion, AZFa one copy",
+              rows.get("AZFc_DAZ", [""] * 11)[6:9] == ["2", "4", "deletion"]
+              and rows.get("AZFa", [""] * 11)[6:9] == ["1", "1", "no change"], (rows.get("AZFc_DAZ"), rows.get("AZFa")))
+        good = os.path.join(t, "good_cn_intervals.tsv")
+        if os.path.exists(tab):
+            os.replace(tab, good)
+        env["FAKECOV"] = "/nonexistent.py"
+        out = subprocess.run(["bash", "-euo", "pipefail", "-c", STUB_IV + (blk.group(1) if blk else "false\n")],
+                             capture_output=True, text=True, env=env)
+        lines = open(tab).read().splitlines()[1:] if os.path.exists(tab) else []
+        check("step 35 interval block with a failed bedcov: exit 0, every row check_failed",
+              out.returncode == 0 and len(lines) == len(iv) and all(x.split("\t")[10] == "check_failed" for x in lines),
+              (out.returncode, out.stderr[-400:]))
+        for path, text in (("scripts/35-paralogs.sh", step), ("modules/local/parascopy/main.nf", module)):
+            for cmd in ("copy_number.py bed --kind interval", "copy_number.py intervals --bedcov",
+                        "copy_number.py intervals --failed"):
+                check(f"{path}: {cmd}", cmd in text)
+        # collect_summary: step 35's section carries the interval rows with a change
+        import collect_summary as cs
+        sd = os.path.join(t, "sample")
+        os.makedirs(os.path.join(sd, "paralogs"))
+        with open(os.path.join(sd, "paralogs", "S_smn_copy_number.tsv"), "w") as f:
+            f.write("chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\t"
+                    "homologous_regions\n")
+        if os.path.exists(good):
+            os.replace(good, os.path.join(sd, "paralogs", "S_cn_intervals.tsv"))
+        _, data = cs.sec_parascopy(sd, "S")
+        ci = data.get("cn_intervals") or {}
+        check("collect_summary: step 35's section lists the interval rows with a change (AZFc) and counts the rest",
+              [c["locus"] for c in ci.get("changes", [])] == ["AZFc_DAZ"] and ci.get("rows") == len(iv), ci)
+        check("PARASCOPY module: the samplesheet sex goes to the interval rows",
+              "def sex = meta.sex in ['male', 'female'] ? meta.sex : 'unknown'" in module and "--sex ${sex}" in module)
 
 
 if __name__ == "__main__":
