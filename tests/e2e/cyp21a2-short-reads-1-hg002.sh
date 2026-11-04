@@ -86,8 +86,10 @@ if [ "$(col "$U" status)" = called ]; then
   check_eq "unmodified: 2 CYP21A2 copies, module total 4, no finding" \
     "$(col "$U" cyp21a2_copies)/$(col "$U" module_total)/$(col "$U" finding)" "2/4/none"
 else
-  check_eq "unmodified: not called, so not assessed (never a finding)" "$(col "$U" status)/$(col "$U" finding)" \
-    "not assessed/."
+  # not assessed only for a depth reason the engine names, never a failed check (check_failed)
+  check_eq "unmodified: not called, so not assessed for a depth reason (never a finding)" \
+    "$(col "$U" status)/$(col "$U" finding)/$(col "$U" reason | grep -xE 'psv_low_depth|low_control_depth|controls_disagree|between_counts')" \
+    "not assessed/./$(col "$U" reason)"
 fi
 check_eq "planted In2G conversion: called, a possible conversion" "$(col "$C" status)/$(col "$C" finding)" \
   "called/conversion"

@@ -1023,6 +1023,15 @@ def psv(cat, read):
         check("couple screen: the failed table is no finding and says not assessed",
               got.get("fail", (["x"], ""))[0] == [] and got.get("fail", ([], ""))[1].startswith("CYP21A2 not assessed"),
               got.get("fail"))
+        if os.path.exists(tabs["normal"]):
+            bad = os.path.join(t, "bad.tsv")
+            open(bad, "w").write(open(tabs["normal"]).read().replace("finding\tnone", "finding\tlost"))
+            try:
+                couple_report.cyp21a2_finding(bad, genes)
+                got = "read"
+            except SystemExit as e:
+                got = f"exit {e.code}"
+            check("couple screen: a called table with an unknown finding stops the screen (exit 2)", got == "exit 2", got)
         check("couple screen: a CYP21A2 finding needs CYP21A2 in the carrier list",
               couple_report.cyp21a2_finding(tabs["deletion"], {})[0] == [] if os.path.exists(tabs["deletion"]) else False)
 

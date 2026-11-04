@@ -414,6 +414,9 @@ def cyp21a2_finding(path, genes):
     what = "CYP21A2 %s copies, RCCX module total %s of %s" % (t.get("cyp21a2_copies", "."), t.get("module_total", "."),
                                                              t.get("expected_total", "."))
     kind = t.get("finding")
+    if kind not in ("none", "deletion", "conversion", "pseudogene_deletion"):
+        die(["%s: a called CYP21A2 table with the finding %r (none, deletion, conversion or pseudogene_deletion)"
+             % (path, kind)])
     if kind not in ("deletion", "conversion") or "CYP21A2" not in genes:
         return [], what
     two = t.get("cyp21a2_copies") == "0"

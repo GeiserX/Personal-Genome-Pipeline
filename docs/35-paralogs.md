@@ -163,7 +163,7 @@ The `finding`:
 | `conversion` | a site's estimate lies 0.6 copies or more under the others' count (or under 2) | a possible conversion at that site; `conversion_sites` names it |
 | `pseudogene_deletion` | the module total is under 4 with CYP21A2 kept at every site | a CYP21A1P deletion, common and not a carrier finding |
 
-The ratio of a site is its estimate over the median of the sites, so one copy converted out of two reads 0.5. A site needs 30 reads (CYP21A2 and CYP21A1P bases together); with no site there the row is not assessed (`psv_low_depth`). Which chromosome carries a change is never said, and a change away from the six sites is not seen. A PacBio HiFi BAM gets CYP21A2 from Paraphase (step 35b) instead, which phases the copies.
+The ratio of a site is its estimate over the median of the sites, so one copy converted out of two reads 0.5. A site needs 30 reads (CYP21A2 and CYP21A1P bases together); with no site there the row is not assessed (`psv_low_depth`). Which chromosome carries a change is never said, and a change away from the six sites is not seen. The row has no mapping quality 0 check yet, as HBA has: a BAM from an aligner that leaves out the reads fitting both genes (novoalign by default) would give a low module total, which can read as a deletion. Use minimap2 or BWA-MEM. A PacBio HiFi BAM gets CYP21A2 from Paraphase (step 35b) instead, which phases the copies.
 
 **A research estimate, not a diagnostic test.** A deletion or a conversion needs a clinical test (MLPA, long-range PCR or targeted sequencing).
 
