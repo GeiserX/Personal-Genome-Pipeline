@@ -78,9 +78,10 @@ def index_of(names):
 
 def sample_files(sample_dir, sample):
     """(reads, vcf, sv_vcf) of a sample folder, by the names the steps write,
-    None for one that is not there: the files owngenome-view.sh picks when the
-    environment names none, and the ones the live site's viewer
-    (bin/owngenome_live_viewer.py) serves."""
+    None for one that is not there: the default aligned/ and vcf/ folders, as
+    owngenome-view.sh picks them with none of READS, VCF, SV_VCF, ALIGN_DIR or
+    VCF_DIR set, and the ones the live site's viewer (bin/owngenome_live_viewer.py)
+    serves."""
     def first(*names):
         return next((p for p in (os.path.join(sample_dir, n) for n in names) if os.path.isfile(p)), None)
     return (first(f"aligned/{sample}_sorted.bam", f"aligned/{sample}_sorted.cram"),

@@ -625,12 +625,13 @@ def exomiser_html(d, sample):
                     f"</td><td>{E(g['phenotype_score'])}</td>") if i == 0 else "<td></td>" * 5
             rows.append(f"      <tr>{lead}<td>{E(v['variant'])} {E(v['genotype'])}<br><span style=\"font-size:12px;"
                         f"color:#666\">{E(v['consequence'])} {E(v['hgvs'])}</span></td><td>{E(v['acmg'])}</td>"
-                        f"<td>{E(v['disease'])}</td></tr>")
+                        f"<td>{E(v['disease'])}</td>{viewer_td_of(v['variant'])}</tr>")
     body = [stat("Symptoms searched", E(exomiser_terms(d)))]
     if rows:
         body += ["    <table>", "      <tr><th>Rank</th><th>Gene</th><th>Inheritance</th><th>Score</th>"
-                 "<th>Symptom match</th><th>Variant</th><th>ACMG (Exomiser)</th><th>Linked disease</th></tr>"]
-        body += rows + ["    </table>"]
+                 "<th>Symptom match</th><th>Variant</th><th>ACMG (Exomiser)</th><th>Linked disease</th>"
+                 f"{VIEWER_TH}</tr>"]
+        body += rows + ["    </table>", VIEWER_NOTE]
     else:
         body.append(stat("Ranked genes", "none passed Exomiser's filters"))
     body += [small_note(EXOMISER_NOTE), small_note(f"Exomiser's own report: exomiser/{sample}_exomiser.html")]

@@ -23,9 +23,10 @@ Checks:
   5. every findings table of the HTML report (ClinVar hits, secondary
      findings, mitochondrial variants, deep intronic sites, the cDNA scan,
      AnnotSV class 4-5 and the calls moved to class 3, slivar's pairs in
-     trans, mosaic alterations) links the locus cell of each row to the
-     viewer at its position, with the note under it; a control with the links
-     removed must fail that check for every table. A file name with a space,
+     trans, mosaic alterations, Exomiser's ranked variants) ends each row
+     with a Viewer cell linking to the row's position, with the note under
+     it; a control with the links removed must fail that check for every
+     table. A file name with a space,
      '#' or '?' is served from its percent-encoded URL.
 
 The igv.js pin is read from versions.env (IGV_JS_VERSION, IGV_JS_SHA256):
@@ -228,6 +229,7 @@ FINDINGS_TABLES = {
     "AnnotSV moved to class 3": ("<th>SV</th><th>AnnotSV class</th>", "chr20:2000-2400"),
     "slivar pairs in trans": ("<th>Gene</th><th>Pair in trans</th>", "chr1:50-90"),
     "mosaic alterations": ("<th>Type</th><th>Arm</th><th>Region</th>", "chr7:1-5000000"),
+    "Exomiser ranking": ("<th>Rank</th><th>Gene</th><th>Inheritance</th>", "chr3:700"),
 }
 
 
@@ -239,7 +241,7 @@ def findings_report(work):
     os.makedirs(d)
     summ = collect_summary.collect("S", d)
     S = summ["sections"]
-    for k in ("clinvar", "clinical", "mito", "annotsv", "slivar", "mosaic"):
+    for k in ("clinvar", "clinical", "mito", "annotsv", "slivar", "mosaic", "exomiser"):
         S.setdefault(k, {"title": k, "step": "-", "data": {}})
         S[k]["state"] = "ok"
     S["clinvar"]["data"] = {
@@ -268,6 +270,10 @@ def findings_report(work):
     S["mosaic"]["data"] = {"status": "assessed", "calls_reported": "1", "floor": "0.05", "depth": "30",
                            "calls": [{"type": "Loss", "arms": "7q", "chrom": "chr7", "start": "1", "end": "5000000",
                                       "length_mb": "5.0", "cell_fraction": "0.2"}]}
+    S["exomiser"]["data"] = {"terms": [{"id": "HP:0001250", "label": "Seizure"}], "genes": [
+        {"rank": "1", "gene": "GENEG", "moi": "AD", "exomiser_score": "0.9", "phenotype_score": "0.8",
+         "variants": [{"variant": "chr3:700 C>T", "genotype": "0/1", "consequence": "missense_variant",
+                       "hgvs": "p.(Arg1Cys)", "acmg": "LIKELY_PATHOGENIC", "disease": "a disease"}]}]}
     return render_report.html_report(summ), summ
 
 
@@ -442,7 +448,7 @@ def main():
             check("browser: igv.js read the reference and the VCF",
                   "synthetic.fasta" in served and "S.vcf.gz" in served, served[-1500:])
 
-        # 5. the report's links: a viewer link in the locus cell of every row of every findings table
+        # 5. the report's links: a Viewer cell at the end of every row of every findings table
         import render_report
         html, _ = findings_report(work)
         bad = tables_without_links(html)

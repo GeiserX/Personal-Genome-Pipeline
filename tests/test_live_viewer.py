@@ -16,14 +16,19 @@ Checks:
      with the site's note, not to the local viewer on 127.0.0.1:8765;
   4. opening the page writes one access-log row, and igv.js's byte ranges
      write none;
-  5. a run whose BAM is a symlink out of GENOME_DIR gets no reads track;
+  5. a run whose BAM is a symlink out of GENOME_DIR gets no reads track, a
+     run whose VCF index is one gets no VCF track and neither file is
+     served, and a reference named with a space, '#' and '?' is served from
+     the encoded URL its config gives;
   6. a site started without the viewer flags answers the viewer with 404 and
      the reason, and leaves the report's links as they are;
   7. in a headless Chrome (skipped without Chrome, except in CI) the page,
      loaded from the site, starts igv.js (status ready, 3 tracks) and the
      policy blocks nothing.
-Checks 2 and 3 are also run against planted mistakes (a viewer that serves
-any file of the run folder, a report filter that does nothing) and must fail.
+Checks 2, 3 and 5 are also run against planted mistakes (a viewer that serves
+any file of the run folder, a report filter that does nothing, a viewer that
+compares the still-quoted name, one that serves an index out of GENOME_DIR)
+and must fail.
 
 Run: python3 tests/test_live_viewer.py
 """
@@ -146,6 +151,25 @@ def report_checks(port, auth, label=""):
           and render_report.VIEWER_NOTE not in page, (code, [x for x in page.splitlines() if "viewer" in x][:4]))
 
 
+def outside_checks(port, auth, label=""):
+    """Checks 5: files out of GENOME_DIR are left out; an odd reference name is served."""
+    import json
+    code, _, body = request(port, "/runs/T/viewer/config.json", auth)
+    tracks = json.loads(body).get("tracks") if code == 200 else None
+    check(f"{label}a BAM symlinked out of GENOME_DIR is left out of the config", code == 200 and tracks == [],
+          (code, body[:300]))
+    code, _, body = request(port, "/runs/U/viewer/config.json", auth)
+    cfg = json.loads(body) if code == 200 else {}
+    c2, _, _ = request(port, "/runs/U/viewer/data/2/U.vcf.gz", dict(auth, Range="bytes=0-9"))
+    c3, _, _ = request(port, "/runs/U/viewer/data/3/U.vcf.gz.tbi", dict(auth, Range="bytes=0-9"))
+    check(f"{label}a VCF whose index is symlinked out of GENOME_DIR: no track, neither file served",
+          code == 200 and cfg.get("tracks") == [] and c2 == 404 and c3 == 404, (code, cfg, c2, c3))
+    url = cfg.get("reference", {}).get("fastaURL", "")
+    code, _, body = request(port, f"/runs/U/viewer/{url}", dict(auth, Range="bytes=0-4"))
+    check(f"{label}a reference named with a space, '#' or '?' is served from its encoded URL",
+          url == "data/0/my%20ref%231%3F.fasta" and code == 206 and body == b">chr1", (url, code, body))
+
+
 def mutant_dir(work, name, old, new):
     """A plugin folder holding bin/owngenome_live_viewer.py with one planted mistake (beside a link
     to assets/, which the plugin finds from its own folder)."""
@@ -223,7 +247,7 @@ def main():
         proc.wait(timeout=10)
         proc = None
 
-        # 5. a BAM symlinked out of GENOME_DIR
+        # 5. a BAM, and a VCF index, symlinked out of GENOME_DIR; an odd reference name
         t = f"{gd}/T"
         os.makedirs(f"{t}/aligned")
         os.makedirs(f"{t}/nextflow")
@@ -231,16 +255,20 @@ def main():
         shutil.copy(f"{s}/aligned/S_sorted.bam.bai", f"{work}/outside.bam.bai")
         os.symlink(f"{work}/outside.bam", f"{t}/aligned/T_sorted.bam")
         os.symlink(f"{work}/outside.bam.bai", f"{t}/aligned/T_sorted.bam.bai")
-        flags = ["--root", gd, "--state-dir", f"{work}/state2", "--viewer-fasta", f"{gd}/reference/synthetic.fasta",
-                 "--viewer-igv-js", igv]
+        u = f"{gd}/U"
+        os.makedirs(f"{u}/vcf")
+        os.makedirs(f"{u}/nextflow")
+        shutil.copy(f"{s}/vcf/S.vcf.gz", f"{u}/vcf/U.vcf.gz")
+        shutil.copy(f"{s}/vcf/S.vcf.gz.tbi", f"{work}/outside.vcf.gz.tbi")
+        os.symlink(f"{work}/outside.vcf.gz.tbi", f"{u}/vcf/U.vcf.gz.tbi")
+        odd = f"{gd}/reference/my ref#1?.fasta"
+        shutil.copy(f"{gd}/reference/synthetic.fasta", odd)
+        shutil.copy(f"{gd}/reference/synthetic.fasta.fai", odd + ".fai")
+        flags = ["--root", gd, "--state-dir", f"{work}/state2", "--viewer-fasta", odd, "--viewer-igv-js", igv]
         srv = in_process(flags)
         try:
             p = srv[1].server_address[1]
-            import json
-            code, _, body = request(p, "/runs/T/viewer/config.json")
-            tracks = json.loads(body).get("tracks") if code == 200 else None
-            check("a BAM symlinked out of GENOME_DIR is left out of the config", code == 200 and tracks == [],
-                  (code, body[:300]))
+            outside_checks(p, {})
 
             # 7. headless Chrome, on the site without a password (loopback)
             chrome = tv.find_chrome()
@@ -276,15 +304,16 @@ def main():
         finally:
             stop(*srv)
 
-        # Planted mistakes: checks 2 and 3 must fail on them.
+        # Planted mistakes: checks 2, 3 and 5 must fail on them.
         for name, old, new in (
-                ("serves any file", "        if dm and int(dm.group(1)) < len(files) and "
-                 "os.path.basename(files[int(dm.group(1))]) == dm.group(2):",
+                ("serves any file", "        n = int(dm.group(1)) if dm else len(files)\n",
                  "        if rest and os.path.isfile(os.path.join(d, rest)):\n"
                  "            return serve.send_file(req, head_writer(req), 'application/octet-stream', "
-                 "os.path.join(d, rest))\n        if dm and int(dm.group(1)) < len(files) and "
-                 "os.path.basename(files[int(dm.group(1))]) == dm.group(2):"),
-                ("no report filter", "    app.report_filter(point_links)\n", "")):
+                 "os.path.join(d, rest))\n        n = int(dm.group(1)) if dm else len(files)\n"),
+                ("no report filter", "    app.report_filter(point_links)\n", ""),
+                ("quoted name", "== urllib.parse.unquote(dm.group(2)):", "== dm.group(2):"),
+                ("index out served", "    files = [f if n < 2 or inside(f) else None for n, f in enumerate(files)]\n",
+                 "")):
             pd = mutant_dir(work, name.replace(" ", "-"), old, new)
             srv = in_process(flags[:3] + [f"{work}/state-{name.replace(' ', '-')}"] + flags[4:], pd)
             try:
@@ -294,6 +323,7 @@ def main():
                 try:
                     viewer_checks(p, {}, s)
                     report_checks(p, {})
+                    outside_checks(p, {})
                 finally:
                     globals()["check"] = real
                 check(f"control: the checks fail on the planted mistake '{name}'", not all(quiet), quiet)

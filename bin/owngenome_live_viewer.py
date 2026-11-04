@@ -13,8 +13,8 @@ any device that can reach the site:
 
 The files are the ones owngenome-view.sh picks by default
 (assets/viewer/serve.py sample_files): the run folder's BAM or CRAM, its VCF
-and its SV VCF, each with its index, and the reference. A file outside
-GENOME_DIR (a symlink out of it) is left out. The page and the files carry the
+and its SV VCF, each with its index, and the reference. A track whose file
+or index lies outside GENOME_DIR (a symlink out of it) is left out. The page and the files carry the
 viewer's Content-Security-Policy (serve.CSP): the page talks to this site
 only. The report the site serves (report.html) gets its viewer links pointed
 here. Opening the page writes one access-log row; the byte ranges igv.js reads
@@ -85,7 +85,19 @@ def run_config(run, run_dir, root):
         real = os.path.realpath(p)
         return all(real.startswith(t.rstrip(os.sep) + os.sep) for t in (top, root))
     reads, vcf, sv_vcf = (p if p and inside(p) else None for p in serve.sample_files(run_dir, run))
-    return serve.build_config(run, flag("viewer_fasta"), reads, vcf, sv_vcf)
+    cfg, files = serve.build_config(run, flag("viewer_fasta"), reads, vcf, sv_vcf)
+    # An index beside a track can be a symlink out of GENOME_DIR too: then the track goes, with
+    # its file and its index. Files 0 and 1 are the reference and its .fai (--viewer-fasta, any folder).
+    files = [f if n < 2 or inside(f) else None for n, f in enumerate(files)]
+
+    def nums(t):
+        return [int(t[k].split("/")[1]) for k in ("url", "indexURL") if k in t]
+    for t in cfg["tracks"]:
+        if not all(files[n] for n in nums(t)):
+            for n in nums(t):
+                files[n] = None
+    cfg["tracks"] = [t for t in cfg["tracks"] if all(files[n] for n in nums(t))]
+    return cfg, files
 
 
 def head_writer(req):
@@ -141,8 +153,10 @@ def viewer(req, m):
         if rest == "config.json":
             return send(req, 200, "application/json", json.dumps(cfg, indent=1))
         dm = DATA_RE.fullmatch(rest)
-        if dm and int(dm.group(1)) < len(files) and os.path.basename(files[int(dm.group(1))]) == dm.group(2):
-            return serve.send_file(req, head_writer(req), "application/octet-stream", files[int(dm.group(1))])
+        # The config's URLs quote the name (serve.build_config); the path is still quoted here.
+        n = int(dm.group(1)) if dm else len(files)
+        if n < len(files) and files[n] and os.path.basename(files[n]) == urllib.parse.unquote(dm.group(2)):
+            return serve.send_file(req, head_writer(req), "application/octet-stream", files[n])
     except ValueError as e:
         req.log("viewer", run, status=409)
         return req.deny(409, f"the genome viewer cannot open this run: {e}")

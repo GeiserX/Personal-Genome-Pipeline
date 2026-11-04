@@ -9,7 +9,7 @@
 - its small variants (the VCF from step 3),
 - its structural variants (step 22's consensus, else Manta's VCF from step 4).
 
-It opens at the locus you give. Every findings table of the HTML report (step 24) ends with a Viewer column: the ClinVar hits, the secondary-findings genes, the mitochondrial variants, the deep intronic sites, the cDNA scan, the AnnotSV class 4 and 5 SVs, slivar's pairs in trans and the mosaic alterations. With the viewer running, a click on a row's link opens the reads at that row.
+It opens at the locus you give. Every findings table of the HTML report (step 24) ends with a Viewer column: the ClinVar hits, the secondary-findings genes, the mitochondrial variants, the deep intronic sites, the cDNA scan, the AnnotSV class 4 and 5 SVs, slivar's pairs in trans, the mosaic alterations and Exomiser's ranked variants. With the viewer running, a click on a row's link opens the reads at that row.
 
 The [live site](live-site.md) serves the same viewer for each run, behind its password, so the report's links work from any device that can reach the site (see "From the live site" below).
 
@@ -80,7 +80,7 @@ Then open `http://127.0.0.1:8765/` on your computer. The report's links work the
 
 ## From the live site
 
-`scripts/owngenome-live.sh` starts the [live site](live-site.md) with the viewer: each run has it at `/runs/<run>/viewer/`, behind the site's password, and the report the site serves points its Viewer links there. `bin/owngenome_live_viewer.py` does it with the same page, the same Content-Security-Policy and the same files as `owngenome-view.sh` picks by default (the run folder's BAM or CRAM, its VCF and its SV VCF, each with its index, and `REF_FASTA`). The `READS`, `VCF` and `SV_VCF` overrides do not apply there, and a file that is a symlink out of `GENOME_DIR` is left out. The first start downloads igv.js the same way. `OWNGENOME_LIVE_VIEWER=off` starts the site without it.
+`scripts/owngenome-live.sh` starts the [live site](live-site.md) with the viewer: each run has it at `/runs/<run>/viewer/`, behind the site's password, and the report the site serves points its Viewer links there. `bin/owngenome_live_viewer.py` does it with the same page, the same Content-Security-Policy and the same files as `owngenome-view.sh` picks by default (the run folder's BAM or CRAM, its VCF and its SV VCF, each with its index, and `REF_FASTA`). The `READS`, `VCF`, `SV_VCF`, `ALIGN_DIR` and `VCF_DIR` overrides do not apply there, and a track whose file or index is a symlink out of `GENOME_DIR` is left out. The first start downloads igv.js the same way. `OWNGENOME_LIVE_VIEWER=off` starts the site without it.
 
 This differs from the local viewer in one way that matters: the reads now cross the network, to whatever browser logged in. Only the byte ranges igv.js asks for travel, and only after the login, but they are the sample's reads. Off loopback, use TLS (`--tls-cert` and `--tls-key`, or a proxy that ends TLS), or keep the site on loopback and forward it over ssh. Opening the viewer writes one row in the site's access log; the byte ranges write none.
 
