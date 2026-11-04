@@ -271,12 +271,16 @@ jobs:
             { echo "run=true"; echo "select=all"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git diff --name-only "${BASE}...${HEAD_SHA}" > "${RUNNER_TEMP}/changed.txt"
-          git diff -U0 "${BASE}...${HEAD_SHA}" -- scripts/ci/e2e-case-paths.tsv scripts/ci/e2e-case-times.tsv \
+          # --no-renames: a moved file counts at its old path and its new one.
+          git diff --no-renames --name-only "${BASE}...${HEAD_SHA}" > "${RUNNER_TEMP}/changed.txt"
+          git diff --no-renames -U0 "${BASE}...${HEAD_SHA}" -- scripts/ci/e2e-case-paths.tsv scripts/ci/e2e-case-times.tsv \
             | scripts/ci/e2e-scope.sh rows > "${RUNNER_TEMP}/rows.txt"
           echo "Changed: $(paste -sd' ' "${RUNNER_TEMP}/changed.txt")"
-          scripts/ci/e2e-scope.sh select "${RUNNER_TEMP}/changed.txt" "${RUNNER_TEMP}/rows.txt" \
-            > "${RUNNER_TEMP}/selected.txt" 2> "${RUNNER_TEMP}/why.txt"
+          if ! scripts/ci/e2e-scope.sh select "${RUNNER_TEMP}/changed.txt" "${RUNNER_TEMP}/rows.txt" \
+               > "${RUNNER_TEMP}/selected.txt" 2> "${RUNNER_TEMP}/why.txt"; then
+            cat "${RUNNER_TEMP}/why.txt"
+            exit 1
+          fi
           { echo "### E2E scope"; echo; echo '```'; cat "${RUNNER_TEMP}/why.txt"; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
           all=$(scripts/ci/e2e-shards.sh plan 1 | wc -l)
           if [ ! -s "${RUNNER_TEMP}/selected.txt" ]; then
