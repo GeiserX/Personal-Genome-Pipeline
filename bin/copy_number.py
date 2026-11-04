@@ -518,7 +518,7 @@ def read_pileup(path, row):
     for name, g, ps, gb, pb, _ in row["_psv"]:
         n = counts[name]
         gene, pseudo = sum(n[x] for x in gb), sum(n[x] for x in pb)
-        out[name] = (50, 50, 0)  # RED CONTROL, reverted in the next commit: the PSV reads ignored
+        out[name] = (gene, pseudo, sum(n.values()) - gene - pseudo)
     return out
 
 
