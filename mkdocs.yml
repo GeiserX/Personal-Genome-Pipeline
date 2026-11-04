@@ -231,6 +231,7 @@ nav:
       - Lessons Learned: lessons-learned.md
       - Tool Selection Rationale: tool-rationale.md
       - Image versions: versions.md
+      - What 1.0 Keeps Stable: output-contract.md
       - "Copy Number from Depth (the locus catalog)": cn-loci.md
       - Testing: testing.md
       - Keeping versions up to date: updating.md

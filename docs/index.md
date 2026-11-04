@@ -125,6 +125,7 @@ graph LR
 - [Variant caller benchmarking](benchmarking.md): concordance and truth-set runs for the alternative callers.
 - [Common issues and FAQ](faq.md), then the [Troubleshooting guide](troubleshooting.md): symptom, cause, fix, per step.
 - [Lessons learned](lessons-learned.md): what failed during development and why the defaults are what they are.
+- [What 1.0 keeps stable](output-contract.md): the options, config keys and result files a 1.x release never breaks, and how CI checks them.
 - [Tool selection rationale](tool-rationale.md), the [Glossary](glossary.md) and [Recommended resources](resources.md) for learning genomics.
 
 ## Getting help
