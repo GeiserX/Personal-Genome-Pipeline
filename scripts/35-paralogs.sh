@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 35-paralogs.sh — [OPT-IN] paralog copy number with Parascopy (SMN1 and SMN2 first), HBA1/HBA2 from depth
-# Usage: ./scripts/35-paralogs.sh <sample_name>
+# Usage: ./scripts/35-paralogs.sh <sample_name> [male|female]
 #
 # SMN1 and SMN2 are near-identical copies on chr5: short reads cannot be
 # placed on one of them, so no VCF-based step sees an SMN1 copy-number loss,
@@ -29,6 +29,13 @@
 # pinned caller models) are counted the same way, total copies only, one
 # line per locus in ${SAMPLE}_cn_dosage.tsv (docs/cn-loci.md).
 #
+# The interval rows of that catalog (ClinGen's recurrent CNV regions such as
+# 22q11.2 and 1q21.1, the carrier deletion alleles and the Y chromosome AZF
+# regions) come from one more bedcov pass over all their segments, one line
+# per row in ${SAMPLE}_cn_intervals.tsv. A row on chrX or chrY needs the sex:
+# the second argument, else the sex step 16 infers, else none (those rows are
+# then not assessed). A chrY row on a female is not applicable.
+#
 # OPT-IN: a default run leaves this step out (run-all.sh runs it with
 # TOOLS=...,parascopy).
 #
@@ -45,10 +52,12 @@
 #           (one per catalog row; the SMN1 row's is ${SAMPLE}_smn_copy_number.tsv)
 #         ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_hba_copy_number.tsv
 #         ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_cn_dosage.tsv
+#         ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_cn_intervals.tsv
 #         ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_parascopy/<table>/ (Parascopy's own files)
 set -euo pipefail
 
-SAMPLE=${1:?Usage: $0 <sample_name>}
+SAMPLE=${1:?Usage: $0 <sample_name> [male|female]}
+SEX=${2:-}
 GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 THREADS=${THREADS:-4}   # common.sh defaults to 8
 # shellcheck source=lib/common.sh
@@ -62,6 +71,19 @@ POP=${PARASCOPY_POPULATION:-EUR}
 MODELS="${DATA}/models_GRCh38_1KGP/${POP}"
 TABLE="${DATA}/homology_table/GRCh38.bed.gz"
 LOCI=${PARALOG_LOCI:-${PGP_ROOT}/assets/paralog_loci.tsv}
+# The sex of the chrX and chrY interval rows: the argument, else step 16's
+# inferred sex (goleft's .ped, PED coding 1 male, 2 female), else unknown.
+SEX_PED="${GENOME_DIR}/${SAMPLE}/indexcov/indexcov-indexcov.ped"
+case "$SEX" in
+  male|female) ;;
+  "")
+    SEX=unknown
+    if [ -s "$SEX_PED" ]; then
+      SEX=$(awk -F'\t' 'NR == 1 { for (i = 1; i <= NF; i++) { h = $i; sub(/^#/, "", h); if (h == "sex") c = i }; next }
+        c { s = $c } END { print (s == 1 ? "male" : s == 2 ? "female" : "unknown") }' "$SEX_PED")
+    fi ;;
+  *) echo "ERROR: the sex is male or female, not '${SEX}'." >&2; exit 1 ;;
+esac
 
 echo "=== Parascopy paralog copy number: ${SAMPLE} ==="
 for f in "$BAM" "${BAM}.bai" "$REF_FASTA" "${REF_FASTA}.fai" "$LOCI"; do
@@ -264,11 +286,36 @@ done
 mv "${DOSAGE_WORK}/table.tsv" "$DOSAGE_OUT"
 rm -rf "$DOSAGE_WORK"
 
+# Interval rows of bin/cn_loci.tsv (as the PARASCOPY module): one samtools
+# bedcov over the segments of every row, then copy_number.py intervals; one
+# line per row in <sample>_cn_intervals.tsv. A failed pass writes every row as
+# not assessed (check_failed), and the step goes on.
+INTERVAL_OUT="${OUTDIR}/${SAMPLE}_cn_intervals.tsv"
+INTERVAL_WORK="${OUTDIR}/cn_intervals.part"
+rm -rf "$INTERVAL_OUT" "$INTERVAL_WORK"
+mkdir -p "$INTERVAL_WORK"
+if ! { run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
+         python3 /pgp-bin/copy_number.py bed --kind interval > "${INTERVAL_WORK}/regions.bed" \
+       && run_in --cpus 2 --memory 2g "${PARASCOPY_IMAGE}" \
+         samtools bedcov "$(cpath "${INTERVAL_WORK}/regions.bed")" "$(cpath "$BAM")" > "${INTERVAL_WORK}/bedcov.tsv" \
+       && run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
+         python3 /pgp-bin/copy_number.py intervals --bedcov "$(cpath "${INTERVAL_WORK}/bedcov.tsv")" \
+           --sex "$SEX" --out "$(cpath "$INTERVAL_OUT")"; }; then
+  echo "WARNING: the interval depth check failed; ${INTERVAL_OUT##*/} lists every row as not assessed." >&2
+  run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
+    python3 /pgp-bin/copy_number.py intervals --failed --out "$(cpath "$INTERVAL_OUT")" \
+    || printf 'locus\tname\tchrom\tstart\tend\tstatus\tcopies\texpected\tchange\testimate\treason\n' > "$INTERVAL_OUT"
+fi
+rm -rf "$INTERVAL_WORK"
+
 echo ""
 echo "=== Parascopy complete ==="
 echo "HBA1/HBA2:   ${HBA_OUT}"
 echo "Dosage:      ${DOSAGE_OUT}"
 column -t -s $'\t' "$DOSAGE_OUT" 2>/dev/null || cat "$DOSAGE_OUT"
+echo "Intervals:   ${INTERVAL_OUT} (sex ${SEX}); rows with a change:"
+awk -F'\t' 'NR > 1 && ($9 == "deletion" || $9 == "duplication") {print "  " $1 ": " $9 " (" $7 " copies, " $8 " expected)"; n++}
+  END {if (!n) print "  none"}' "$INTERVAL_OUT"
 for t in "${TABLES[@]}"; do
   echo "Copy number: ${OUTDIR}/${t}"
   column -t -s $'\t' "${OUTDIR}/${t}" 2>/dev/null || cat "${OUTDIR}/${t}"
