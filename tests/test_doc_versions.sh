@@ -22,7 +22,7 @@ FAILS=0
 fail() { echo "FAIL: $*"; FAILS=$((FAILS + 1)); }
 pass() { echo "ok:   $*"; }
 
-# The version part of an image tag: quay.io/biocontainers/t1k:1.0.10--h5814d7d_0 -> 1.0.10
+# The version part of an image tag: "<name>:1.0.10--h5814d7d_0" gives 1.0.10
 pinned() {
   local var=$1 line
   line=$(grep -E "^${var}=" "${REPO}/versions.env" | head -n 1)
