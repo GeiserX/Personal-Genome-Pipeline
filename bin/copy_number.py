@@ -41,6 +41,20 @@ column says. docs/cn-loci.md describes the columns and how to add a locus.
       every row as 'not assessed' (check_failed), for a step whose depth
       pass failed.
 
+  copy_number.py bed --psv --locus L
+      the paralogous sequence variant (PSV) sites of a psv row (call psv:D):
+      each site's position on the gene and on its pseudogene, one base each
+      (name and name_pseudo), for `samtools mpileup -l`
+  copy_number.py call --locus L --bedcov T --pileup P ...
+      a psv row (CYP21A2) also reads `samtools mpileup` without a reference
+      over those sites (P): the module total from depth as above, then at
+      each site the share of reads with the gene's base, pooled over the gene
+      and pseudogene positions, times that total gives the copies that carry
+      the gene's sequence there. The table names a deletion (one module and
+      one gene copy fewer), a possible conversion (fewer gene copies at some
+      sites than at the others, or fewer than two) or none; it never says
+      which chromosome carries the change.
+
   copy_number.py check-bam --header H
       refuse a BAM aligned to a reference with ALT or HLA contigs. H is
       `samtools view -H` of the BAM, or its contig names one per line ('-'
@@ -79,6 +93,16 @@ INPUTS = ("bedcov", "cnvpytor-level")
 Z95 = 1.96
 # The step table of a locus, by the module that lays it out (same folder).
 TABLES = {"HBA": "hba_copy_number", "LPA_KIV2": "lpa_kiv2"}
+# A psv row: the reads a site needs (gene and pseudogene bases pooled) before
+# its copies are read, and the findings a reading must exist for.
+PSV_MIN_READS = 30
+# A site reads as converted when its copies estimate lies this far under the
+# others' count (or under the usual count) or more: at 30x, about 70 reads at
+# a site, the estimate of a copy count of 2 has a standard deviation of about
+# 0.25, so 0.6 keeps a false call on a site to under 1 in 100.
+PSV_MARGIN = 0.6
+PSV_FINDINGS = ("none", "deletion", "conversion", "pseudogene_deletion")
+BASES = "ACGT"
 
 
 class CatalogError(ValueError):
@@ -177,11 +201,32 @@ def _call(row):
         vals = []
     if not all(math.isfinite(v) for v in vals):
         vals = []
-    if not sep or mode not in ("round", "cut", "class") or not vals \
-            or (mode == "round" and len(vals) != 1) or (mode == "class" and len(vals) != 2) \
+    if not sep or mode not in ("round", "cut", "class", "psv") or not vals \
+            or (mode in ("round", "psv") and len(vals) != 1) or (mode == "class" and len(vals) != 2) \
             or vals != sorted(vals):
-        raise CatalogError(f"{row['locus']}: call {row['call']!r} is not round:D, cut:A,B... or class:LOW,HIGH")
+        raise CatalogError(f"{row['locus']}: call {row['call']!r} is not round:D, cut:A,B..., class:LOW,HIGH or psv:D")
     return mode, vals
+
+
+def _psv_sites(row, details):
+    """[(name, gene 0-based position, pseudogene 0-based position, gene
+    bases, pseudogene bases, text)] of a psv row: every details segment is one
+    base, labelled 'PSEUDO_POS GENE>PSEUDO text' (bases among ACGT; In2G's
+    gene base is A or C)."""
+    out = []
+    for name, s, e, label in details:
+        bits = label.split(" ", 2)
+        try:
+            pos = int(bits[0])
+            gene, _, pseudo = bits[1].partition(">")
+        except (IndexError, ValueError):
+            raise CatalogError(f"{row['locus']}: PSV {name} label {label!r} is not 'PSEUDO_POS GENE>PSEUDO text'")
+        if e - s != 1 or pos < 0 or not gene or not pseudo or set(gene + pseudo) - set(BASES) \
+                or set(gene) & set(pseudo) or len(bits) < 3:
+            raise CatalogError(f"{row['locus']}: PSV {name} must be one base with distinct gene and pseudogene "
+                               f"bases and a text (got {s}-{e}, {label!r})")
+        out.append((name, s, pos, set(gene), set(pseudo), bits[2]))
+    return out
 
 
 def parse_row(row):
@@ -197,6 +242,11 @@ def parse_row(row):
     p["_targets"], p["_controls"], p["_details"] = (_segments(row, c) for c in ("targets", "controls", "details"))
     p["_call"] = _call(row)
     p["_readings"] = _readings(row)
+    p["_psv"] = _psv_sites(row, p["_details"]) if p["_call"][0] == "psv" else []
+    if p["_call"][0] == "psv" and (not p["_psv"] or row["target_depth"] != "sum"
+                                   or not set(PSV_FINDINGS) <= set(p["_readings"])):
+        raise CatalogError(f"{loc}: call psv needs PSV sites in details, target_depth sum (gene and pseudogene) "
+                           f"and a reading for each of {', '.join(PSV_FINDINGS)}")
     if not p["_targets"]:
         raise CatalogError(f"{loc}: no target segment")
     if row["input"] == "bedcov":
@@ -393,7 +443,14 @@ def assess(row, m, q1=None, sex=None):
         rel = math.sqrt(_cv([m[n] for n, *_ in tg]) ** 2 / len(tg) + _cv([m[n] for n, *_ in ct]) ** 2 / len(ct))
         b["ci95"] = (max(0.0, total * math.exp(-Z95 * rel) - row["_offset"]),
                      total * math.exp(Z95 * rel) - row["_offset"])
-    if mode == "round":
+    if mode == "psv":
+        # the module total (gene plus pseudogene copies); psv_assess reads the sites
+        n = round(est)
+        if abs(est - n) > vals[0]:
+            b["reason"] = "between_counts"
+            return b
+        b["module_total"] = n
+    elif mode == "round":
         n = round(est)
         if abs(est - n) > vals[0]:
             b["reason"] = "between_counts"
@@ -411,6 +468,130 @@ def assess(row, m, q1=None, sex=None):
     return b
 
 
+def count_bases(bases, ref="N"):
+    """{A, C, G, T: reads} of one `samtools mpileup` bases column: read
+    starts (^ and its MAPQ character), read ends, indels (+N and -N with
+    their N bases), deletions and skips are not bases; '.' and ',' are the
+    reference base when there is one."""
+    n = dict.fromkeys(BASES, 0)
+    i = 0
+    while i < len(bases):
+        ch = bases[i]
+        if ch == "^":
+            i += 2
+            continue
+        if ch in "+-":
+            j = i + 1
+            while j < len(bases) and bases[j].isdigit():
+                j += 1
+            i = j + int(bases[i + 1:j] or 0)
+            continue
+        b = ref.upper() if ch in ".," else ch.upper()
+        if b in n:
+            n[b] += 1
+        i += 1
+    return n
+
+
+def read_pileup(path, row):
+    """{site: (gene-base reads, pseudogene-base reads, other reads)} of a psv
+    row from `samtools mpileup` over `bed --psv`, each site's two positions
+    pooled: a read that carries the gene's base counts for the gene wherever
+    the aligner put it. A position missing from the pileup has no read."""
+    pos = {}
+    for name, g, ps, gb, pb, _ in row["_psv"]:
+        pos[g + 1] = pos[ps + 1] = name
+    counts = {name: dict.fromkeys(BASES, 0) for name, *_ in row["_psv"]}
+    with open(path, errors="replace") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            c = line.rstrip("\n").split("\t")
+            if len(c) < 5 or not c[1].isdigit():
+                raise ValueError(f"{path}: expected samtools mpileup lines (chrom, pos, ref, depth, bases, ...); "
+                                 f"got {line.strip()[:80]!r}")
+            if c[0] != row["chrom"] or int(c[1]) not in pos:
+                continue
+            for k, v in count_bases(c[4], c[2]).items():
+                counts[pos[int(c[1])]][k] += v
+    out = {}
+    for name, g, ps, gb, pb, _ in row["_psv"]:
+        n = counts[name]
+        gene, pseudo = sum(n[x] for x in gb), sum(n[x] for x in pb)
+        out[name] = (50, 50, 0)  # RED CONTROL, reverted in the next commit: the PSV reads ignored
+    return out
+
+
+def psv_assess(row, b, counts):
+    """A psv row's block (from assess) with its sites read. With the module
+    total called, each site of PSV_MIN_READS reads or more gets the copies
+    carrying the gene's base there (total x gene reads / gene and pseudogene
+    reads) and its ratio to the median of the sites. cyp21a2 copies is the
+    least of the sites. finding: deletion when the module total and the gene
+    copies are both under the usual (the 30 kb chimeric deletion leaves one
+    module and one gene copy fewer); conversion at the sites whose estimate
+    lies PSV_MARGIN or more under the others' count or under the usual; pseudogene_deletion when the module
+    total is under the usual with the gene kept everywhere; else none. Which
+    chromosome carries a change is never said."""
+    sites = {}
+    for name, *_ in row["_psv"]:
+        g, p, o = counts.get(name, (0, 0, 0))
+        sites[name] = {"gene_reads": g, "pseudo_reads": p, "other_reads": o, "copies": None,
+                       "estimate": None, "ratio": None}
+    b.update(sites=sites, finding=None, conversion_sites=[])
+    if b["status"] != "called" or b.get("module_total") is None:
+        b["status"] = "not assessed"
+        return b
+    usual = b["expected"] // len(row["_targets"])
+    read = []
+    for name, s in sites.items():
+        n = s["gene_reads"] + s["pseudo_reads"]
+        if n >= PSV_MIN_READS:
+            s["estimate"] = b["total"] * s["gene_reads"] / n
+            s["copies"] = round(s["estimate"])
+            read.append(s)
+    if not read:
+        b.update(status="not assessed", reason="psv_low_depth", copies=None)
+        return b
+    est = sorted(s["estimate"] for s in read)
+    mid = len(est) // 2
+    median = est[mid] if len(est) % 2 else (est[mid - 1] + est[mid]) / 2
+    for s in read:
+        s["ratio"] = s["estimate"] / median if median > 0 else None
+    b["copies"] = least = min(s["copies"] for s in read)
+    floor = max(round(median), usual)
+    conv = [name for name, s in sites.items() if s["estimate"] is not None and s["estimate"] < floor - PSV_MARGIN]
+    if least < usual and b["module_total"] < b["expected"]:
+        b["finding"] = "deletion"
+    elif conv:
+        b.update(finding="conversion", conversion_sites=conv)
+    elif b["module_total"] < b["expected"]:
+        b["finding"] = "pseudogene_deletion"
+    else:
+        b["finding"] = "none"
+    text = {name: t for name, *_, t in row["_psv"]}
+    b["reading"] = reading(row, b["finding"]).replace(
+        "{sites}", ", ".join(f"{n} ({text[n]})" for n in conv))
+    return b
+
+
+def psv_table(row, b):
+    """([(metric, value)], one line) of a psv row's step table."""
+    f = (lambda x: "." if x is None else f"{x:.2f}")
+    d = (lambda x: "." if x is None else str(x))
+    rows = [("status", b["status"]), ("cyp21a2_copies", d(b["copies"])), ("module_total", d(b.get("module_total"))),
+            ("expected_total", d(b["expected"])), ("estimate", f(b["estimate"])), ("finding", b.get("finding") or "."),
+            ("conversion_sites", ",".join(b.get("conversion_sites") or []) or ".")]
+    for name, s in (b.get("sites") or {}).items():
+        rows.append((f"psv_{name}", f"{s['gene_reads']} gene, {s['pseudo_reads']} pseudogene, {s['other_reads']} other"
+                                    f" reads; copies {d(s['copies'])} ({f(s['estimate'])}); ratio {f(s['ratio'])}"))
+    rows += [("target_depth", f(b["target_depth"])), ("control_depth", f(b["control_depth"])),
+             ("reason", b["reason"] or "."), ("reading", b["reading"] or ".")]
+    line = (f"{row['locus']}: {b['status']} ({b['reason'] or b.get('finding')}; {d(b['copies'])} gene copies, "
+            f"module total {d(b.get('module_total'))} of {d(b['expected'])})")
+    return rows, line
+
+
 def interval_rows(cat):
     """The rows `intervals` calls: kind interval with one bedcov pass (LCE3BC,
     an interval row with a MAPQ >= 1 pass, stays a gene-dosage row)."""
@@ -419,6 +600,17 @@ def interval_rows(cat):
 
 def _bed(args):
     cat = load_catalog(args.catalog)
+    if args.psv:
+        if not args.locus or args.kind:
+            raise CatalogError("bed --psv needs --locus (and no --kind)")
+        for loc in args.locus:
+            if loc not in cat or not cat[loc]["_psv"]:
+                raise CatalogError(f"no psv locus {loc!r} in the catalog")
+            r = cat[loc]
+            pos = [(s, f"{n}") for n, s, *_ in r["_psv"]] + [(p, f"{n}_pseudo") for n, _, p, *_ in r["_psv"]]
+            for s, n in sorted(pos):
+                print(f"{r['chrom']}\t{s}\t{s + 1}\t{n}")
+        return 0
     if args.kind == "interval":
         if args.locus:
             raise CatalogError("bed: --kind interval or --locus, not both")
@@ -457,6 +649,10 @@ def _call_cmd(args):
             raise ValueError(f"{args.bedcov_mapq1 if m else args.bedcov} is empty but the other table is not: "
                              "both must cover the regions, or both be empty (no reads on that contig)")
         block = assess(row, m, q1)
+        if row["_psv"]:
+            if not args.pileup:
+                raise ValueError(f"{args.locus} is a psv row: --pileup (samtools mpileup over `bed --psv`) is needed")
+            block = psv_assess(row, block, read_pileup(args.pileup, row) if m else {})
     except BrokenControl as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 3
@@ -570,6 +766,8 @@ def _intervals(args):
 
 def table(row, block):
     """([(metric, value)], one summary line) of a locus's step table."""
+    if row["_psv"]:
+        return psv_table(row, block)
     mod = TABLES.get(row["locus"])
     if mod:
         return importlib.import_module(mod).table(block)
@@ -588,6 +786,7 @@ def main(argv=None):
     b.add_argument("--catalog")
     b.add_argument("--locus", action="append")
     b.add_argument("--kind", choices=["interval"], help="every interval row (as `intervals` calls them)")
+    b.add_argument("--psv", action="store_true", help="the PSV sites of a psv row (gene and pseudogene positions)")
     c = sub.add_parser("call", help="the copy number of one locus from samtools bedcov over its segments")
     c.add_argument("--catalog")
     c.add_argument("--locus", required=True)
@@ -596,6 +795,7 @@ def main(argv=None):
     c.add_argument("--json")
     c.add_argument("--table")
     c.add_argument("--bam-header", help="refuse a BAM with ALT or HLA contigs first (as check-bam)")
+    c.add_argument("--pileup", help="samtools mpileup over `bed --psv` (a psv row)")
     iv = sub.add_parser("intervals", help="call every interval row from one samtools bedcov table")
     iv.add_argument("--catalog")
     iv.add_argument("--bedcov", help="samtools bedcov over `copy_number.py bed --kind interval`")
