@@ -129,7 +129,7 @@ sam faidx reference-str-extra/ref.fa
 check_eq "ref.fa.fai: chr7 and chr2" "$(cut -f1 "${RD}/ref.fa.fai" 2>/dev/null | tr '\n' ' ')" "chr7 chr2 "
 check_eq "the CFTR tract on the made-up chr7 is GRCh38's TG11 T7" \
   "$(sam faidx reference-str-extra/ref.fa chr7:117548601-117548641 2>/dev/null | tail -n +2 | tr -d '\n')" \
-  "TTTGATGTGTGTGTGTGTGTGTGTGTGTTTTTTTAACAGGG"
+  "TTTTGATGTGTGTGTGTGTGTGTGTGTGTTTTTTTAACAGG"
 for s in EXA EXB; do
   in_genome "$SAMTOOLS_IMAGE" bash -c "samtools sort -o '${s}/aligned/${s}_sorted.bam' '${s}/aligned/${s}.sam' && samtools index '${s}/aligned/${s}_sorted.bam'"
   check "${s}: the BAM is indexed" test -s "${G}/${s}/aligned/${s}_sorted.bam.bai"
