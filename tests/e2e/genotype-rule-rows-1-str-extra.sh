@@ -8,7 +8,8 @@
 #      the GRCh38 tract at its GRCh38 place (CFTR TG11 T7, UGT1A1 A(TA)6TAA):
 #        EXA  CFTR TG12-T5 on one copy and TG11-T7 on the other, UGT1A1 7 and
 #             8 TA units (TA6/TA7, *1/*28)
-#             -> CFTR_TG 11/12, CFTR_T 5/7, UGT1A1 7/8
+#             -> CFTR_TG 11/12, CFTR_T 5 and 7, UGT1A1 7/8 (the counts are compared
+#                as a set: ExpansionHunter printed CFTR_T as 7/5, not sorted)
 #        EXB  TG11-T7 on both copies, UGT1A1 7 units on both
 #             -> CFTR_TG 11/11, CFTR_T 7/7 (no 5T: the red control), UGT1A1 7/7
 #      and step 09 prints both loci as not graded, with the asset's reason.
@@ -163,7 +164,7 @@ done
 unset REF_FASTA
 echo "counts: EXA $(repcn EXA CFTR_TG) $(repcn EXA CFTR_T) $(repcn EXA UGT1A1); EXB $(repcn EXB CFTR_TG) $(repcn EXB CFTR_T) $(repcn EXB UGT1A1)"
 check_eq "EXA: CFTR TG counts" "$(repcn EXA CFTR_TG)" "11/12"
-check_eq "EXA: CFTR poly-T counts, one 5T copy" "$(repcn EXA CFTR_T)" "5/7"
+check_eq "EXA: CFTR poly-T counts, one 5T copy and one 7T copy" "$(repcn EXA CFTR_T | tr '/' '\n' | sort -n | paste -sd/ -)" "5/7"
 check_eq "EXA: UGT1A1 TA units 7/8 (TA6/TA7, *1/*28)" "$(repcn EXA UGT1A1)" "7/8"
 check_eq "EXB: CFTR TG counts" "$(repcn EXB CFTR_TG)" "11/11"
 check_eq "EXB (red control): CFTR poly-T 7/7, no 5T copy" "$(repcn EXB CFTR_T)" "7/7"
