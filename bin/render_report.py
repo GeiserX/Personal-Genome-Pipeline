@@ -1655,8 +1655,9 @@ def sf_apart_lines(sf):
     no rule could be applied."""
     if sf.get("unavailable"):
         return [f"Secondary findings: not assessed, {sf['unavailable']}"]
-    return [f"{x['gene']} {x['variant']} {x.get('genotype') or '.'} ({x['source']}): not reported, {x['reason']}"
-            for x in sf.get("not_reported", [])]
+    return ([f"{x['gene']} {x['variant']} {x.get('genotype') or '.'} ({x['source']}): not reported, {x['reason']}"
+             for x in sf.get("not_reported", [])]
+            + ([sf["two_hit_note"]] if sf.get("two_hit_note") else []))
 
 
 def carrier_lines(c):

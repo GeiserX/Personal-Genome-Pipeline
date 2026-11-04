@@ -3239,7 +3239,7 @@ def csq_high_impact_genes(path):
                     gt = r[9].split(":")[0] if len(r) > 9 else ""
                     weak, why, gq, dp, ad = call_check(r[8], r[9], floor) if len(r) > 9 else (False, [], None, None, None)
                     out[(r[0], int(r[1]), r[3], r[4])] = {
-                        "genotype": gt, "genes": genes, "transcript": cls, "frequency": freq,
+                        "genotype": gt, "ps": gt_field(r, "PS"), "genes": genes, "transcript": cls, "frequency": freq,
                         "weak": weak, "why": why, "gq": gq, "dp": dp, "ad": ad}
     except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as e:
         raise Unreadable(f"{os.path.basename(path)}: {e}") from e
@@ -3398,7 +3398,11 @@ def gene_deletions(d, s, spans):
             # SV_start is the base before the deleted bases (annotsv_postfilter.sv_span):
             # they are SV_start+1 to SV_end, 1-based. The text keeps AnnotSV's coordinates.
             first = int(a) + 1
-            for g in sorted(set(x["genes"]) | set(over(chrom, first, int(b)))):
+            hit = set(over(chrom, first, int(b)))
+            # A listed gene AnnotSV names counts only when its span reaches the deleted bases: one
+            # that ends at the padding base loses none. A gene with no span here is taken as named.
+            named = {g for g in x["genes"] if g not in spans}
+            for g in sorted(hit | named):
                 add(g, {"chrom": chrom, "start": first, "end": int(b), "inside": True,
                         "text": f"DEL {chrom}:{a}-{b} (AnnotSV class {x['acmg_class']}, {x['caller']})",
                         "gt": x.get("gt"), "ps": x.get("ps")})
@@ -3429,7 +3433,8 @@ def gene_deletions(d, s, spans):
     n = hba.get("alpha_globin_genes", "")
     if hba.get("status") == "called" and n.isdigit():
         read.append("step 35's HBA1/HBA2 count")
-        if int(n) < 4:
+        # 0 genes: no alpha-globin gene is left to carry a variant, so a hit there pairs with nothing.
+        if 1 <= int(n) < 4:
             for g in ("HBA1", "HBA2"):
                 if g in spans:
                     c, a, b = spans[g]
@@ -3461,18 +3466,22 @@ def pair_phase(dl, v):
     """(verdict, why) of a deletion and a small variant in one gene: verdict
     biallelic, possibly biallelic, or cis (no second hit)."""
     inside = dl["inside"] and dl["chrom"] == v["chrom"] and dl["start"] <= v["pos"] <= dl["end"]
+    # Read-backed phase first: on the same copy (cis) is no second hit, wherever the variant sits.
+    hd, hv = phase_haps(dl.get("gt")), phase_haps(v.get("gt"))
+    phased = None
+    if hd and hv and dl.get("ps") and dl.get("ps") == v.get("ps"):
+        if hd == hv:
+            return "cis", f"in cis: read-backed phase puts both on the same copy (phase set {v['ps']})"
+        phased = (f"in trans: read-backed phase puts them on different copies (phase set {v['ps']})" if not hd & hv
+                  else f"read-backed phase puts the variant on both copies (phase set {v['ps']}); check the reads")
     if inside and v["copies"] >= 2:
         return "biallelic", ("the variant is called homozygous inside the deletion: it is hemizygous, on the one "
                              "copy the deletion leaves")
     if inside and v["ploidy"] == 2:
         return "possibly biallelic", ("a heterozygous call inside a called deletion: one of the two calls may be "
                                       "wrong; check the reads")
-    hd, hv = phase_haps(dl.get("gt")), phase_haps(v.get("gt"))
-    if hd and hv and dl.get("ps") and dl.get("ps") == v.get("ps"):
-        if not hd & hv:
-            return "biallelic", f"in trans: read-backed phase puts them on different copies (phase set {v['ps']})"
-        if hd == hv:
-            return "cis", f"in cis: read-backed phase puts both on the same copy (phase set {v['ps']})"
+    if phased:
+        return ("biallelic" if phased.startswith("in trans") else "possibly biallelic"), phased
     return "possibly biallelic", "phase unknown, possibly in trans (no read-backed phase links the two calls)"
 
 
@@ -3482,8 +3491,10 @@ def two_hits(variants, dels):
     variants: [{gene, key, chrom, pos, text, genotype, copies, ploidy, gt, ps,
     allele}] (allele: the severity name of a hypomorph, or None). An entry is
     the best pair of the gene: verdict, why, deletion, variant, genotype, and
-    the allele name; a gene whose every pair is in cis has none."""
-    entries, hemi = {}, {}
+    the allele name; a gene whose every pair is in cis has none. pairs:
+    {(gene, key): "<verdict> with <deletion>: <why>"}, the best pair of each
+    variant that has one."""
+    entries, hemi, pairs = {}, {}, {}
     for v in variants:
         for dl in dels.get(v["gene"], []):
             verdict, why = pair_phase(dl, v)
@@ -3497,7 +3508,10 @@ def two_hits(variants, dels):
             old = entries.get(v["gene"])
             if old is None or TWO_HIT_ORDER.index(verdict) < TWO_HIT_ORDER.index(old["verdict"]):
                 entries[v["gene"]] = e
-    return entries, hemi
+            k = (v["gene"], v["key"])
+            if k not in pairs or TWO_HIT_ORDER.index(verdict) < TWO_HIT_ORDER.index(pairs[k][0]):
+                pairs[k] = (verdict, f"{verdict} with {dl['text']}: {why}")
+    return entries, hemi, {k: t for k, (_, t) in pairs.items()}
 
 
 def sf_verdicts(gene, rule, alleles):
@@ -3616,7 +3630,7 @@ def acmg_sf_tier(d, s, clinical_vcf):
                                  "weak_call": x["weak"], "call_note": "; ".join(x["why"]) or None,
                                  "gq": x["gq"], "dp": x["dp"], "ad": x["ad"],
                                  "key": (c, pos, ref, alt), "copies": copies, "ploidy": ploidy,
-                                 "gt": gt, "ps": None})
+                                 "gt": gt, "ps": x.get("ps")})
     svs, sv_checked, sv_note = sf_structural(d, s, rules)
     # One verdict per gene, over its distinct variants: a ClinVar hit that is
     # also a HIGH-impact record is one variant.
@@ -3627,10 +3641,13 @@ def acmg_sf_tier(d, s, clinical_vcf):
         alleles.setdefault(x["gene"], {}).setdefault(x["key"], (1, 2))
     # A called deletion of a gene whose rule needs two variants counts as one
     # of them (two_hits), unless read-backed phase puts it on the variant's copy.
+    two_hit_note = None
     try:
         spans = {g: x["span"] for g, x in carrier_genes().items()}
-    except Unreadable:
+    except Unreadable as e:
         spans = {}
+        two_hit_note = (f"A deletion as the second hit: only AnnotSV's gene names were read; step 35's deletions "
+                        f"need the gene spans of {e}")
     dels, _, _ = gene_deletions(d, s, spans)
     seen, variants = set(), []
     for x in clinvar + high:
@@ -3640,12 +3657,12 @@ def acmg_sf_tier(d, s, clinical_vcf):
             variants.append({"gene": x["gene"], "key": x["key"], "chrom": x["key"][0], "pos": x["key"][1],
                              "text": x["variant"], "genotype": x["genotype"], "copies": x["copies"],
                              "ploidy": x["ploidy"] or 2, "gt": x["gt"], "ps": x["ps"], "allele": None})
-    entries, hemi = two_hits(variants, dels)
+    entries, hemi, pairs = two_hits(variants, dels)
     two = {}
-    for g, e in entries.items():
+    for g in entries:
         if rules[g]["report_if"] in ("biallelic", "hemizygous"):
             alleles[g][("deletion", g)] = (1, 2)
-            two[g] = f"{e['verdict']} with {e['deletion']}: {e['why']}"
+            two.update({k: t for k, t in pairs.items() if k[0] == g})
     verdict = {g: sf_verdicts(g, rules[g], a) for g, a in alleles.items()}
     reported = {"clinvar": [], "high": [], "sv": []}
     not_reported = []
@@ -3653,14 +3670,15 @@ def acmg_sf_tier(d, s, clinical_vcf):
         for x in rows:
             why, partial = verdict[x["gene"]][0][x["key"]], verdict[x["gene"]][1]
             rule = rules[x["gene"]]
-            if (x["gene"], x["key"]) in hemi:
+            key = x["key"]
+            if (x["gene"], key) in hemi:
                 x["genotype"] = "hemizygous"
             for k in ("key", "copies", "ploidy", "gt", "ps"):
                 x.pop(k, None)
             if why is None:
                 x.update(rule=rule["table_text"], rule_note=rule["note"], severity=partial)
-                if kind != "sv" and x["gene"] in two:
-                    x["two_hit"] = two[x["gene"]]
+                if kind != "sv" and (x["gene"], key) in two:
+                    x["two_hit"] = two[(x["gene"], key)]
                 reported[kind].append(x)
             else:
                 not_reported.append({"gene": x["gene"], "variant": x["variant"], "genotype": x.get("genotype"),
@@ -3674,7 +3692,7 @@ def acmg_sf_tier(d, s, clinical_vcf):
             "high_impact_weak": sum(1 for x in high if x["weak_call"]),
             "high_impact_frequency_unknown": sum(1 for x in high if x["frequency_unknown"]),
             "structural": reported["sv"], "structural_checked": sv_checked, "structural_note": sv_note,
-            "not_reported": not_reported}
+            "not_reported": not_reported, "two_hit_note": two_hit_note}
 
 
 def gt_field(r, key):
@@ -3724,7 +3742,7 @@ def carrier_list(p, d=None, s=None):
            "carriers": carriers, "set_aside": aside}
     if d is not None:
         dels, read, unread = gene_deletions(d, s, {g: x["span"] for g, x in genes.items()})
-        entries, hemi = two_hits(variants, dels)
+        entries, hemi, _ = two_hits(variants, dels)
         for v in variants:
             if (v["gene"], v["key"]) in hemi:
                 v["item"].update(genotype="hemizygous",

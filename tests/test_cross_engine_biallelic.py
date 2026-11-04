@@ -23,11 +23,19 @@ Checks:
   8. both reports print the two-hit line and the hemizygous genotype;
   9. the couple screen (step 39): the RBM8A low-expression allele in one
      partner and a deletion of RBM8A in the other is a shared gene (TAR risk
-     for a child); the allele in both partners, or in one alone, is set aside.
+     for a child); the allele in both partners, or in one alone, is set aside;
+     the assessed table counts the allele as no finding (0 of 1 hit);
+ 10. edges: a gene AnnotSV names that ends at the padding base gets no line;
+     0 alpha-globin genes pair with nothing; a het hit inside a deletion
+     phased in cis is no second hit; a HIGH-impact record keeps its phase set
+     (trans gives biallelic); with a cis and a trans hit in one gene only the
+     trans one carries the SF two-hit note; an unreadable carrier list is a
+     note on the SF card.
 """
 import gzip
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -225,12 +233,17 @@ def main():
         # 8. both reports
         d = sample(work, "report", [hit(INSIDE, "MUTYH", "1/1"), hit(("chr1", 45330500, "A", "G"), "MUTYH", "0/1")],
                    sv(DEL, "MUTYH"))
+        # step 23's clinical VCF, with no record of its own: the SF card is drawn from it
+        put(f"{d}/clinical/S_clinical.vcf.gz", VCF_HEAD, gz=True)
         summ = collect_summary.collect("S", d)
         txt, html = render_report.text_report(summ), render_report.html_report(summ)
         check("text report: the two-hit line", "Biallelic: MUTYH" in txt, txt[-3000:])
         check("HTML report: the two-hit line", "Biallelic: MUTYH" in html)
         check("text report: the hemizygous genotype", "45336000 G&gt;A" not in txt and "hemizygous (called homozygous "
               "inside DEL" in txt, txt[-3000:])
+        check("text report: the SF row carries the two-hit detail", "biallelic with DEL chr1:45335000-45337000" in txt,
+              txt[-3000:])
+        check("HTML report: the SF row carries the two-hit detail", "biallelic with DEL chr1:45335000-45337000" in html)
 
         # 9. the couple screen: hypomorph x null is a shared gene, hypomorph x hypomorph is not
         genes = couple_report.read_genes(os.path.join(REPO, "assets", "carrier_genes.tsv"))
@@ -250,6 +263,63 @@ def main():
         rows = couple_report.screen_couple("A", "B", sexes, {"A": fa, "B": []}, genes)
         check("couple: the RBM8A allele in one partner alone is set aside, no row",
               not [x for x in rows if x["gene"] == "RBM8A"], rows)
+        ped = put(f"{work}/couple_run/pedigree.tsv", "sample\tsex\tfather\tmother\tpartner\nA\tfemale\t.\t.\tB\n"
+                  "B\tmale\t.\t.\tA\n")
+        empty = sample(work, "couple_empty", [])
+        r = subprocess.run([sys.executable, os.path.join(REPO, "bin", "couple_report.py"), "screen", "--pedigree", ped,
+                            "--genes", os.path.join(REPO, "assets", "carrier_genes.tsv"),
+                            "--clinvar", f"A={tar}/clinvar/S_clinvar_hits.vcf",
+                            "--clinvar", f"B={empty}/clinvar/S_clinvar_hits.vcf",
+                            "--out-dir", f"{work}/couple_run/out"], capture_output=True, text=True)
+        md = f"{work}/couple_run/out/couple_A_B.md"
+        md_text = open(md).read() if os.path.isfile(md) else ""
+        check("couple run: the RBM8A allele counts as no finding of the listed genes (0 / 1) and is a gap line",
+              r.returncode == 0 and "| A | 0 / 1 |" in md_text and "Set aside for A" in md_text,
+              (r.returncode, r.stderr[-500:], md_text[-1500:]))
+
+        # 10. edges
+        # MUTYH ends at chr1:45340893: a deletion whose padding base is that one removes none of it
+        d = sample(work, "pad_gene", [hit(SNV, "MUTYH", "0/1")], sv(("chr1", 45340893, 45342000), "MUTYH"))
+        check("a gene AnnotSV names that ends at the padding base: no line", two(d, "MUTYH") == [], two(d, "MUTYH"))
+        d = sample(work, "hba0", [hit(("chr16", 173600, "C", "T"), "HBA2", "0/1")])
+        step35(d, hba_genes="0")
+        check("no alpha-globin gene left + an HBA2 hit: no line", two(d, "HBA2") == [], two(d, "HBA2"))
+        d = sample(work, "cis_inside", [hit(INSIDE, "MUTYH", "1|0", ps=45330000)],
+                   sv(DEL, "MUTYH", "1|0", ps=45330000))
+        check("a het hit inside a deletion, phased in cis: no line", two(d, "MUTYH") == [], two(d, "MUTYH"))
+        # a HIGH-impact record (no ClinVar hit) phased in trans with the deletion
+        csq = ("##fileformat=VCFv4.2\n##INFO=<ID=CSQ,Number=.,Type=String,Description=\"Consequence annotations. "
+               "Format: Allele|Consequence|IMPACT|SYMBOL|MAX_AF\">\n"
+               "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n"
+               f"chr1\t{SNV[1]}\t.\tC\tT\t50\tPASS\tCSQ=T|stop_gained|HIGH|MUTYH|0.0001\tGT:GQ:DP:AD:PS\t"
+               "0|1:50:30:15,15:45330000\n")
+        d = sample(work, "high_trans", [], sv(DEL, "MUTYH", "1|0", ps=45330000))
+        clin = put(f"{d}/clinical/S_clinical.vcf", csq)
+        rep = [x for x in collect_summary.acmg_sf_tier(d, "S", clin)["high_impact"] if x["gene"] == "MUTYH"]
+        check("a HIGH-impact hit phased in trans with the deletion: biallelic in the SF tier",
+              len(rep) == 1 and (rep[0].get("two_hit") or "").startswith("biallelic with DEL"), rep)
+        # one hit in cis, one in trans: only the trans one carries the note
+        cis_hit = ("chr1", 45330500, "A", "G")
+        d = sample(work, "cis_trans", [hit(cis_hit, "MUTYH", "1|0", ps=45330000),
+                                       hit(SNV, "MUTYH", "0|1", ps=45330000)], sv(DEL, "MUTYH", "1|0", ps=45330000))
+        rows = {x["variant"]: x.get("two_hit") for x in sf(d)["clinvar_hits"] if x["gene"] == "MUTYH"}
+        check("a cis and a trans hit in one gene: only the trans hit carries the two-hit note",
+              (rows.get("chr1:45332000 C>T") or "").startswith("biallelic with DEL")
+              and "chr1:45330500 A>G" in rows and rows["chr1:45330500 A>G"] is None, rows)
+        # an unreadable carrier list: the SF card says what was not read
+        d = sample(work, "no_list", [hit(SNV, "MUTYH", "0/1")], sv(DEL, "MUTYH"))
+        real = collect_summary.carrier_genes
+
+        def broken():
+            raise collect_summary.Unreadable("carrier_genes.tsv row 1: broken")
+        collect_summary.carrier_genes = broken
+        try:
+            s = sf(d)
+        finally:
+            collect_summary.carrier_genes = real
+        check("an unreadable carrier list: a note on the SF card",
+              "carrier_genes.tsv" in (s.get("two_hit_note") or "")
+              and any("carrier_genes.tsv" in x for x in render_report.sf_apart_lines(s)), s.get("two_hit_note"))
     finally:
         shutil.rmtree(work, ignore_errors=True)
     print(f"\n{len(FAILS)} failed" if FAILS else "\nall passed")
