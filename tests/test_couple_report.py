@@ -38,7 +38,12 @@ Checks:
  10. genes: the list is rebuilt from a small Orphanet and GENCODE extract,
      keeping the ACMG rows, adding an autosomal and an X-linked Orphanet gene,
      a PAR gene as autosomal, leaving out chrY, and stopping on a panel gene
-     GENCODE does not have.
+     GENCODE does not have;
+ 11. carrier deletion alleles and AZF (step 35's interval table): each allele
+     of each partner is listed as present, absent or not assessable; the
+     male partner's AZF regions are listed, the female's are not applicable;
+     where CNVpytor (step 18) and the depth call disagree, both are printed;
+     without --cn-intervals the section is not written.
 
 Run: python3 tests/test_couple_report.py
 """
@@ -372,6 +377,57 @@ def main():
               rc == 1 and "B has no ClinVar screen" in log and not os.path.exists(f"{t}/half/couple_A_B.tsv"), (rc, log))
         rc, log = run("screen", "--pedigree", ped, "--genes", GENES, "--clinvar", f"C={a_hits}", "--out-dir", f"{t}/c")
         check("an input for a sample outside the pedigree stops it (exit 2)", rc == 2 and "'C' is not in the pedigree" in log, log)
+
+        # 11. carrier deletion alleles and AZF
+        ivh = "locus\tname\tchrom\tstart\tend\tstatus\tcopies\texpected\tchange\testimate\treason\n"
+
+        def ivrow(locus, chrom, s, e, status="called", copies="2", expected="2", change="no change", reason="."):
+            return f"{locus}\t{locus} name\t{chrom}\t{s}\t{e}\t{status}\t{copies}\t{expected}\t{change}\t.\t{reason}\n"
+        a_iv = put(f"{t}/A_cn_intervals.tsv", ivh + ivrow("GJB6_D13S1830", "chr13", 20223037, 20531806, copies="1",
+                                                          change="deletion")
+                   + ivrow("CFTR_dele2_3", "chr7", 117498312, 117519392)
+                   + ivrow("HBB_exon3_del", "chr11", 5225254, 5225875, status="not assessed", copies=".",
+                           change=".", reason="between_counts")
+                   + ivrow("AZFa", "chrY", 12537649, 12920478, status="not applicable", copies=".", expected=".",
+                           change=".", reason="no_y"))
+        b_iv = put(f"{t}/B_cn_intervals.tsv", ivh + ivrow("GJB6_D13S1830", "chr13", 20223037, 20531806)
+                   + ivrow("CFTR_dele2_3", "chr7", 117498312, 117519392)
+                   + ivrow("HBB_exon3_del", "chr11", 5225254, 5225875)
+                   + ivrow("AZFa", "chrY", 12537649, 12920478, copies="1", expected="1")
+                   + ivrow("AZFb", "chrY", 19702297, 20593154, copies="1", expected="1")
+                   + ivrow("AZFc_DAZ", "chrY", 23129354, 24907040, copies="2", expected="4", change="deletion"))
+        # CNVpytor: no call over A's GJB6 deletion, a deletion over B's CFTRdele2,3 (absent by depth)
+        b_cnv = put(f"{t}/B_cnvs.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+                    "chr7\t117498001\tCNV1\tN\t<DEL>\t.\tPASS\tSVTYPE=DEL;END=117520000\n")
+        a_cnv = put(f"{t}/A_cnvs.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+        rc, log = run("screen", "--pedigree", ped, "--genes", GENES, "--clinvar", f"A={a_hits}", "--clinvar",
+                      f"B={b_hits}", "--cn-intervals", f"A={a_iv}", "--cn-intervals", f"B={b_iv}",
+                      "--cnvpytor", f"A={a_cnv}", "--cnvpytor", f"B={b_cnv}", "--out-dir", f"{t}/cn")
+        md = open(f"{t}/cn/couple_A_B.md").read() if os.path.exists(f"{t}/cn/couple_A_B.md") else ""
+        lines = [x for x in md.splitlines() if x.startswith("- A,") or x.startswith("- B,")]
+        check("cn alleles: each of the three alleles of each partner has one of the three states",
+              rc == 0 and all(sum(f"- {p}, {n}: **{st}**" in md for st in ("present", "absent", "not assessable")) == 1
+                              for p in "AB" for n in ("del(GJB6-D13S1830)", "CFTRdele2,3", "HBB exon 3 deletion")),
+              (rc, log, lines))
+        check("cn alleles: A's GJB6 deletion present, A's HBB not assessable with its reason, B's CFTR absent",
+              "- A, del(GJB6-D13S1830): **present** (read depth, step 35: 1 of 2 copies)" in md
+              and "- A, HBB exon 3 deletion: **not assessable** (read depth, step 35: not assessed (between_counts))" in md
+              and "- B, CFTRdele2,3: **absent**" in md, lines)
+        check("cn alleles: where CNVpytor and the depth call disagree, both are printed",
+              "- A, del(GJB6-D13S1830): **present** (read depth, step 35: 1 of 2 copies); "
+              "CNVpytor (step 18) calls no deletion here" in md
+              and "- B, CFTRdele2,3: **absent** (read depth, step 35: 2 of 2 copies); CNVpytor (step 18) calls a "
+              "deletion here" in md
+              and "- B, GJB6_D13S1830" not in md and "- B, del(GJB6-D13S1830): **absent** (read depth, step 35: 2 of 2 "
+              "copies)\n" in md + "\n", lines)
+        check("cn alleles: the male partner's AZF regions, AZFc a deletion; the female's not applicable",
+              "- B, AZFc (DAZ copies; gr/gr and b2/b3 leave two of four): **present** (read depth, step 35: 2 of 4 copies)"
+              in md and "- B, AZFa: **absent**" in md and "- A, AZF regions: not applicable (no Y chromosome)" in md
+              and "- A, AZFa" not in md, lines)
+        rc, log = run("screen", "--pedigree", ped, "--genes", GENES, "--clinvar", f"A={a_hits}", "--clinvar",
+                      f"B={b_hits}", "--out-dir", f"{t}/nocn")
+        check("cn alleles: without --cn-intervals no allele section is written",
+              rc == 0 and "Carrier deletion alleles" not in open(f"{t}/nocn/couple_A_B.md").read())
 
         # 10. genes
         gtf = put(f"{t}/g.gtf", "##description: evidence-based annotation of the human genome (GRCh38), version 99\n" + "".join(

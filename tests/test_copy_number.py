@@ -764,6 +764,9 @@ def intervals(cat, read):
         check("step 35 interval block on a male: AZFc at half its depth is a deletion, AZFa one copy",
               rows.get("AZFc_DAZ", [""] * 11)[6:9] == ["2", "4", "deletion"]
               and rows.get("AZFa", [""] * 11)[6:9] == ["1", "1", "no change"], (rows.get("AZFc_DAZ"), rows.get("AZFa")))
+        good = os.path.join(t, "good_cn_intervals.tsv")
+        if os.path.exists(tab):
+            os.replace(tab, good)
         env["FAKECOV"] = "/nonexistent.py"
         out = subprocess.run(["bash", "-euo", "pipefail", "-c", STUB_IV + (blk.group(1) if blk else "false\n")],
                              capture_output=True, text=True, env=env)
@@ -775,6 +778,19 @@ def intervals(cat, read):
             for cmd in ("copy_number.py bed --kind interval", "copy_number.py intervals --bedcov",
                         "copy_number.py intervals --failed"):
                 check(f"{path}: {cmd}", cmd in text)
+        # collect_summary: step 35's section carries the interval rows with a change
+        import collect_summary as cs
+        sd = os.path.join(t, "sample")
+        os.makedirs(os.path.join(sd, "paralogs"))
+        with open(os.path.join(sd, "paralogs", "S_smn_copy_number.tsv"), "w") as f:
+            f.write("chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\t"
+                    "homologous_regions\n")
+        if os.path.exists(good):
+            os.replace(good, os.path.join(sd, "paralogs", "S_cn_intervals.tsv"))
+        _, data = cs.sec_parascopy(sd, "S")
+        ci = data.get("cn_intervals") or {}
+        check("collect_summary: step 35's section lists the interval rows with a change (AZFc) and counts the rest",
+              [c["locus"] for c in ci.get("changes", [])] == ["AZFc_DAZ"] and ci.get("rows") == len(iv), ci)
         check("PARASCOPY module: the samplesheet sex goes to the interval rows",
               "def sex = meta.sex in ['male', 'female'] ? meta.sex : 'unknown'" in module and "--sex ${sex}" in module)
 
