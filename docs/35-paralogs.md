@@ -239,6 +239,7 @@ For a PacBio HiFi BAM, [Paraphase](https://github.com/PacificBiosciences/parapha
 | CYP11B1, CYP11B2 | congenital adrenal hyperplasia, glucocorticoid-remediable aldosteronism | copies of both, and a fusion by name (`fusions_called`) |
 | TPSAB1, TPSB2 | hereditary alpha-tryptasemia (Lyons 2016, PMID 27749843) | copies of the tryptase genes together; extra copies need the alpha and beta copies told apart to mean alpha-tryptasemia |
 | AMY1A, AMY1B, AMY1C | salivary amylase (Perry 2007, PMID 17828263) | copies of the three genes together |
+| AMY2A | pancreatic amylase | copies of AMY2A |
 | CFH cluster | atypical haemolytic uraemic syndrome, age-related macular degeneration | copies of the cluster (Paraphase's `CFHclust`, built from its CFH and CFHR3 regions), and its deletions and duplications by name, such as CFHR3-CFHR1 |
 
 A row whose JSON field Paraphase did not write is **not assessed**, with the field it lacks. Every other region gets one row with its copy number. A new region shown one by one is a new row of the catalog.
@@ -300,7 +301,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/paralogs/`.
 ### What Is and Is Not Assessed
 
 - **Assessed (PacBio HiFi only):** copy number and phased variants in Paraphase's 165 GRCh38 regions; the HBA 3.7 kb and 4.2 kb deletions and duplications by name.
-- **Not assessed:** short-read and Oxford Nanopore BAMs (refused); which large HBA deletion removes both genes.
+- **Not assessed:** short-read and Oxford Nanopore BAMs (refused); which large HBA deletion removes both genes; the F8 intron 1 inversion, whose homology region is short (Paraphase leaves it to a standard HiFi SV caller, its docs/F8.md).
 
 ### Runtime
 

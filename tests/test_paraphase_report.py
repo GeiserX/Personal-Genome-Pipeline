@@ -136,7 +136,8 @@ EXPECTED_ROWS = [
     ("rccx", "CYP21A2 (RCCX)"), ("GBA", "GBA1"), ("pms2", "PMS2"), ("strc", "STRC"), ("ncf1", "NCF1"),
     ("OTOA", "OTOA"), ("f8", "F8 intron 22"), ("opn1lw", "OPN1LW"), ("opn1lw", "OPN1MW"), ("ikbkg", "IKBKG"),
     ("neb", "NEB triplicate repeat"), ("CYP11B1", "CYP11B1,CYP11B2"), ("TPSAB1", "TPSAB1,TPSB2"),
-    ("AMY1A", "AMY1A,AMY1B,AMY1C"), ("CFHclust", "CFH,CFHR1,CFHR2,CFHR3,CFHR4")]
+    ("AMY1A", "AMY1A,AMY1B,AMY1C"), ("AMY2A", "AMY2A"),
+    ("CFHclust", "CFH,CFHR1,CFHR2,CFHR3,CFHR4")]
 
 # Synthetic regions shaped as Paraphase 4.1.0 writes them (its src/genes/*.rs,
 # src/toolkit/update_calls.rs and docs/*.md), and the row each must give:
@@ -161,6 +162,8 @@ NEW_REGIONS = {
                [("TPSAB1,TPSB2", "5", "called", "whole gene family")]),
     "AMY1A": ({"total_cn": 6, "genes_in_region": "AMY1A,AMY1B,AMY1C", "region_specific_info": {}},
               [("AMY1A,AMY1B,AMY1C", "6", "called", "whole gene family")]),
+    "AMY2A": ({"total_cn": 2, "genes_in_region": "AMY2A", "region_specific_info": {}},
+              [("AMY2A", "2", "called", "whole gene family")]),
     "CFHclust": ({"total_cn": 4, "genes_in_region": "CFH,CFHR1,CFHR2,CFHR3,CFHR4",
                   "region_specific_info": {"fusions_called": {}}},
                  [("CFH,CFHR1,CFHR2,CFHR3,CFHR4", "4", "called", "no deletion or duplication")]),

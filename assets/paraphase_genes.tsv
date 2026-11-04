@@ -40,4 +40,5 @@ neb	NEB triplicate repeat	repeat_name	copies of NEB's triplicate repeat, with th
 CYP11B1	CYP11B1,CYP11B2	fusions_called	copies of CYP11B1 and CYP11B2, and a CYP11B1-CYP11B2 fusion by name (congenital adrenal hyperplasia, glucocorticoid-remediable aldosteronism)	Paraphase docs/json.md
 TPSAB1	TPSAB1,TPSB2	total_cn	copies of the tryptase genes TPSAB1 and TPSB2 together; extra copies can be hereditary alpha-tryptasemia, which needs the alpha and beta copies told apart	Lyons 2016, PMID 27749843; Paraphase docs/regions.md
 AMY1A	AMY1A,AMY1B,AMY1C	total_cn	copies of the salivary amylase genes AMY1A, AMY1B and AMY1C together	Perry 2007, PMID 17828263; Paraphase docs/regions.md
+AMY2A	AMY2A	total_cn	copies of the pancreatic amylase gene AMY2A	Paraphase docs/regions.md
 CFHclust	CFH,CFHR1,CFHR2,CFHR3,CFHR4	fusions_called	copies of the CFH gene cluster, and its deletions and duplications by name, such as the CFHR3-CFHR1 deletion (atypical haemolytic uraemic syndrome, age-related macular degeneration)	Paraphase docs/CFH.md
