@@ -117,8 +117,11 @@ def live_picture(out):
         try:
             with sync_playwright() as pw:
                 browser = pw.chromium.launch()
+                # bypass_csp: the page's CSP (script-src 'self') blocks the eval that
+                # wait_for_function needs once it has to poll; the page's own scripts are
+                # all 'self', so the picture is the same.
                 page = browser.new_page(viewport={"width": 1280, "height": 1000}, device_scale_factor=1,
-                                        color_scheme="dark")
+                                        color_scheme="dark", bypass_csp=True)
                 page.goto(f"http://127.0.0.1:{srv.server_address[1]}/runs/{SAMPLE}/")
                 page.wait_for_function("document.documentElement.dataset.pgpStatus === 'ready'")
                 # The last moment: the run ended, the charts are drawn, the re-check is in.
