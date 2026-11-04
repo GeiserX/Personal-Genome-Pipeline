@@ -62,6 +62,20 @@ check "HTML report: the SERPINA1 row with its trait and sites" \
 check "HTML report: the APOL1 row with its trait and sites" \
   has '<td>APOL1 kidney risk variants \(G1 read, G2 not read\)</td><td>APOL1<br><span[^>]*>rs73885319, rs60910145</span>' "$HTML"
 
+# Each row's Genotypes and Result cells are the rules file's: its genotypes, and
+# its result when called, else its status (the report adds how it was phased).
+cell() {  # cell RULE COLUMN
+  awk -F'\t' -v r="$1" -v k="$2" 'NR == 1 { for (i = 1; i <= NF; i++) c[$i] = i; next }
+    $1 == r { print $c[k]; exit }' "$RT" 2>/dev/null
+}
+for r in SERPINA1 APOL1; do
+  geno=$(cell "$r" genotypes | sed 's/,/, /g')
+  if [ "$(cell "$r" status)" = called ]; then res=$(cell "$r" result); else res=$(cell "$r" status | tr _ ' '); fi
+  row="<td>${r}<br><span style=\"font-size:12px;color:#666\">$(cell "$r" rsids | sed 's/,/, /g')</span></td><td>${geno}</td><td>${res}"
+  check "HTML report: the ${r} row's genotypes (${geno}) and result (${res}) are the rules file's" \
+    grep -qF -- "$row" "${CASE_TMP}/report.html"
+done
+
 awk -F'\t' '$1 != "SERPINA1"' "$RT" > "${CASE_TMP}/rules-no-serpina1.tsv" && cp "${CASE_TMP}/rules-no-serpina1.tsv" "$RT"
 render "${CASE_TMP}/report-control.html"
 CHTML=$(cat "${CASE_TMP}/report-control.html" 2>/dev/null)
