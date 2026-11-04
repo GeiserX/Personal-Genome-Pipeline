@@ -676,21 +676,28 @@ def sec_cyrius(d, s):
     return p, {"genotype": r.get("Genotype", "") or "none", "filter": r.get("Filter", "")}
 
 
-# The Paraphase regions the report shows gene by gene, in this order; the
-# others are counted.
-PARALOG_REGIONS = ("smn1", "hba", "rccx", "GBA", "pms2", "strc", "ncf1", "OTOA")
+def paralog_regions():
+    """The Paraphase regions the report shows gene by gene, in the order of
+    assets/paraphase_genes.tsv; the others are counted."""
+    out = []
+    for r in asset_rows("paraphase_genes.tsv"):
+        if r["region"] not in out:
+            out.append(r["region"])
+    return out
 
 
 def sec_paralogs(d, s):
-    """Step 35b (Paraphase, PacBio HiFi): the genes of PARALOG_REGIONS, a
-    count of the other regions, the variant rows per region, and SMN1 beside
-    step 35's Parascopy call when that table is there too."""
+    """Step 35b (Paraphase, PacBio HiFi): the genes of the regions of
+    assets/paraphase_genes.tsv, a count of the other regions, the variant rows
+    per region, and SMN1 beside step 35's Parascopy call when that table is
+    there too."""
     p = first_existing(d, [f"paralogs/{s}_paraphase_copy_number.tsv"])
     if not p:
         return None, {}
     rows = read_tsv(p)
     if rows and not {"region", "gene", "copy_number", "status"} <= set(rows[0]):
         raise Unreadable(f"{os.path.basename(p)} lacks the region, gene, copy_number or status column")
+    PARALOG_REGIONS = paralog_regions()
     genes = [{"region": r["region"], "gene": r["gene"], "copy_number": r["copy_number"],
               "status": r["status"], "detail": r.get("detail") or "."}
              for r in rows if r["region"] in PARALOG_REGIONS]
@@ -769,23 +776,96 @@ def smn_reading(smn1):
     return f"{smn1} SMN1 copies: not a carrier by copy number"
 
 
+# Tables in paralogs/ that other parts of steps 35 and 35b write, not catalog rows.
+NOT_CATALOG_TABLES = ("hba", "paraphase")
+PARASCOPY_COLUMNS = {"chrom", "start", "end", "agCN", "psCN", "psCN_qual", "psCN_filter"}
+
+
+def parascopy_tables(d, s):
+    """{table: path} of step 35's catalog tables (<s>_<table>_copy_number.tsv)."""
+    out = {}
+    for p in sorted(glob.glob(os.path.join(glob.escape(os.path.join(d, "paralogs", s)) + "_*_copy_number.tsv"))):
+        name = os.path.basename(p)[len(s) + 1:-len("_copy_number.tsv")]
+        if name not in NOT_CATALOG_TABLES and os.path.isfile(p):
+            out[name] = p
+    return out
+
+
+def parascopy_locus(name, path, row):
+    """One catalog table that is not SMN1's: the locus's aggregate copy number
+    (agCN) per region of its profile, the catalog's genes, tag and reading.
+    psCN is not read here: the catalog marks it reliable only for SMN1."""
+    out = {"table": name, "genes": (row or {}).get("genes") or name, "tag": (row or {}).get("tag") or ".",
+           "reading": (row or {}).get("reading") or "."}
+    rows = read_tsv(path)
+    if rows and not PARASCOPY_COLUMNS <= set(rows[0]):
+        return dict(out, status="unreadable", cn=None,
+                    text=f"unreadable: {os.path.basename(path)} lacks the copy-number columns")
+    na = next((r["agCN_filter"] for r in rows if (r.get("agCN_filter") or "").startswith("not assessed")), None)
+    if na:
+        return dict(out, status="not assessed", cn=None, text=na)
+    regions = []
+    for r in rows:
+        try:
+            q = float(r.get("agCN_qual") or "")
+        except ValueError:
+            q = None
+        cn = r.get("agCN") or "."
+        ok = cn.isdigit() and r.get("agCN_filter") == "PASS" and q is not None and q >= 20
+        regions.append((r.get("chrom"), r.get("start"), r.get("end"), cn, r.get("agCN_qual") or ".",
+                        r.get("agCN_filter") or ".", ok))
+    if not regions:
+        return dict(out, status="not assessed", cn=None, text="not assessed: the table has no region row")
+    values = {x[3] for x in regions if x[6]}
+    if len(values) == 1 and all(x[6] for x in regions):
+        cn = int(values.pop())
+        quals = [float(x[4]) for x in regions]
+        text = f"{cn} ({len(regions)} region(s), quality {min(quals):g} or more, filter PASS)"
+        return dict(out, status="called", cn=cn, text=text)
+    # every region, so a LowQual or discordant one is never hidden; no single
+    # number, so no catalog reading either (the reading follows a call)
+    text = "; ".join(f"{c}:{int(b) + 1 if str(b).isdigit() else b}-{e} {cn} (quality {q}, filter {f})"
+                     for c, b, e, cn, q, f, _ in regions)
+    called = any(x[6] for x in regions)
+    return dict(out, status="called" if called else "not resolved", cn=None, reading=".",
+                text=text + ("" if called else ": no region with a whole copy number, filter PASS and quality 20 or more"))
+
+
+NO_SMN_TABLE = "no SMN1 table (step 35 wrote no SMN copy-number table)"
+
+
 def sec_parascopy(d, s):
     """Step 35 (Parascopy, short reads): SMN1 and SMN2 copy number at exon 7,
-    the aggregate copy number of the pair there, and the SMA reading."""
-    p = first_existing(d, [f"paralogs/{s}_smn_copy_number.tsv"])
+    the aggregate copy number of the pair there and the SMA reading; the HBA
+    count from depth; and every other catalog table, one locus each. Each part
+    is read on its own, so a catalog without the SMN1 row still shows HBA and
+    the other loci."""
+    tables = parascopy_tables(d, s)
+    hp = os.path.join(d, "paralogs", f"{s}_hba_copy_number.tsv")
+    p = tables.get("smn") or next(iter(tables.values()), None) or (hp if os.path.isfile(hp) else None)
     if not p:
         return None, {}
-    rows = read_tsv(p)
-    if rows and not {"chrom", "start", "end", "agCN", "psCN", "psCN_qual", "psCN_filter"} <= set(rows[0]):
-        raise Unreadable(f"{os.path.basename(p)} lacks the chrom, start, end, agCN, psCN, psCN_qual or "
-                         "psCN_filter column")
-    smn1 = parascopy_cn_at(rows, *paraphase_report.SMN1_EXON7)
-    smn2 = parascopy_cn_at(rows, *SMN2_EXON7)
-    # Step 35 writes one row whose agCN_filter is "not assessed: <reason>"
-    # when the locus was not run (no read over it, no model, Parascopy failed).
-    na = next((r["agCN_filter"] for r in rows if (r.get("agCN_filter") or "").startswith("not assessed")), None)
-    hp = os.path.join(os.path.dirname(p), f"{s}_hba_copy_number.tsv")
-    ip = os.path.join(os.path.dirname(p), f"{s}_cn_intervals.tsv")
+    if "smn" in tables:
+        rows = read_tsv(tables["smn"])
+        if rows and not PARASCOPY_COLUMNS <= set(rows[0]):
+            raise Unreadable(f"{os.path.basename(tables['smn'])} lacks the chrom, start, end, agCN, psCN, psCN_qual or "
+                             "psCN_filter column")
+        smn1 = parascopy_cn_at(rows, *paraphase_report.SMN1_EXON7)
+        smn2 = parascopy_cn_at(rows, *SMN2_EXON7)
+        # Step 35 writes one row whose agCN_filter is "not assessed: <reason>"
+        # when the locus was not run (no read over it, no model, Parascopy failed).
+        na = next((r["agCN_filter"] for r in rows if (r.get("agCN_filter") or "").startswith("not assessed")), None)
+        reading = (f"SMN1 and SMN2 {na}: no carrier reading" if na
+                   else "no row of step 35's table covers SMN1 exon 7: no carrier reading"
+                   if smn1["text"] == "no row covers exon 7" else smn_reading(smn1["cn"]))
+    else:
+        rows = []
+        smn1 = {"cn": None, "text": NO_SMN_TABLE, "agcn": ".", "agcn_qual": ".", "agcn_filter": "."}
+        smn2 = {"cn": None, "text": NO_SMN_TABLE}
+        reading = f"{NO_SMN_TABLE}: no carrier reading"
+    others = {n: t for n, t in tables.items() if n != "smn"}
+    catalog = {r["table"]: r for r in asset_rows("paralog_loci.tsv")} if others else {}
+    ip = os.path.join(d, "paralogs", f"{s}_cn_intervals.tsv")
     return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
                "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
                "rows": len(rows),
@@ -795,9 +875,12 @@ def sec_parascopy(d, s):
                # the interval rows of bin/cn_loci.tsv (recurrent CNV regions,
                # carrier deletions, AZF); None without step 35's table
                "cn_intervals": read_cn_intervals(ip) if os.path.isfile(ip) else None,
-               "reading": (f"SMN1 and SMN2 {na}: no carrier reading" if na
-                           else "no row of step 35's table covers SMN1 exon 7: no carrier reading"
-                           if smn1["text"] == "no row covers exon 7" else smn_reading(smn1["cn"]))}
+               "reading": reading,
+               # every other catalog table, in the catalog's order (a table the
+               # catalog does not name, from a PARALOG_LOCI of the user's, last)
+               "loci": [parascopy_locus(n, others[n], catalog.get(n))
+                        for n in sorted(others, key=lambda n: (list(catalog).index(n) if n in catalog
+                                                               else len(catalog), n))]}
 
 
 def read_cn_intervals(path):
