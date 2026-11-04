@@ -99,13 +99,24 @@ check_step_exit 35-paralogs.sh
 check "step 35 ran the 37-row catalog in 30 minutes or less (${ELAPSED} s)" test "$ELAPSED" -le 1800
 
 # --- 2. every row: an integer agCN with its quality, or not assessed with the reason --
-# table_state TABLE: called, not-assessed or bad
+# table_state TABLE: called, not-assessed, not-resolved or bad. Each row is read on its own: an
+# integer agCN with a numeric quality, "." with the filter that says why (not
+# resolved), or "not assessed: <reason>"; any other row, or no row, makes it bad.
 # shellcheck disable=SC2016  # awk fields
 table_state() {
   awk -F'\t' 'NR == 1 {next}
-    $6 ~ /^[0-9]+$/ && $7 ~ /^[0-9.]+$/ {c = 1}
-    $5 ~ /^not assessed: ./ {n = 1}
-    END {print (c ? "called" : n ? "not-assessed" : "bad")}' "$1" 2>/dev/null || echo bad
+    NF != 11 {b = 1; next}
+    $6 ~ /^[0-9]+$/ && $7 ~ /^[0-9.]+$/ {c = 1; next}
+    $5 ~ /^not assessed: ./ {n = 1; next}
+    $6 == "." && $5 != "" && $5 != "." {r = 1; next}
+    {b = 1}
+    END {print (b || NR < 2 ? "bad" : c ? "called" : n ? "not-assessed" : r ? "not-resolved" : "bad")}' "$1" 2>/dev/null || echo bad
+}
+# pass_call TABLE: yes when a row has filter PASS and a quality of 20 or more, the
+# rule by which the report calls a locus
+# shellcheck disable=SC2016  # awk fields
+pass_call() {
+  awk -F'\t' 'NR > 1 && $5 == "PASS" && $6 ~ /^[0-9]+$/ && $7 + 0 >= 20 {y = 1} END {print (y ? "yes" : "no")}' "$1" 2>/dev/null || echo no
 }
 OUTD="${GENOME_DIR}/${P}/paralogs"
 TABLES=$(awk -F'\t' '/^#/ || !NF {next} !h {for (i = 1; i <= NF; i++) c[$i] = i; h = 1; next} {print $c["table"]}' "$LOCI_ALL")
@@ -115,16 +126,23 @@ for t in $TABLES; do
   st=$(table_state "${OUTD}/${P}_${t}_copy_number.tsv")
   case "$st" in
     called) called=$((called + 1)) ;;
-    not-assessed) nassessed=$((nassessed + 1)) ;;
+    not-assessed|not-resolved) nassessed=$((nassessed + 1)) ;;
     *) bad="${bad} ${t}" ;;
   esac
   echo "  ${t}: ${st} $(awk -F'\t' 'NR == 2 {print $5, $6, $7}' "${OUTD}/${P}_${t}_copy_number.tsv" 2>/dev/null)"
 done
 check_eq "every row has an integer agCN or says not assessed with the reason (bad:${bad:- none})" "${bad:-none}" none
 check_eq "the GBA row is called" "$(table_state "${OUTD}/${P}_gba1_copy_number.tsv")" called
+check_eq "the GBA call has filter PASS and quality 20 or more" "$(pass_call "${OUTD}/${P}_gba1_copy_number.tsv")" yes
 HEAD_ONLY="${CASE_TMP}/header_only.tsv"
 head -1 "${OUTD}/${P}_smn_copy_number.tsv" > "$HEAD_ONLY"
 check_eq "red control: a header-only table fails the row check" "$(table_state "$HEAD_ONLY")" bad
+MIXED="${CASE_TMP}/one_bad_row.tsv"
+{ head -2 "${OUTD}/${P}_gba1_copy_number.tsv"; printf 'chr1\t1\t2\tX\t\t\t\t\t\t\t\n'; } > "$MIXED"
+check_eq "red control: a called row beside a malformed one fails the row check" "$(table_state "$MIXED")" bad
+LOWQ="${CASE_TMP}/lowqual.tsv"
+awk -F'\t' -v OFS='\t' 'NR > 1 {$5 = "LowQual"; $7 = 12} 1' "${OUTD}/${P}_gba1_copy_number.tsv" > "$LOWQ"
+check_eq "red control: a LowQual quality-12 GBA table is no PASS call" "$(pass_call "$LOWQ")" no
 echo "paralog-rows: step 35 on 37 rows in ${ELAPSED} s, ${called} called, ${nassessed} not assessed" >> "$E2E_NOTES"
 
 # The reports read every table: both, on this sample
@@ -163,7 +181,7 @@ render_q "${CASE_TMP}/report_nosmn"
 H=$(cat "${CASE_TMP}/report_nosmn/report.html" 2>/dev/null)
 check "no SMN1 row: the HTML report has the HBA line" has 'HBA1 and HBA2 together \(alpha-globin genes, from depth\)' "$H"
 check "no SMN1 row: the HTML report has the GBA locus" has '<td>GBA1, GBAP1</td>' "$H"
-check "no SMN1 row: SMN1 says it has no table" has "no SMN1 table \(step 35&#x27;s catalog had no SMN1 row\)|no SMN1 table \(step 35's catalog had no SMN1 row\)" "$H"
+check "no SMN1 row: SMN1 says it has no table" has "no SMN1 table \(step 35 wrote no SMN copy-number table\)" "$H"
 mv "${GENOME_DIR}/${Q}/paralogs/${Q}_hba_copy_number.tsv" "${CASE_TMP}/hba.tsv"
 check "control: the HBA table is set aside" test -s "${CASE_TMP}/hba.tsv"
 render_q "${CASE_TMP}/report_nohba"

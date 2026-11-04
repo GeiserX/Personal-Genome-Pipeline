@@ -760,15 +760,16 @@ def parascopy_locus(name, path, row):
         quals = [float(x[4]) for x in regions]
         text = f"{cn} ({len(regions)} region(s), quality {min(quals):g} or more, filter PASS)"
         return dict(out, status="called", cn=cn, text=text)
-    shown = [f"{c}:{int(b) + 1 if str(b).isdigit() else b}-{e} {cn} (quality {q}, filter {f})"
-             for c, b, e, cn, q, f, _ in regions[:4]]
-    text = "; ".join(shown) + (f"; and {len(regions) - 4} more region(s)" if len(regions) > 4 else "")
+    # every region, so a LowQual or discordant one is never hidden; no single
+    # number, so no catalog reading either (the reading follows a call)
+    text = "; ".join(f"{c}:{int(b) + 1 if str(b).isdigit() else b}-{e} {cn} (quality {q}, filter {f})"
+                     for c, b, e, cn, q, f, _ in regions)
     called = any(x[6] for x in regions)
-    return dict(out, status="called" if called else "not resolved", cn=None,
+    return dict(out, status="called" if called else "not resolved", cn=None, reading=".",
                 text=text + ("" if called else ": no region with filter PASS and quality 20 or more"))
 
 
-NO_SMN_TABLE = "no SMN1 table (step 35's catalog had no SMN1 row)"
+NO_SMN_TABLE = "no SMN1 table (step 35 wrote no SMN copy-number table)"
 
 
 def sec_parascopy(d, s):

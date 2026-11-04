@@ -1262,7 +1262,7 @@ def parascopy_section(work, schema):
           and "HBA1 and HBA2 together (alpha-globin genes, from depth): 4" in txt
           and not any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), (ps, summ["not_assessed"]))
     check("no SMN1 table: SMN1 says why it has no reading, never a carrier reading",
-          pd.get("reading") == "no SMN1 table (step 35's catalog had no SMN1 row): no carrier reading"
+          pd.get("reading") == "no SMN1 table (step 35 wrote no SMN copy-number table): no carrier reading"
           and (pd.get("smn1") or {}).get("cn") is None, pd.get("reading"))
     loci = {x["table"]: x for x in pd.get("loci", [])}
     check("loci: one per catalog table, in the catalog's order, a table the catalog lacks last",
@@ -1274,7 +1274,9 @@ def parascopy_section(work, schema):
     check("loci: C4 with a low-quality region lists each region and gives no single number",
           loci.get("c4", {}).get("cn") is None and loci["c4"]["status"] == "called"
           and "chr6:31980532-31990000 5 (quality 40, filter PASS)" in loci["c4"]["text"]
-          and "4 (quality 12, filter LowQual)" in loci["c4"]["text"], loci.get("c4"))
+          and "4 (quality 12, filter LowQual)" in loci["c4"]["text"] and loci["c4"]["reading"] == "."
+          and "C4A, C4B (agCN): chr6" in txt and "Reading: " not in txt.split("C4A, C4B (agCN):", 1)[-1].split("\n", 1)[0],
+          loci.get("c4"))
     check("loci: a not-assessed table keeps its reason",
           loci.get("amy1", {}).get("status") == "not assessed"
           and loci["amy1"]["text"] == "not assessed: no read over chr1:103745407-103761087", loci.get("amy1"))
