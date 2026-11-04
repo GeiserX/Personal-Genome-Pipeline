@@ -19,7 +19,8 @@
     marked failed, and the rest of the run goes on.
 
     PARAPHASE_REPORT turns Paraphase's JSON and VCFs into one row per gene
-    and one per variant (bin/paraphase_report.py table).
+    and one per variant (bin/paraphase_report.py table), with the regions and
+    JSON fields of assets/paraphase_genes.tsv, which the workflow stages.
 
     Equivalent to: scripts/35b-paraphase.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -107,6 +108,7 @@ process PARAPHASE_REPORT {
 
     input:
     tuple val(meta), path(results)
+    path(genes)  // assets/paraphase_genes.tsv: the regions shown gene by gene and each row's JSON field
 
     output:
     tuple val(meta), path("${meta.id}_paraphase_copy_number.tsv"), emit: copy_number
@@ -118,7 +120,7 @@ process PARAPHASE_REPORT {
 
     script:
     """
-    paraphase_report.py table --sample ${meta.id} \\
+    paraphase_report.py table --sample ${meta.id} --genes ${genes} \\
         --json ${results}/${meta.id}.paraphase.json \\
         --vcf-dir ${results}/${meta.id}_paraphase_vcfs \\
         --out-cn ${meta.id}_paraphase_copy_number.tsv \\

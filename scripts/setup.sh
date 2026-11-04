@@ -1649,9 +1649,37 @@ ensure_image() {
 # whose allele frequencies stand for the modern population; UCSC's
 # hg19ToHg38 chain. Each archaic file is checked against the md5 its folder's
 # md5sums.txt lists, and each md5sums.txt against the sha256 in versions.env.
+# Two masks keep the table to sequence the method can read, as Chen et al.
+# 2020 do before IBDmix: each archaic genome's own FilterBed from MPI-EVA
+# (coverage, mapability 35, MQ25, no tandem repeats, no indels; GRCh37), and
+# the 1000 Genomes GRCh38 strict mask for the modern side. MPI-EVA publishes
+# no checksum beside the FilterBed files, so versions.env pins the sha256 of
+# each of the 66 files.
 ARCHAIC_URL=https://cdna.eva.mpg.de/neandertal/Vindija/VCF
+ARCHAIC_FILTERBED_URL=https://cdna.eva.mpg.de/neandertal/Vindija/FilterBed
 ARCHAIC_1KG_SITES_URL=https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.wgs.phase3_shapeit2_mvncall_integrated_v5c.20130502.sites.vcf.gz
+ARCHAIC_STRICT_MASK_URL=https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/working/20160622_genome_mask_GRCh38/StrictMask/20160622.allChr.mask.bed
+ARCHAIC_SEGDUPS_URL=https://hgdownload.soe.ucsc.edu/goldenPath/hg19/database/genomicSuperDups.txt.gz
 ARCHAIC_CHAIN_URL=https://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz
+
+# archaic_filterbed_sha NAME CHROM: the sha256 versions.env pins for one
+# MPI-EVA FilterBed file, from that genome's "CHROM:sha256 ..." list.
+archaic_filterbed_sha() {
+  local list v
+  case "$1" in
+    Altai) list=$ARCHAIC_FILTERBED_SHA256_ALTAI ;;
+    Vindija) list=$ARCHAIC_FILTERBED_SHA256_VINDIJA ;;
+    Denisova) list=$ARCHAIC_FILTERBED_SHA256_DENISOVA ;;
+    *) echo "ERROR: no FilterBed pins for '${1}'" >&2; return 1 ;;
+  esac
+  for v in $list; do
+    [ "${v%%:*}" = "$2" ] || continue
+    printf '%s' "${v#*:}"
+    return 0
+  done
+  echo "ERROR: versions.env pins no FilterBed sha256 for ${1} chromosome ${2}" >&2
+  return 1
+}
 
 # install_archaic: the table of step 43 in reference/archaic/ARCHAIC_DATA_VERSION
 # (ARCHAIC_DIR: another folder inside GENOME_DIR), one chrN.tsv.gz per
@@ -1660,12 +1688,14 @@ ARCHAIC_CHAIN_URL=https://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19T
 # frequency of all and of each continental group. The rows are the 1000
 # Genomes biallelic SNVs where an archaic genome was called, and the sites
 # where one of the three carries a non-reference allele: the sites IBDmix's
-# own generate_gt would keep from the same files. Per chromosome: the three
+# own generate_gt would keep from the same files, each archaic genome read
+# only inside its own FilterBed and every row inside the 1000 Genomes GRCh38
+# strict mask. Per chromosome: the three
 # archaic files are downloaded (about 165 GB in all, 13 GB at most at a time)
 # and deleted once the chromosome is built, so an interrupted install
 # resumes at the chromosome it stopped in. The 1000 Genomes file (1.5 GB) is
 # deleted at the end. ARCHAIC_REGIONS (a GRCh37 BED, chromosomes named 1 to
-# 22) keeps only those regions: the e2e case builds a slice of chr22 with it.
+# 22) keeps only those regions: the e2e case builds chr22 alone with it.
 install_archaic() {
   local dir=${ARCHAIC_DIR:-${GENOME_DIR}/reference/archaic/${ARCHAIC_DATA_VERSION}}
   local regions=${ARCHAIC_REGIONS:-} rstamp=all chroms="" c g v k stamp wk n
@@ -1674,7 +1704,7 @@ install_archaic() {
   echo "Installing the archaic data ${ARCHAIC_DATA_VERSION} (step 43) in ${dir}"
   for v in BCFTOOLS_IMAGE PICARD_IMAGE PYTHON_IMAGE IBDMIX_IMAGE; do ensure_image "$v" 43 || return 1; done
   [ -s "$REF_DICT" ] || { echo "[WARN] ${REF_DICT} is missing: run $0 ${GENOME_DIR} first (it writes the sequence dictionary)"; return 1; }
-  mkdir -p "${dir}/md5" "${dir}/download" "${dir}/work"
+  mkdir -p "${dir}/md5" "${dir}/download" "${dir}/work" "${dir}/mask" "${dir}/exclude"
   for v in "Altai|${ARCHAIC_ALTAI_MD5SUMS_SHA256}" "Vindija33.19|${ARCHAIC_VINDIJA_MD5SUMS_SHA256}" "Denisova|${ARCHAIC_DENISOVA_MD5SUMS_SHA256}"; do
     IFS='|' read -r g k <<< "$v"
     [ -s "${dir}/md5/${g}.txt" ] && [ "$(_digest sha256 "${dir}/md5/${g}.txt")" = "$k" ] && continue
@@ -1688,6 +1718,16 @@ install_archaic() {
     echo "[WARN] Could not download UCSC's hg19ToHg38 chain; run: $0 --archaic ${GENOME_DIR}"
     return 1
   fi
+  if ! { [ -s "${dir}/strict_GRCh38.bed" ] && [ "$(_digest sha256 "${dir}/strict_GRCh38.bed")" = "$ARCHAIC_STRICT_MASK_SHA256" ]; } \
+     && ! fetch "$ARCHAIC_STRICT_MASK_URL" "${dir}/strict_GRCh38.bed" sha256 "$ARCHAIC_STRICT_MASK_SHA256"; then
+    echo "[WARN] Could not download the 1000 Genomes GRCh38 strict mask; run: $0 --archaic ${GENOME_DIR}"
+    return 1
+  fi
+  if ! { [ -s "${dir}/segdups_hg19.txt.gz" ] && [ "$(_digest sha256 "${dir}/segdups_hg19.txt.gz")" = "$ARCHAIC_SEGDUPS_SHA256" ]; } \
+     && ! fetch "$ARCHAIC_SEGDUPS_URL" "${dir}/segdups_hg19.txt.gz" sha256 "$ARCHAIC_SEGDUPS_SHA256"; then
+    echo "[WARN] Could not download UCSC's segmental duplications; run: $0 --archaic ${GENOME_DIR}"
+    return 1
+  fi
   if [ -n "$regions" ]; then
     [ -s "$regions" ] || { echo "[WARN] ARCHAIC_REGIONS=${regions} is not a file"; return 1; }
     cp "$regions" "${dir}/regions.bed"
@@ -1698,7 +1738,7 @@ install_archaic() {
     chroms=$(seq 1 22 | tr '\n' ' ')
   fi
   [ -n "${chroms// /}" ] || { echo "[WARN] ARCHAIC_REGIONS=${regions} names no autosome (1 to 22)"; return 1; }
-  stamp="data=${ARCHAIC_DATA_VERSION} regions=${rstamp} bcftools=${BCFTOOLS_IMAGE} picard=${PICARD_IMAGE} code=$(_digest sha256 <(sed '/^# --- genotypes (step 43)/,$d' "${PGP_ROOT}/bin/archaic_report.py"))"
+  stamp="data=${ARCHAIC_DATA_VERSION} regions=${rstamp} bcftools=${BCFTOOLS_IMAGE} picard=${PICARD_IMAGE} masks=$(_digest sha256 <(printf '%s\n%s\n%s\n%s\n%s\n' "$ARCHAIC_STRICT_MASK_SHA256" "$ARCHAIC_SEGDUPS_SHA256" "$ARCHAIC_FILTERBED_SHA256_ALTAI" "$ARCHAIC_FILTERBED_SHA256_VINDIJA" "$ARCHAIC_FILTERBED_SHA256_DENISOVA")) code=$(_digest sha256 <(sed '/^# --- genotypes (step 43)/,$d' "${PGP_ROOT}/bin/archaic_report.py"))"
   local have=1
   for c in $chroms; do [ -s "${dir}/chr${c}.tsv.gz" ] || have=0; done
   if [ "$have" = 1 ] && [ "$(cat "${dir}/DONE" 2>/dev/null)" = "$stamp" ]; then
@@ -1725,14 +1765,39 @@ install_archaic() {
     if ! run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c '
           r=(-r "$2"); [ ! -s "$4" ] || r=(-R "$4")
           bcftools view "${r[@]}" -m2 -M2 -v snps -Ou "$1" \
-            | bcftools query -f "%POS\t%REF\t%ALT\t%INFO/AF\t%INFO/AFR_AF\t%INFO/AMR_AF\t%INFO/EAS_AF\t%INFO/EUR_AF\t%INFO/SAS_AF\n" > "$3/modern.tsv"' \
+            | bcftools query -f "%POS\t%REF\t%ALT\t%INFO/AF\t%INFO/AFR_AF\t%INFO/AMR_AF\t%INFO/EAS_AF\t%INFO/EUR_AF\t%INFO/SAS_AF\n" > "$3/modern.tsv"
+          bcftools view -r "$2" -v indels -Ou "$1" \
+            | bcftools query -f "%POS\t%REF\t%ALT\n" > "$3/indels.tsv"' \
           _ "$(cpath "$sites")" "$c" "$(cpath "$wk")" "$(cpath "${wk}/regions.bed")"; then
       echo "[WARN] Could not read chr${c} of the 1000 Genomes sites"; return 1
     fi
+    # The regions no genome is read at: UCSC's segmental duplications, and
+    # each 1000 Genomes indel with 5 bp on each side, the window reaching past
+    # the longer of its REF and ALT as the published script writes it (Chen et
+    # al.'s own excluded beds, minus the CpG one, which needs a GRCh37
+    # reference and three primate SNP sets this pipeline does not install;
+    # docs/43-archaic.md says so). The indels are read from the whole
+    # chromosome even when ARCHAIC_REGIONS cuts the table down, so an indel
+    # just outside a region still excludes the sites next to it.
+    { awk -v c="$c" 'BEGIN {OFS = "\t"} $2 == "chr" c {print c, $3, $4}' <(gzip -dc "${dir}/segdups_hg19.txt.gz")
+      awk -F'\t' -v c="$c" 'BEGIN {OFS = "\t"}
+        { n = length($2); m = split($3, a, ","); for (i = 1; i <= m; i++) if (length(a[i]) > n) n = length(a[i])
+          s = $1 - 6; if (s < 0) s = 0
+          print c, s, $1 + 5 + n }' "${wk}/indels.tsv"
+    } | sort -k2,2n -k3,3n | gzip -c > "${dir}/exclude/chr${c}.bed.gz"
+    n=$(gzip -dc "${dir}/exclude/chr${c}.bed.gz" | awk 'END {print NR + 0}')
+    if [ "$n" -lt 100 ]; then
+      echo "[WARN] the exclusion list of chr${c} has ${n} regions: the segmental duplications or the 1000 Genomes indels did not arrive"; return 1
+    fi
+    echo "  chr${c}: ${n} excluded regions (segmental duplications and indel neighbourhoods)"
     for v in $genomes; do
       g=${v%%:*}
       fetch "${ARCHAIC_URL}/${g}/chr${c}_mq25_mapab100.vcf.gz" "${dir}/download/${g}.chr${c}.vcf.gz" md5 "file://${dir}/md5/${g}.txt" \
         || { echo "[WARN] Could not download chr${c} of ${g}; run: $0 --archaic ${GENOME_DIR} (it resumes)"; return 1; }
+      k=$(archaic_filterbed_sha "${v##*:}" "$c") || return 1
+      { [ -s "${dir}/mask/${g}.chr${c}.bed.gz" ] && [ "$(_digest sha256 "${dir}/mask/${g}.chr${c}.bed.gz")" = "$k" ]; } \
+        || fetch "${ARCHAIC_FILTERBED_URL}/${g}/chr${c}_mask.bed.gz" "${dir}/mask/${g}.chr${c}.bed.gz" sha256 "$k" \
+        || { echo "[WARN] Could not download the FilterBed of chr${c} of ${g}; run: $0 --archaic ${GENOME_DIR} (it resumes)"; return 1; }
     done
     echo "  chr${c}: the archaic genotypes at those SNVs and at every archaic non-reference site..."
     # The sites to keep: the 1000 Genomes SNVs, and every position where one of
@@ -1757,7 +1822,12 @@ install_archaic() {
     if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
           python3 /pgp-bin/archaic_report.py table --chrom "$c" --modern "$(cpath "${wk}/modern.tsv")" \
             --archaic "Altai=$(cpath "${wk}/Altai.tsv")" --archaic "Vindija=$(cpath "${wk}/Vindija33.19.tsv")" \
-            --archaic "Denisova=$(cpath "${wk}/Denisova.tsv")" --out "$(cpath "${wk}/hg19.vcf")"; then
+            --archaic "Denisova=$(cpath "${wk}/Denisova.tsv")" \
+            --mask "Altai=$(cpath "${dir}/mask/Altai.chr${c}.bed.gz")" \
+            --mask "Vindija=$(cpath "${dir}/mask/Vindija33.19.chr${c}.bed.gz")" \
+            --mask "Denisova=$(cpath "${dir}/mask/Denisova.chr${c}.bed.gz")" \
+            --exclude "$(cpath "${dir}/exclude/chr${c}.bed.gz")" \
+            --out "$(cpath "${wk}/hg19.vcf")"; then
       echo "[WARN] Could not merge chr${c}"; return 1
     fi
     echo "  chr${c}: lifting to GRCh38 (Picard LiftoverVcf, UCSC's chain)..."
@@ -1768,12 +1838,19 @@ install_archaic() {
       tail -n 20 "${wk}/liftover.log"
       echo "[WARN] Picard could not lift chr${c}"; return 1
     fi
-    # The rows that land on the same chromosome, once per position.
-    # shellcheck disable=SC2016  # $1 and $2 belong to the inner bash
+    # The rows that land on the same chromosome and inside the 1000 Genomes
+    # GRCh38 strict mask, once per position. The mask is sliced to this
+    # chromosome first: bcftools -T reads the whole targets file into memory,
+    # and the mask has 4.1 million lines for the genome.
+    awk -v c="chr${c}" '$1 == c' "${dir}/strict_GRCh38.bed" > "${wk}/strict.bed"
+    if [ ! -s "${wk}/strict.bed" ]; then
+      echo "[WARN] the GRCh38 strict mask has no interval on chr${c}: ${dir}/strict_GRCh38.bed"; return 1
+    fi
+    # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
     if ! { printf 'chrom\tpos\tref\talt\tAltai\tVindija\tDenisova\tAF_ALL\tAF_AFR\tAF_AMR\tAF_EAS\tAF_EUR\tAF_SAS\n'
            run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c \
-             'bcftools query -i "CHROM==\"chr$2\"" -f "%CHROM\t%POS\t%REF\t%ALT\t%INFO/Altai\t%INFO/Vindija\t%INFO/Denisova\t%INFO/AF_ALL\t%INFO/AF_AFR\t%INFO/AF_AMR\t%INFO/AF_EAS\t%INFO/AF_EUR\t%INFO/AF_SAS\n" "$1"' \
-             _ "$(cpath "${wk}/hg38.vcf")" "$c" | awk -F'\t' '!seen[$2]++'
+             'bcftools query -T "$3" -i "CHROM==\"chr$2\"" -f "%CHROM\t%POS\t%REF\t%ALT\t%INFO/Altai\t%INFO/Vindija\t%INFO/Denisova\t%INFO/AF_ALL\t%INFO/AF_AFR\t%INFO/AF_AMR\t%INFO/AF_EAS\t%INFO/AF_EUR\t%INFO/AF_SAS\n" "$1"' \
+             _ "$(cpath "${wk}/hg38.vcf")" "$c" "$(cpath "${wk}/strict.bed")" | awk -F'\t' '!seen[$2]++'
          } | gzip -c > "${dir}/chr${c}.tsv.gz.part"; then
       echo "[WARN] Could not write chr${c} of the table"; return 1
     fi
@@ -1789,7 +1866,7 @@ install_archaic() {
   for v in "${dir}"/chr*.tsv.gz; do
     [ -e "$v" ] || continue
     c=$(basename "$v" .tsv.gz); c=${c#chr}
-    [[ " ${chroms} " == *" ${c} "* ]] || rm -f "$v" "${dir}/chr${c}.stamp"
+    [[ " ${chroms} " == *" ${c} "* ]] || rm -f "$v" "${dir}/chr${c}.stamp" "${dir}/mask/"*".chr${c}.bed.gz" "${dir}/exclude/chr${c}.bed.gz"
   done
   rm -rf "${dir}/download" "${dir}/work"
   echo "$stamp" > "${dir}/DONE"
