@@ -486,7 +486,9 @@ install_masked_reference() {
       echo "[WARN] Could not download the GRC's list of false duplications (${GRC_EXCLUSIONS_URL})."
       return 1
     fi
-    rm -f "$dest" "${dest}.fai" "${dest%.*}.dict" "${dest}.part"
+    # Only the partial output goes now: a masked reference already there stays
+    # until its replacement has passed the sha256 check.
+    rm -f "${dest}.part"
     echo "Masking the false duplications of $(basename "$src") (a few minutes for GRCh38)..."
     if ! log=$(run_in --rw "$dir" "$PYTHON_IMAGE" python3 -c "$MASK_FASTA_PY" \
           "$(cpath "$src")" "$(cpath "$bed")" "$(cpath "${dest}.part")"); then
@@ -502,17 +504,18 @@ install_masked_reference() {
       return 1
     fi
     mv -f "${dest}.part" "$dest"
+    rm -f "${dest}.fai" "${dest%.*}.dict"
     # The index and the dictionary go next to the FASTA, so its directory is writable here.
     if ! run_in --rw "$dir" "$SAMTOOLS_IMAGE" samtools faidx "$(cpath "$dest")" \
        || ! run_in --rw "$dir" "$SAMTOOLS_IMAGE" samtools dict -o "$(cpath "${dest%.*}.dict")" "$(cpath "$dest")"; then
-      rm -f "$dest" "${dest}.fai" "${dest%.*}.dict"
-      echo "[WARN] Could not index the masked reference. Removed it."
+      rm -f "${dest}.fai" "${dest%.*}.dict"
+      echo "[WARN] Could not index the masked reference. Kept the FASTA (its sha256 matches) and removed its partial index; run setup again."
       return 1
     fi
     echo "[OK] Masked reference (sha256 matches): ${dest}"
   fi
   echo "  Use it for a sample by realigning it (docs/realignment.md#the-masked-reference):"
-  echo "    export REF_FASTA=${dest#"${GENOME_DIR}"/}   # bash steps; the Nextflow run takes --reference ${dest}"
+  printf '    export REF_FASTA=%q   # bash steps; the Nextflow run takes --reference %q\n' "${dest#"${GENOME_DIR}"/}" "$dest"
 }
 
 # install_exomiser_data: Exomiser's hg38 and phenotype data of release
