@@ -35,7 +35,8 @@
 # other copy holds another ALT) is never joined. A phased one (1|.) is: its
 # ALT sits on a known haplotype, so it joins a record in the same phase set
 # whose ALT sits on that haplotype (1|0 or 1|.), and the combined record's GT
-# keeps "." on a haplotype where either part is missing. The gene is not known
+# keeps "." on a haplotype where either part is missing (not called there; the
+# other alt allele when the part comes from a split 1|2). The gene is not known
 # here (the sample VCF is not annotated yet): a combined allele counts only
 # when ClinVar holds a record for it, and that record names its gene.
 #
@@ -89,7 +90,8 @@ function genotype_out(sig,    p) {
 
 # The GT of the record that joins parts with genotypes g1 and g2 and phase
 # signature sig: for a phased pair, the signature's alleles, with "." on a
-# haplotype where either part is missing (that copy holds another ALT there).
+# haplotype where either part is missing (not called there, or the other ALT
+# of a split record).
 function joined_gt(sig, g1, g2,    m, a, b, n, i, out) {
     if (substr(sig, 1, 2) == "U:") return genotype_out(sig)
     n = split(genotype_out(sig), m, "|"); split(g1, a, "|"); split(g2, b, "|")
