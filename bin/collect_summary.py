@@ -766,7 +766,7 @@ def parascopy_locus(name, path, row):
                      for c, b, e, cn, q, f, _ in regions)
     called = any(x[6] for x in regions)
     return dict(out, status="called" if called else "not resolved", cn=None, reading=".",
-                text=text + ("" if called else ": no region with filter PASS and quality 20 or more"))
+                text=text + ("" if called else ": no region with a whole copy number, filter PASS and quality 20 or more"))
 
 
 NO_SMN_TABLE = "no SMN1 table (step 35 wrote no SMN copy-number table)"

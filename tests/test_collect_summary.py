@@ -1296,6 +1296,12 @@ def parascopy_section(work, schema):
     check("loci: an unreadable table is that locus's problem, not the section's",
           {x["table"]: x["status"] for x in pd.get("loci", [])}.get("c4") == "unreadable"
           and (pd.get("hba") or {}).get("alpha_globin_genes") == "4", pd.get("loci"))
+    bound = os.path.join(g, "paralogs", "S_notch2_copy_number.tsv")
+    put(bound, SMN_COLS + "chr1\t120000000\t120100000\tNOTCH2\tPASS\t<5\t30\t.\t.\t.\t*\n")
+    lb = collect_summary.parascopy_locus("notch2", bound, None)
+    check("loci: a bound such as <5 is not resolved, and the note names the whole-number rule",
+          lb["status"] == "not resolved" and lb["cn"] is None
+          and lb["text"].endswith(": no region with a whole copy number, filter PASS and quality 20 or more"), lb)
 
     # Neither step 35 nor step 35b: the not-checked line in both reports.
     n = os.path.join(work, "noparalog", "S")
