@@ -181,10 +181,10 @@ export REF_FASTA=reference/GRCh38_no_alt_analysis_set_maskedGRC.fasta
 
 Step 02 builds its own minimap2 index for it the first time, `GRCh38_no_alt_analysis_set_maskedGRC.sr.mmi`. MEGAnE's k-mer set (step 50) is built from the reference, so run `setup.sh --megane-kmers` again with the same `REF_FASTA`.
 
-`validate-setup.sh` cannot tell a BAM aligned to the default reference from one aligned to the masked one: the names and lengths it compares are the same. The `@PG` line of minimap2 can, as it names the index. With `sam` and `BAM` defined as in [the checks above](#checks-that-prove-a-bam-is-on-the-new-reference):
+The `@SQ` names and lengths of the two references are the same, so they cannot tell a BAM aligned to the default reference from one aligned to the masked one. The aligner's `@PG` line can: minimap2's names the index (`..._maskedGRC.sr.mmi`, from step 02 or the Nextflow run) and bwa-mem2's the FASTA (`..._maskedGRC.fasta`, from step 02a). `validate-setup.sh` reads it: with `REF_FASTA` on the masked reference it fails a BAM whose minimap2 or BWA `@PG` line names no `_maskedGRC` file, and with `REF_FASTA` on the default one it fails a BAM whose line names one. A BAM with no minimap2 or BWA `@PG` line (a vendor's BAM, or a header rewritten without it) gets a warning on the masked reference and no check on the default one. The check goes by the file name, so keep the `_maskedGRC` in the names `setup.sh` and step 02 give the FASTA and the index. To look by hand, with `sam` and `BAM` defined as in [the checks above](#checks-that-prove-a-bam-is-on-the-new-reference):
 
 ```bash
-sam view -H "$BAM" | grep '^@PG' | grep -o 'GRCh38_no_alt_analysis_set[^ ]*\.sr\.mmi'   # ..._maskedGRC.sr.mmi on the masked reference
+sam view -H "$BAM" | grep '^@PG' | grep -oE 'GRCh38_no_alt_analysis_set[^ ]*\.(sr\.mmi|fasta)'   # ..._maskedGRC.sr.mmi or ..._maskedGRC.fasta on the masked reference
 ```
 
 What it changes was measured on chr21 by the CI case `tests/e2e/fixitfelix-chr21-1.sh`: HG002's read pairs over both copies of KCNE1, CBS and CRYAA (GIAB's Element AVITI 2x150 data, 81x), aligned with step 02 to chr21 with and without the mask, called with step 03 and compared with GIAB's CMRG v1.00 benchmark (Wagner et al., Nat Biotechnol 2022, PMID 35132260), alleles and genotype. The case requires a recall of 0.9 or more on the masked chr21 and under 0.5 on the stock one for each gene. The run of 2026-11-04 gave:

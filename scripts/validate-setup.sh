@@ -113,6 +113,46 @@ check_stale_indexes() {
   [ "$n" -eq 0 ] || echo "       If the data file changed after its index was made, index it again (samtools index for a BAM or CRAM, bcftools index for a VCF); if it was only copied, touch the index."
 }
 
+# check_bam_masked_reference HEADER: the sample BAM was aligned to the masked
+# reference (setup.sh --masked-reference, *_maskedGRC.fasta) exactly when
+# REF_FASTA is that reference. Masking keeps every name and length, so the @SQ
+# check above cannot tell the two apart; the aligner's @PG command line can.
+# Step 02 and the Nextflow run give minimap2 <reference base>.sr.mmi, step 02a
+# gives bwa-mem2 the FASTA itself, so on the masked reference both name a file
+# with _maskedGRC in it. The aligner lines are the @PG lines whose ID or PN is
+# minimap2, bwa-mem2 or bwa. A BAM with none (a vendor's, or a header
+# rewritten without them) cannot be told apart: a warning on the masked
+# reference, nothing on the default one.
+check_bam_masked_reference() {
+  local header=$1 cls want=false got=false
+  case "$(basename "$REF_FASTA")" in *_maskedGRC.*) want=true ;; esac
+  cls=$(awk -F'\t' '/^@PG/ {
+      id = ""; pn = ""; cl = ""
+      for (i = 2; i <= NF; i++) {
+        if ($i ~ /^ID:/) id = substr($i, 4)
+        else if ($i ~ /^PN:/) pn = substr($i, 4)
+        else if ($i ~ /^CL:/) cl = substr($i, 4)
+      }
+      sub(/\.[0-9]+$/, "", id)   # samtools merge and a second run write ID:minimap2.1
+      if ((id ~ /^(minimap2|bwa-mem2|bwa)$/ || pn ~ /^(minimap2|bwa-mem2|bwa)$/) && cl != "") print cl
+    }' <<< "$header")
+  if [ -z "$cls" ]; then
+    if $want; then
+      warn "BAM header has no minimap2 or BWA @PG line, so it cannot show it was aligned to the masked reference REF_FASTA names"
+      echo "       If it was aligned to the default reference, realign it (docs/realignment.md#the-masked-reference)."
+    fi
+    return 0
+  fi
+  case "$cls" in *_maskedGRC*) got=true ;; esac
+  if $want && ! $got; then
+    fail "REF_FASTA is the masked reference, but this BAM was aligned to the default one (its aligner @PG line names no _maskedGRC file): realign it (docs/realignment.md#the-masked-reference)"
+  elif ! $want && $got; then
+    fail "this BAM was aligned to the masked reference (its aligner @PG line names a _maskedGRC file), but REF_FASTA is ${REF_FASTA}: set REF_FASTA to the masked reference (docs/realignment.md#the-masked-reference)"
+  elif $want; then
+    pass "BAM was aligned to the masked reference (its aligner @PG line names a _maskedGRC file)"
+  fi
+}
+
 # check_bam_quickcheck: the sample BAM passes samtools quickcheck (a header
 # with at least one sequence, and the end-of-file block). Runs whether or not
 # its header could be read.
@@ -915,6 +955,7 @@ if [ -n "$SAMPLE" ]; then
       if BAM_HEADER=$(run_in "${SAMTOOLS_IMAGE}" \
           samtools view -H "/genome/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null); then
         check_bam_reference "$BAM_HEADER"
+        check_bam_masked_reference "$BAM_HEADER"
         if grep -q '^@RG' <<< "$BAM_HEADER"; then
           pass "BAM has a read group (@RG)"
         else
