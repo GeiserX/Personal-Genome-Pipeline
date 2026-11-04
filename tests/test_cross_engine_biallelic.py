@@ -151,7 +151,7 @@ def main():
         d = sample(work, "tar", [hit(TAR_ALLELE, "RBM8A", "1/1")])
         step35(d, intervals=tar_row)
         c = carrier(d)
-        t = [x for x in c["two_hits"]["genes"] if x["gene"] == "RBM8A"]
+        t = [x for x in (c.get("two_hits") or {}).get("genes", []) if x["gene"] == "RBM8A"]
         check("TAR: the 1q21.1 deletion + the RBM8A allele give one RBM8A line",
               len(t) == 1 and t[0]["verdict"] == "biallelic", c.get("two_hits"))
         line = [x for x in render_report.carrier_lines(c) if "RBM8A" in x and "both copies" in x]
@@ -201,7 +201,7 @@ def main():
 
         # 7. no deletion caller: no line, and the gap is named
         d = sample(work, "none", [hit(SNV, "MUTYH", "0/1")])
-        t = carrier(d)["two_hits"]
+        t = carrier(d).get("two_hits") or {"genes": None, "deletions_not_read": []}
         check("no deletion caller: no line", t["genes"] == [], t)
         check("no deletion caller: the callers not read are named",
               any("AnnotSV" in x for x in t["deletions_not_read"])
