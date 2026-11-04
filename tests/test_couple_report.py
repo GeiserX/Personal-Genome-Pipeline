@@ -42,7 +42,8 @@ Checks:
  11. carrier deletion alleles and AZF (step 35's interval table): each allele
      of each partner is listed as present, absent or not assessable; the
      male partner's AZF deletions are listed by that name (absent on a
-     normal male), the female's are not applicable;
+     normal male), the female's are not applicable; the HBB 619 bp and the
+     Sicilian (delta-beta)0 deletions are two of the alleles;
      where CNVpytor (step 18) and the depth call disagree, both are printed;
      without --cn-intervals the section is not written;
  12. a split half call (./1) is het with one copy, never hom.
@@ -390,11 +391,15 @@ def main():
                    + ivrow("CFTR_dele2_3", "chr7", 117498312, 117519392)
                    + ivrow("HBB_exon3_del", "chr11", 5225254, 5225875, status="not assessed", copies=".",
                            change=".", reason="between_counts")
+                   + ivrow("HBB_619bp_del", "chr11", 5225388, 5226007)
+                   + ivrow("HBD_HBB_Sicilian_del", "chr11", 5219877, 5233280)
                    + ivrow("AZFa", "chrY", 12537649, 12920478, status="not applicable", copies=".", expected=".",
                            change=".", reason="no_y"))
         b_iv = put(f"{t}/B_cn_intervals.tsv", ivh + ivrow("GJB6_D13S1830", "chr13", 20223037, 20531806)
                    + ivrow("CFTR_dele2_3", "chr7", 117498312, 117519392)
-                   + ivrow("HBB_exon3_del", "chr11", 5225254, 5225875)
+                   + ivrow("HBB_exon3_del", "chr11", 5225254, 5225875, copies="1", change="deletion")
+                   + ivrow("HBB_619bp_del", "chr11", 5225388, 5226007, copies="1", change="deletion")
+                   + ivrow("HBD_HBB_Sicilian_del", "chr11", 5219877, 5233280, copies="1", change="deletion")
                    + ivrow("AZFa", "chrY", 12537649, 12920478, copies="1", expected="1")
                    + ivrow("AZFb", "chrY", 19702297, 20593154, copies="1", expected="1")
                    + ivrow("AZFc_DAZ", "chrY", 23129354, 24907040, copies="2", expected="4", change="deletion"))
@@ -407,14 +412,19 @@ def main():
                       "--cnvpytor", f"A={a_cnv}", "--cnvpytor", f"B={b_cnv}", "--out-dir", f"{t}/cn")
         md = open(f"{t}/cn/couple_A_B.md").read() if os.path.exists(f"{t}/cn/couple_A_B.md") else ""
         lines = [x for x in md.splitlines() if x.startswith("- A,") or x.startswith("- B,")]
-        check("cn alleles: each of the three alleles of each partner has one of the three states",
+        check("cn alleles: each of the five alleles of each partner has one of the three states",
               rc == 0 and all(sum(f"- {p}, {n}: **{st}**" in md for st in ("present", "absent", "not assessable")) == 1
-                              for p in "AB" for n in ("del(GJB6-D13S1830)", "CFTRdele2,3", "HBB exon 3 deletion")),
+                              for p in "AB" for n in ("del(GJB6-D13S1830)", "CFTRdele2,3", "HBB exon 3 deletion",
+                                                      "HBB 619 bp deletion", "Sicilian (delta-beta)0 deletion")),
               (rc, log, lines))
         check("cn alleles: A's GJB6 deletion present, A's HBB not assessable with its reason, B's CFTR absent",
               "- A, del(GJB6-D13S1830): **present** (read depth, step 35: 1 of 2 copies)" in md
               and "- A, HBB exon 3 deletion: **not assessable** (read depth, step 35: not assessed (between_counts))" in md
               and "- B, CFTRdele2,3: **absent**" in md, lines)
+        check("cn alleles: B's Sicilian and 619 bp deletions present, A's absent",
+              "- B, Sicilian (delta-beta)0 deletion: **present** (read depth, step 35: 1 of 2 copies)" in md
+              and "- B, HBB 619 bp deletion: **present** (read depth, step 35: 1 of 2 copies)" in md
+              and "- A, Sicilian (delta-beta)0 deletion: **absent** (read depth, step 35: 2 of 2 copies)" in md, lines)
         check("cn alleles: where CNVpytor and the depth call disagree, both are printed",
               "- A, del(GJB6-D13S1830): **present** (read depth, step 35: 1 of 2 copies); "
               "CNVpytor (step 18) calls no deletion here" in md

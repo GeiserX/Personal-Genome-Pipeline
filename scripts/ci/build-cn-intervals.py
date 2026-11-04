@@ -18,8 +18,14 @@ The interval rows are the copy-number checks step 35 runs with one
     ClinGen_region_curation_list_GRCh38.tsv as read on 2026-11-04;
   - three carrier deletion alleles at their ClinVar GRCh38 spans (HAND_ROWS):
     del(GJB6-D13S1830) (VCV 5546), CFTRdele2,3 (VCV 66105) and a 621 bp HBB
-    deletion that removes exon 3 (VCV 3769040). The alpha-globin --SEA
-    deletion is read by the HBA row (step 35's HBA table), not here;
+    deletion that removes exon 3 (VCV 3769040); and two beta-globin
+    deletions at their HbVar GRCh38 spans, checked on 2026-11-04 by placing
+    50 bp on each side of the NG_000007.3 breakpoints on NC_000011.10: the
+    619 bp HBB deletion common in India and Pakistan (HbVar 979,
+    NG_000007.3:g.71609_72227del619, Orkin 1979) and the 13.4 kb Sicilian
+    (delta-beta)0 deletion from HBD to 3' of HBB (HbVar 1035,
+    NG_000007.3:g.64336_77738del13403, Henthorn 1990). The alpha-globin
+    --SEA deletion is read by the HBA row (step 35's HBA table), not here;
   - the Y chromosome AZF regions (HAND_ROWS), read only on a sample with a Y:
     AZFa as USP9Y and DDX3Y, AZFb as KDM5D and EIF1AY (single-copy genes each
     deletion removes), and AZFc as the four DAZ copies added up (a complete
@@ -95,6 +101,10 @@ HAND_ROWS = [
      "."),
     ("HBB_exon3_del", "chr11", [("HBB deletion of exon 3 (621 bp), ClinVar 3769040", 5225254, 5225875)], None,
      "pooled", True, "."),
+    ("HBB_619bp_del", "chr11", [("HBB 619 bp deletion (South Asian), HbVar 979", 5225388, 5226007)], None,
+     "pooled", True, "287080"),
+    ("HBD_HBB_Sicilian_del", "chr11", [("Sicilian (delta-beta)0 deletion (13.4 kb, HBD to HBB 3'), HbVar 1035",
+                                        5219877, 5233280)], None, "pooled", True, "2307466"),
     ("AZFa", "chrY", [("AZFa (USP9Y and DDX3Y)", 12537649, 12860852), ("DDX3Y", 12904107, 12920478)],
      Y_CONTROLS, "pooled", False, "37674303"),
     ("AZFb", "chrY", [("AZFb (KDM5D and EIF1AY)", 19702297, 19745148), ("EIF1AY", 20575693, 20593154)],
