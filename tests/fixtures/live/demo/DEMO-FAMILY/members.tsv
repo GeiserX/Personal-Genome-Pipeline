@@ -1,0 +1,3 @@
+sample	sex	father	mother	partner	in_pedigree	sequenced
+DEMO-001	male			DEMO-002	yes	yes
+DEMO-002	female			DEMO-001	yes	yes
