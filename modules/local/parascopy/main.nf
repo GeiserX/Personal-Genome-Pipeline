@@ -38,6 +38,12 @@
     no pinned caller models) go the same way, total copies only, one
     line per locus in <id>_cn_dosage.tsv (docs/cn-loci.md).
 
+    CYP21A2 has no Parascopy model either: bedcov over CYP21A2 and its
+    pseudogene CYP21A1P gives the RCCX module total, and samtools mpileup at
+    the sites where the two differ gives the CYP21A2 copies at each, so the
+    30 kb chimeric deletion and a possible conversion show
+    (<id>_cyp21a2_psv.tsv, docs/cn-loci.md).
+
     The interval rows of that catalog (ClinGen's recurrent CNV regions, the
     carrier deletion alleles and the Y chromosome AZF regions) take one more
     bedcov pass over all their segments, one line per row in
@@ -79,6 +85,7 @@ process PARASCOPY {
     tuple val(meta), path("${meta.id}_hba_copy_number.tsv"), emit: hba
     tuple val(meta), path("${meta.id}_*_copy_number.tsv"),   emit: tables  // every catalog row's table, and HBA's
     tuple val(meta), path("${meta.id}_cn_dosage.tsv"),       emit: dosage  // HP, LCE3BC, CCL3L1 from depth
+    tuple val(meta), path("${meta.id}_cyp21a2_psv.tsv"),     emit: cyp21a2  // CYP21A2 from depth and PSVs
     tuple val(meta), path("${meta.id}_cn_intervals.tsv"),    emit: intervals  // the interval rows from depth
     path "versions.yml",                                     emit: versions
 
@@ -177,6 +184,25 @@ process PARASCOPY {
     done
     mv cn_dosage.part ${meta.id}_cn_dosage.tsv
 
+    # CYP21A2 from depth and PSVs (as scripts/35-paralogs.sh): bedcov over the row (the RCCX module
+    # total), mpileup without a reference at its PSV sites, then the verdict; not assessed when it fails
+    if copy_number.py bed --locus CYP21A2 > cyp21a2_regions.bed \\
+        && copy_number.py bed --psv --locus CYP21A2 > cyp21a2_psv.bed \\
+        && samtools bedcov cyp21a2_regions.bed ${bam} > cyp21a2_bedcov.tsv \\
+        && samtools mpileup -A -B -q 0 -Q 13 -d 100000 \\
+            -r "\$(awk 'NR == 1 {c = \$1; s = \$2 + 1} {e = \$3} END {print c ":" s "-" e}' cyp21a2_psv.bed)" \\
+            -l cyp21a2_psv.bed ${bam} > cyp21a2_pileup.tsv \\
+        && copy_number.py call --locus CYP21A2 --bedcov cyp21a2_bedcov.tsv --pileup cyp21a2_pileup.tsv \\
+            --table ${meta.id}_cyp21a2_psv.tsv.tmp; then
+        mv ${meta.id}_cyp21a2_psv.tsv.tmp ${meta.id}_cyp21a2_psv.tsv
+    else
+        rm -f ${meta.id}_cyp21a2_psv.tsv.tmp
+        echo "WARNING: the CYP21A2 depth and PSV check failed; ${meta.id}_cyp21a2_psv.tsv says not assessed." >&2
+        printf 'metric\\tvalue\\nstatus\\tnot assessed\\ncyp21a2_copies\\t.\\nmodule_total\\t.\\nexpected_total\\t.\\nestimate\\t.\\nfinding\\t.\\nconversion_sites\\t.\\ntarget_depth\\t.\\ncontrol_depth\\t.\\nreason\\tcheck_failed\\nreading\\t%s\\n' \\
+            'the CYP21A2 depth and PSV check failed; see the log of step 35' > ${meta.id}_cyp21a2_psv.tsv
+    fi
+    rm -f cyp21a2_regions.bed cyp21a2_psv.bed cyp21a2_bedcov.tsv cyp21a2_pileup.tsv
+
     # Interval rows of bin/cn_loci.tsv (as scripts/35-paralogs.sh): one bedcov over every row's segments,
     # then the verdict; a failed pass writes every row as not assessed (check_failed)
     if ! { copy_number.py bed --kind interval > interval_regions.bed \
@@ -205,6 +231,7 @@ process PARASCOPY {
     printf 'metric\\tvalue\\nstatus\\tnot assessed\\nalpha_globin_genes\\t.\\nestimate\\t.\\nhba2_depth\\t0\\nhba1_depth\\t0\\nflank_left_depth\\t0\\nflank_right_depth\\t0\\nmapq0_share\\t0\\nmessage\\tstub\\n' \\
         > ${meta.id}_hba_copy_number.tsv
     printf 'locus\\tstatus\\tcopies\\testimate\\treason\\treading\\n' > ${meta.id}_cn_dosage.tsv
+    printf 'metric\\tvalue\\nstatus\\tnot assessed\\nreason\\tstub\\n' > ${meta.id}_cyp21a2_psv.tsv
     printf 'locus\\tname\\tchrom\\tstart\\tend\\tstatus\\tcopies\\texpected\\tchange\\testimate\\treason\\n' > ${meta.id}_cn_intervals.tsv
 
     cat <<-END_VERSIONS > versions.yml
