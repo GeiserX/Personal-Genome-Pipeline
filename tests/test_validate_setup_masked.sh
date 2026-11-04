@@ -27,6 +27,9 @@ sq=$'@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr21\tLN:46709983'
 mm2() { printf '%s\n@PG\tID:minimap2\tPN:minimap2\tVN:2.28\tCL:minimap2 -t 16 -a -x sr %s.sr.mmi R1.fq.gz R2.fq.gz\n@PG\tID:samtools\tPN:samtools\tPP:minimap2\tCL:samtools sort -o x.bam' "$sq" "$1"; }
 bwa() { printf '%s\n@PG\tID:bwa-mem2\tPN:bwa-mem2\tVN:2.2.1\tCL:bwa-mem2 mem -t 16 %s.fasta R1.fq.gz R2.fq.gz' "$sq" "$1"; }
 none() { printf '%s\n@PG\tID:DRAGEN\tPN:DRAGEN\tCL:dragen -r /ref' "$sq"; }
+nocl() { printf '%s\n@PG\tID:minimap2\tPN:minimap2\tVN:2.28' "$sq"; }
+# A read group and FASTQ names that hold _maskedGRC, on the default index.
+rgname() { printf '%s\n@PG\tID:minimap2\tPN:minimap2\tCL:minimap2 -a -x sr -R @RG\\tID:s_maskedGRC\\tSM:s_maskedGRC %s.sr.mmi s_maskedGRC_R1.fastq.gz s_maskedGRC_R2.fq.gz' "$sq" "$1"; }
 
 # verdict REF HEADER: OK, WARN, FAIL or none, from the function's output.
 verdict() {
@@ -41,7 +44,7 @@ verdict() {
     # shellcheck disable=SC1091
     . "${WORK}/fn.sh"
     REF_FASTA=$1 check_bam_masked_reference "$2"
-  ) | awk 'NR == 1 {print $1; n++} END {if (!n) print "none"}'
+  ) | awk '$1 == "OK" || $1 == "WARN" || $1 == "FAIL" {s = s (s ? "," : "") $1} END {print (s ? s : "none")}'
 }
 
 expect() {  # expect DESC REF HEADER WANT
@@ -62,6 +65,26 @@ expect "masked REF_FASTA, no aligner @PG line: a warning" "${MASKED}.fasta" "$(n
 expect "default REF_FASTA, no aligner @PG line: nothing to say" "${STOCK}.fasta" "$(none)" none
 expect "masked REF_FASTA, minimap2 @PG renamed minimap2.1 by a merge" "${MASKED}.fasta" \
   "$(mm2 "$STOCK" | sed 's/ID:minimap2/ID:minimap2.1/; s/PN:minimap2/PN:mm/')" FAIL
+expect "default REF_FASTA, masked minimap2 @PG renamed minimap2.1.1 by two merges (refused)" "${STOCK}.fasta" \
+  "$(mm2 "$MASKED" | sed 's/ID:minimap2/ID:minimap2.1.1/; s/PN:minimap2/PN:mm/')" FAIL
+expect "masked REF_FASTA, an aligner @PG line without CL: a warning" "${MASKED}.fasta" "$(nocl)" WARN
+expect "default REF_FASTA, an aligner @PG line without CL: nothing to say" "${STOCK}.fasta" "$(nocl)" none
+expect "default REF_FASTA, _maskedGRC only in the read group and FASTQ names: nothing to say" "${STOCK}.fasta" \
+  "$(rgname "$STOCK")" none
+expect "masked REF_FASTA, _maskedGRC only in the read group and FASTQ names (refused)" "${MASKED}.fasta" \
+  "$(rgname "$STOCK")" FAIL
+both=$(printf '%s\n%s' "$(mm2 "$STOCK")" "$(bwa "$MASKED" | grep '^@PG')")
+expect "masked REF_FASTA, aligner lines naming both references (refused once)" "${MASKED}.fasta" "$both" FAIL
+expect "default REF_FASTA, aligner lines naming both references (refused once)" "${STOCK}.fasta" "$both" FAIL
+
+# validate-setup.sh runs the check on the sample BAM's header, right after the @SQ check.
+# shellcheck disable=SC2016  # the $ is the script's text, not this shell's
+if grep -A1 '^        check_bam_reference "\$BAM_HEADER"$' "${REPO}/scripts/validate-setup.sh" \
+   | grep -q '^        check_bam_masked_reference "\$BAM_HEADER"$'; then
+  echo "[PASS] validate-setup.sh calls check_bam_masked_reference on the BAM header"
+else
+  echo "[FAIL] validate-setup.sh does not call check_bam_masked_reference after check_bam_reference"; FAILS=$((FAILS + 1))
+fi
 
 echo
 if [ "$FAILS" -eq 0 ]; then echo "RESULT: ALL PASS"; else echo "RESULT: ${FAILS} FAILED"; fi
