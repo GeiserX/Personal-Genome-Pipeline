@@ -172,6 +172,7 @@ These run after the core pipeline completes and combine outputs from earlier ste
 | 50 | [Mobile Element Insertions (Alu, L1, SVA)](50-mei.md) | MEGAnE + samtools + Python | `MEGANE_IMAGE` + `SAMTOOLS_IMAGE` + `PYTHON_IMAGE` | Opt-in (`TOOLS=...,mei`, after `setup.sh --megane-kmers`; needs the BAM) |
 | 51 | [Mosaic Chromosomal Alterations](51-mocha.md) | MoChA + Beagle + Python | `MOCHA_IMAGE` + `BEAGLE_IMAGE` + `PYTHON_IMAGE` | Opt-in (`TOOLS=...,mocha`, after `setup.sh --mocha-data`) |
 | 52 | [MUC1 VNTR Frameshifts (VNtyper)](52-vntyper.md) | VNtyper | `VNTYPER_IMAGE` | Opt-in (`TOOLS=...,vntyper`; needs the BAM) |
+| 53 | [Hard Loci Second Opinion](53-locityper.md) | Locityper + Python | `LOCITYPER_IMAGE` | Opt-in (`TOOLS=...,locityper`, after `setup.sh --locityper-data`; needs the BAM) |
 
 ### What a default run covers
 

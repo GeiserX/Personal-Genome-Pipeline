@@ -258,6 +258,17 @@ Only needed for step 50, the mobile element insertions ([50-mei.md](50-mei.md)).
 
 It pulls `MEGANE_IMAGE` (about 6.4 GB) and runs MEGAnE's `build_kmerset` on `REF_FASTA`. The builder holds two 8-byte k-mers per reference base in memory, so GRCh38 needs about 50 GB of RAM (MEGAnE's authors give 48 GB and about 10 minutes); `setup.sh` checks the memory Docker has first and stops with a message when it is short. On a smaller machine, build it where the memory is and copy `reference/megane/` over. A set newer than the reference is kept; a new reference needs a new set.
 
+## Locityper Database (Optional, for Step 53)
+
+Only needed for step 53, the second opinion at HLA-DRB1, HLA-DQB1, KIR, CYP2D6 and FCGR ([53-locityper.md](53-locityper.md)):
+
+```bash
+./scripts/setup.sh --locityper-data ${GENOME_DIR}
+# Creates: ${GENOME_DIR}/reference/locityper-hprc-v2.1-mc-grch38/ (counts.jf, db/, loci.bed, DONE)
+```
+
+It pulls `LOCITYPER_IMAGE`, counts the 25-mers of `REF_FASTA` with jellyfish, reads the HPRC release 2 pangenome VCF (`LOCITYPER_PANEL_URL`) over https only around the loci of `assets/locityper_loci.bed`, through its `.tbi` checked against `LOCITYPER_PANEL_TBI_SHA256`, and builds the database with `locityper target` and `locityper augment`. A new reference, image, panel or locus list builds again.
+
 ## Annotation Databases (Optional, for Steps 30-31)
 
 Deep pathogenicity scoring and variant prioritization. These databases power vcfanno (step 30) and slivar (step 31). All are optional — step 30 gracefully skips any missing track.

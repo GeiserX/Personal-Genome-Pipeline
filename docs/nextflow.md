@@ -68,6 +68,8 @@ nextflow run main.nf \
 #                                                genes of each segment (docs/43-archaic.md)
 #    --tools '...,ancient'                     + --ancient_panel (setup.sh --ancient-panel); reads the gVCF, so a sample
 #                                                without one is skipped with a warning (docs/44-ancient.md)
+#    --tools '...,locityper'                   + --locityper_data (setup.sh --locityper-data), optional
+#                                                --locityper_bg_region; needs the BAM (docs/53-locityper.md)
 #    --hpo HP:0001250,HP:0001263               + --exomiser_data (setup.sh --exomiser-data): Exomiser ranks the
 #                                                variants against these symptoms; --exomiser_proband names
 #                                                the sample when there are several (docs/48-exomiser.md)
