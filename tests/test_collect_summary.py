@@ -152,9 +152,21 @@ Checks:
      EAS, where the score was not evaluated: none), and none without the
      panel; a list without evaluations keeps the older columns; both reports print the effect for EUR and say there
      is none for EAS.
+ 28. step 06's construct and always-report outputs: a hit with GT 1/. (the
+     half of a split 1/2 call at a poly-T tract) is worded "one copy, other
+     copy not called ref (1/.)" in the summary, both reports, the carrier list
+     and bin/clinvar_hits.awk, never het, and counts one copy of two; a hit
+     named in the cDNA table's construct_site column prints the site and its
+     read counts even when clear, and is counted; the genome-wide cDNA scan's
+     loci and its "not run" note, and every row of the always-report list
+     with its call ("ref, GQ 50 (gVCF block)", a genotype, "no call: why"),
+     reach both reports; bin/clinvar_hits.awk's sites mode words the calls
+     the same way, and a reference call below the GQ floor reads
+     "ref (low confidence)".
 
 Run: python3 tests/test_collect_summary.py
 """
+import copy
 import csv
 import gzip
 import json
@@ -436,6 +448,132 @@ FLOOR_HITS = ("##fileformat=VCFv4.2\n##PGP_CALL_FLOOR=GQ=30,DP=10\n" + VCF_HEAD.
     "CLNREVSTAT=criteria_provided,_single_submitter\tGT:DP:GQ\t0/1:35:45\n"
     "chr3\t10\t4\tA\tG\t50\tPASS\tGENEINFO=GENED:44;CLNSIG=Pathogenic;"
     "CLNREVSTAT=criteria_provided,_single_submitter\tGT\t1/1\n"))
+
+
+def construct_scan_section(work, schema):
+    """28. step 06's construct sites, cDNA scan, split poly-T call and always-report list."""
+    d = os.path.join(work, "construct-scan", "S")
+    cftr = "GENEINFO=CFTR:1080;CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_multiple_submitters,_no_conflicts"
+    app = "GENEINFO=APP:351;CLNSIG=Pathogenic;CLNREVSTAT=criteria_provided,_multiple_submitters,_no_conflicts"
+    put(f"{d}/clinvar/S_clinvar_hits.vcf", VCF_HEAD + (
+        f"chr7\t117548628\t1\tGTTT\tG\t50\tPASS\t{cftr}\tGT:GQ:DP\t1/.:45:30\n"
+        f"chr21\t25897626\t2\tTC\tGA\t50\tPASS\t{app}\tGT:GQ:DP\t0/1:50:35\n"))
+    put(f"{d}/clinvar/S_clinvar_cdna_check.tsv", "\t".join(clip_check.COLUMNS) + "\n"
+        "chr7\t117548628\tGTTT\tG\t\t\t\t\tnot_checked\tnot a SNV, MNV or simple indel\t\n"
+        "chr21\t25897626\tTC\tGA\t12\t0\t10\t0\tclear\t\tAPP Swedish K670N/M671L\n")
+    put(f"{d}/clinvar/S_clinvar_cdna_scan.tsv", "# cdna_scan: read 3 exon regions on 1 contigs; 1 loci listed\n"
+        "chrom\tstart\tend\tjunctions\treads\tjunction_list\n"
+        "chr21\t25880551\t25891785\t3\t24\t25880551-25881101:10,25881201-25891785:8,25880551-25891785:6\n")
+    put(f"{d}/clinvar/S_clinvar_deep_intronic.tsv", "chrom\tpos\tref\talt\tgene\thgvs\tclinvar_id\tcall\tdetail\n"
+        "chr1\t215891198\tT\tC\tUSH2A\tNM_206933.4:c.7595-2144A>G\t30722\tref\tGQ 50 (gVCF block)\n"
+        "chr7\t117639961\tC\tT\tCFTR\tNM_000492.4:c.3718-2477C>T\t7166\thet\tGQ 40, DP 30\n"
+        "chrX\t101399747\tC\tT\tGLA\tNM_000169.3:c.640-801G>A\t10768\tno call\t"
+        "no record in the VCF or the gVCF covers the site\n")
+    summ, txt, html = render(d)
+    errs = validate.validate(schema, json.loads(json.dumps(summ)))
+    check("construct-scan: the summary validates against the schema", not errs, errs)
+    cv = summ["sections"]["clinvar"]["data"]
+    by = {h["gene"]: h for h in cv["hits"]}
+    half = "one copy, other copy not called ref (1/.)"
+    check("split poly-T: the 1/. hit is worded as one copy, not het", by["CFTR"]["genotype"] == half, by["CFTR"])
+    check("split poly-T: both reports print that wording, neither prints it as het",
+          f"{half}  Pathogenic" in txt and f"<td>{half}</td>" in html
+          and "chr7:117548628 GTTT>G  het" not in txt, [l for l in txt.splitlines() if "117548628" in l])
+    check("split poly-T: one copy of two (not hemizygous)", collect_summary.allele_copies("1/.") == (1, 2))
+    carriers = {x["gene"]: x for x in summ["sections"]["carrier"]["data"].get("carriers", [])}
+    check("split poly-T: the carrier list words it the same way", carriers.get("CFTR", {}).get("genotype") == half,
+          summ["sections"]["carrier"]["data"])
+    awk = subprocess.run(["awk", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"), f"{d}/clinvar/S_clinvar_hits.vcf"],
+                         capture_output=True, text=True).stdout
+    check("split poly-T: bin/clinvar_hits.awk gives the same words",
+          [r.split("\t")[5] for r in awk.splitlines()] == [half, "het"], awk)
+    site = "known lab-construct site (APP Swedish K670N/M671L): clear (0 of 12 alt reads and 0 of 10 ref reads " \
+           "clipped at an exon edge)"
+    check("construct site: counted, and both reports print the site with its counts though it is clear",
+          cv.get("construct_sites") == 1 and f"reads: {site}" in txt and f"<td>{site}</td>" in html, cv.get("construct_sites"))
+    low = {"check": "not_checked", "note": "fewer than 2 reads carry the alt allele", "construct": "LRRK2 G2019S",
+           "alt_reads": 1, "alt_clipped": 0, "ref_reads": 6, "ref_clipped": 0}
+    check("construct site: a not-checked hit with measured reads still prints its counts; one with no BAM does not",
+          render_report.cdna_text({"cdna": low}).endswith("(0 of 1 alt reads and 0 of 6 ref reads clipped at an exon edge)")
+          and render_report.cdna_text({"cdna": dict(low, note="no BAM", alt_reads=None)})
+          == "known lab-construct site (LRRK2 G2019S): not checked: no BAM"
+          and render_report.cdna_text({"cdna": dict(low, construct="")})
+          == "not checked: fewer than 2 reads carry the alt allele", render_report.cdna_text({"cdna": low}))
+    # A construct-site hit below the first 50 listed hits still gets a line in both reports.
+    many = copy.deepcopy(summ)
+    mh = many["sections"]["clinvar"]["data"]["hits"]
+    app_hit = next(h for h in mh if h["gene"] == "APP")
+    pad = [dict(copy.deepcopy(next(h for h in mh if h["gene"] == "CFTR")), pos=100 + i) for i in range(60)]
+    many["sections"]["clinvar"]["data"]["hits"] = pad + [app_hit]
+    mt, mhtml = render_report.text_report(many), render_report.html_report(many)
+    past = "APP chr21:25897626 TC>GA het: " + site
+    check("construct site: a hit past the first 50 is still printed, with its counts, in both reports",
+          "Hits at a known lab-construct site past the first 50:" in mt and past in mt
+          and render_report.E("past the first 50: " + past) in mhtml, [l for l in mt.splitlines() if "APP" in l])
+    check("construct site: the HTML card counts it",
+          "Hits at a known lab-construct site (check the reads)</span><span class=\"value\"><span class=\"badge badge-yellow\">1<"
+          in html)
+    check("cDNA scan: the locus in both reports",
+          "cDNA scan of every exon: 1 loci with reads across two or more exon junctions "
+          "(read 3 exon regions on 1 contigs; 1 loci listed)" in txt
+          and "chr21:25880551-25891785: 3 junctions, 24 reads" in txt
+          and "<td>chr21:25880551-25891785</td><td>3</td><td>24</td>" in html
+          and render_report.CDNA_SCAN_NOTE in txt, cv.get("cdna_scan"))
+    deep = [("USH2A", "ref, GQ 50 (gVCF block)"), ("CFTR", "het, GQ 40, DP 30"),
+            ("GLA", "no call: no record in the VCF or the gVCF covers the site")]
+    check("always-report: every row, with its call, in the text report",
+          all(any(g in l and call in l for l in txt.splitlines()) for g, call in deep)
+          and "Known deep intronic sites (always reported)" in txt, [l for l in txt.splitlines() if "c." in l])
+    check("always-report: every row in the HTML table",
+          all(f"<td>{render_report.E(call)}</td>" in html for _, call in deep) and html.count("<td>NM_") == 3, "")
+    # Not run: the scan's note, and the list without any row still has its heading.
+    put(f"{d}/clinvar/S_clinvar_cdna_scan.tsv", "# cdna_scan: not run: no BAM\n" + "\t".join(
+        ["chrom", "start", "end", "junctions", "reads", "junction_list"]) + "\n")
+    summ, txt, html = render(d)
+    check("cDNA scan not run: both reports say why", "cDNA scan of every exon: not run: no BAM" in txt
+          and "cDNA scan of every exon: not run: no BAM" in html
+          and "Loci with spliced reads" not in html)
+    # bin/clinvar_hits.awk's sites mode: the call words the reports read.
+    sites = os.path.join(work, "construct-scan", "sites.tsv")
+    put(sites, "# t\nchrom\tpos\tref\talt\tgene\thgvs\tclinvar_id\n"
+        "chr1\t10\tA\tG\tG1\tc.1\t1\nchr1\t20\tC\tT\tG2\tc.2\t2\nchr1\t30\tA\tC\tG3\tc.3\t3\n"
+        "chr1\t40\tG\tA\tG4\tc.4\t4\nchr1\t99\tT\tA\tG5\tc.5\t5\n")
+    vcf_calls = os.path.join(work, "construct-scan", "vcf.txt")
+    put(vcf_calls, "chr1\t20\t20\tC\tT\t1/1\t60\t30\nchr1\t30\t30\tA\tC\t0/0\t35\t.\n"
+        "chr1\t40\t40\tG\tC\t0/1\t40\t30\n")
+    gvcf_calls = os.path.join(work, "construct-scan", "gvcf.txt")
+    put(gvcf_calls, "chr1\t1\t15\tA\t<*>\t0/0\t50\t.\nchr1\t90\t120\tT\t<*>\t./.\t0\t.\n")
+    out = subprocess.run(["awk", "-v", "mode=sites", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"), sites,
+                          vcf_calls, gvcf_calls], capture_output=True, text=True).stdout.splitlines()
+    calls = {r.split("\t")[4]: tuple(r.split("\t")[7:9]) for r in out[1:]}
+    check("sites mode: header and one row per site", out[:1] == ["chrom\tpos\tref\talt\tgene\thgvs\tclinvar_id\tcall\tdetail"]
+          and len(out) == 6, out)
+    check("sites mode: the calls", calls == {
+        "G1": ("ref", "GQ 50 (gVCF block)"), "G2": ("hom", "GQ 60, DP 30"), "G3": ("ref", "GQ 35"),
+        "G4": ("other allele", "G>C het"),
+        "G5": ("no call", "the gVCF record over the site is not a PASS reference call (GT ./.)")}, calls)
+    # The call floor: a reference call below min_gq (step 6's CLINVAR_MIN_GQ) is no confident ref.
+    out = subprocess.run(["awk", "-v", "mode=sites", "-v", "min_gq=40", "-f",
+                          os.path.join(REPO, "bin", "clinvar_hits.awk"), sites, vcf_calls, gvcf_calls],
+                         capture_output=True, text=True).stdout.splitlines()
+    low = {r.split("\t")[4]: tuple(r.split("\t")[7:9]) for r in out[1:]}
+    check("sites mode: a ref below the GQ floor reads 'ref (low confidence)', one above it stays 'ref'",
+          low.get("G3") == ("ref (low confidence)", "GQ 35, below the call floor of GQ 40")
+          and low.get("G1") == ("ref", "GQ 50 (gVCF block)") and low.get("G2") == ("hom", "GQ 60, DP 30"), low)
+    put(gvcf_calls, "chr1\t1\t15\tA\t<*>\t0/0\t2\t.\n")
+    out = subprocess.run(["awk", "-v", "mode=sites", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"), sites,
+                          vcf_calls, gvcf_calls], capture_output=True, text=True).stdout.splitlines()
+    low = {r.split("\t")[4]: tuple(r.split("\t")[7:9]) for r in out[1:]}
+    check("sites mode: a GQ 2 gVCF block under the default floor of 30 is a low-confidence ref",
+          low.get("G1") == ("ref (low confidence)", "GQ 2 (gVCF block), below the call floor of GQ 30")
+          and low.get("G3") == ("ref", "GQ 35"), low)
+    empty = os.path.join(work, "construct-scan", "empty.txt")
+    put(empty, "")
+    out = subprocess.run(["awk", "-v", "mode=sites", "-v", "gvcf=no", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"),
+                          sites, empty, empty], capture_output=True, text=True).stdout.splitlines()
+    check("sites mode: with no calls and no gVCF every site is no call, with that reason",
+          len(out) == 6 and all(r.endswith("\tno call\tno record in the VCF, and no gVCF to tell a reference call "
+                                           "from no call") for r in out[1:]), out)
 
 
 def clinvar_quality(work, schema):
@@ -1066,7 +1204,8 @@ def report_followups_sections(work, schema):
     html_ = htmlmod.unescape(html_)
     rl = summ["sections"]["traits"]["data"].get("rules") or []
     check("rules: the TAS2R38 line is read, PAV/PAV, and APOE (in the traits table) is left out",
-          [(r["rule"], r["result"], r["status"], r["phase"]) for r in rl] == [("TAS2R38", "PAV/PAV", "called", "not_needed")],
+          [(r["rule"], r["result"], r["status"], r["phase"]) for r in rl if r["rule"] in ("TAS2R38", "APOE")]
+          == [("TAS2R38", "PAV/PAV", "called", "not_needed")],
           rl)
     trait = rules["TAS2R38"]["trait"]
     check("rules: the text report prints the rule line with its result and sites",
@@ -2440,6 +2579,7 @@ def main():
               render(d)[0]["sections"]["couple"]["state"] == "missing"
               and not any("Couple" in x for x in render(d)[0]["not_run"]), render(d)[0]["not_run"])
         clinvar_quality(work, schema)
+        construct_scan_section(work, schema)
         clinvar_rsids(work, schema)
         cpsr_beside_clinvar(work, schema)
         pypgx_section(work, schema)

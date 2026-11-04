@@ -43,7 +43,21 @@ The no-ALT analysis set has each of those regions once. It is the reference Deep
 Two other references were considered and are not the default:
 
 - **The no-ALT set plus the hs38d1 decoys** (`GCA_000001405.15_GRCh38_no_alt_plus_hs38d1_analysis_set.fna.gz` in the same NCBI directory, 2,580 sequences). The decoys catch reads from sequence missing in the primary assembly, which removes some false calls for callers less robust than DeepVariant. None of the tools here expects them, and its 2,385 extra contigs are more that CNVpytor and Delly have to be kept away from. It works through `REF_FASTA` (below).
-- **GIAB's GRCh38 file that also masks false duplications.** It is the natural next step if a benchmark run shows a gain.
+- **The same set with GRCh38's false duplications masked.** `setup.sh --masked-reference` builds it from the default reference; it is optional, and the next section says what it changes.
+
+### The masked reference (optional)
+
+GRCh38 holds some stretches twice where people have one copy: false duplications, errors of the assembly (Aganezov et al., Science 2022, PMID 35357935). The largest are five stretches of chr21's short arm, about 0.77 Mb, which repeat parts of the long arm: KCNE1, CBS, U2AF1 and CRYAA among them. A read from the real gene fits both copies equally well, gets mapping quality 0 and is skipped by the callers, so on the default reference those genes are not read at all. Behera et al. (FixItFelix, Genome Biol 2023, PMID 36810122) showed that masking the false copy brings their reads and calls back, without changing any coordinate.
+
+```bash
+./scripts/setup.sh --masked-reference ${GENOME_DIR}
+```
+
+It writes `reference/GRCh38_no_alt_analysis_set_maskedGRC.fasta` beside the default reference, with its `.fai` and `.dict`: the same 195 sequences, the same lengths, and the 12 regions of the GRC's list of false duplications (`GRC_EXCLUSIONS_URL` in `versions.env`, GIAB's copy, checked against its sha256) set to N, about 1.2 Mb. It needs the default reference installed first and takes a few minutes and about 3.2 GB more. The FASTA it writes must have the sha256 pinned in `versions.env` (`GRC_MASKED_REF_SHA256`); any other file is deleted. Every one of its 195 sequences has the same bases (upper and lower case aside) as in GIAB's `GCA_000001405.15_GRCh38_no_alt_analysis_set_maskedGRC_exclusions_v2` file (compared once, 2026-11-04), and chr21 has the same masked stretches as FixItFelix's own reference, which also adds decoy contigs. This one adds none, so the sequence list stays the one `validate-setup.sh` expects.
+
+Because the coordinates do not change, ClinVar, the VEP cache, the score files and the other downloads stay valid. The reads do not: a BAM aligned to the default reference keeps its MAPQ 0 reads, so a sample has to be aligned again to gain anything, as [Realigning: the masked reference](realignment.md#the-masked-reference) shows.
+
+The CI case `tests/e2e/fixitfelix-chr21-1.sh` measures it on chr21 with GIAB's HG002 and the CMRG v1.00 benchmark (Wagner et al., Nat Biotechnol 2022, PMID 35132260), see [the realignment page](realignment.md#the-masked-reference) for the numbers.
 
 GSTT1 lies on an ALT contig in GRCh38, so pypgx (step 32) cannot call it on the default reference; the step says so and calls the other genes. No other step calls it, so the report lists it with the genes no step reads. It is one of the ALT-only genes of `assets/callability_genes.tsv`, the genes short reads often cannot place, which step 16b measures and the report lists ([gene callability](16b-mosdepth.md#gene-callability)); that table is committed, so it needs no download. Steps 32 (pypgx) and 35 (Parascopy and the HBA1/HBA2 count) refuse a BAM aligned to a reference with ALT or HLA contigs, with a `REFUSED` line, even when `ALLOW_ALT_REFERENCE=true` lets the other steps run on it: their depth would split between a gene and its ALT copy. Run one by one, each of the two scripts stops with exit 1 and the other steps are not touched. On the Nextflow path (`run-all.sh`) the refusal fails the run: the tasks already running finish, no new task starts, and `run-all.sh` writes the reports of what finished. The RHD count of step 41 and the LPA KIV-2 count of step 46 do not check the BAM for ALT contigs yet.
 

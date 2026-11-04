@@ -1,0 +1,26 @@
+[
+ {
+  "LocusId": "CFTR",
+  "LocusStructure": "(TG)*(T)*",
+  "ReferenceRegion": ["chr7:117548606-117548628", "chr7:117548628-117548635"],
+  "VariantId": ["CFTR_TG", "CFTR_T"],
+  "VariantType": ["Repeat", "Repeat"],
+  "NoThresholds": "the CFTR intron 9 TG and poly-T tract (legacy IVS8; GRCh38 is TG11 T7), a splicing modifier read beside R117H and CBAVD findings: 5T with TG12 or TG13 is a variable-penetrance allele (Deignan 2020, PMID 32404922). Two counts, CFTR_TG and CFTR_T, not an expansion",
+  "Disease": "CFTR-related disorders",
+  "InheritanceMode": "AR",
+  "Source": "OwnGenome",
+  "SourceId": "CFTR_TG_T",
+  "SourceDisplay": "assets/str_extra_loci.json"
+ },
+ {
+  "LocusId": "UGT1A1",
+  "LocusStructure": "(TA)*",
+  "ReferenceRegion": "chr2:233760234-233760248",
+  "VariantType": "Repeat",
+  "NoThresholds": "the UGT1A1 promoter TA repeat, a pharmacogenomic allele, not an expansion: GRCh38 is A(TA)6TAA, *1, which ExpansionHunter counts as 7 TA units; 6 units is TA5 (*36), 8 is TA7 (*28) and 9 is TA8 (*37). *28 and *37 are decreased function (CPIC atazanavir 2016, PMID 26417955)",
+  "Disease": "UGT1A1 promoter (TA)n",
+  "Source": "OwnGenome",
+  "SourceId": "UGT1A1_TA",
+  "SourceDisplay": "assets/str_extra_loci.json"
+ }
+]

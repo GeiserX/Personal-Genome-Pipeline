@@ -14,6 +14,7 @@
 #        ./scripts/setup.sh --consumer-sites <genome_dir>
 #        ./scripts/setup.sh --ancient-panel <genome_dir>
 #        ./scripts/setup.sh --viral-data <genome_dir>
+#        ./scripts/setup.sh --masked-reference <genome_dir>
 #        ./scripts/setup.sh --exomiser-data <genome_dir>
 #        ./scripts/setup.sh --strchive-data <genome_dir>
 #        ./scripts/setup.sh --chip-data <genome_dir>
@@ -31,7 +32,9 @@
 #                                            (step 37), the site table of the
 #                                            raw-data export (step 40), the
 #                                            AADR panel of step 44, the
-#                                            viral genomes of step 47, Ensembl's
+#                                            viral genomes of step 47, the
+#                                            reference with GRCh38's false
+#                                            duplications masked, Ensembl's
 #                                            gene annotation (step 49), Exomiser's
 #                                            hg38 and phenotype data plus its image
 #                                            (step 48), MEGAnE's k-mer set of the
@@ -96,7 +99,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--exomiser-data|--chip-data|--strchive-data|--megane-kmers|--mocha-data|--vep-cache|--annotsv-data|--archaic)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--masked-reference|--exomiser-data|--chip-data|--strchive-data|--megane-kmers|--mocha-data|--vep-cache|--annotsv-data|--archaic)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -121,7 +124,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --exomiser-data | --chip-data | --strchive-data | --megane-kmers | --mocha-data | --archaic | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --masked-reference | --exomiser-data | --chip-data | --strchive-data | --megane-kmers | --mocha-data | --archaic | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -155,6 +158,9 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                Build the panel of step 44 from the Allen Ancient DNA Resource ${AADR_VERSION:-} (1240K, ~7.3 GB download,"
   echo "                deleted once built; needs about 12 GB of free RAM) and pull EIGENSOFT; then exit."
   echo "  --viral-data  Install the human viral genomes and phiX of step 47 (NCBI RefSeq, VIRAL_REF_ACCESSIONS, ~2 MB) and exit."
+  echo "  --masked-reference"
+  echo "                Build the default reference with the false duplications of GRCh38 masked (KCNE1, CBS, U2AF1, CRYAA"
+  echo "                and others become readable; ~3.2 GB beside it, a few minutes) and exit. Samples must be realigned to it."
   echo "  --exomiser-data"
   echo "                Install Exomiser ${EXOMISER_DATA_VERSION:-}'s hg38 and phenotype data (step 48: about 37 GB to download, 58 GB"
   echo "                unpacked, about 72 GB free while it unpacks), pull its image and exit."
@@ -405,6 +411,113 @@ install_viral_data() {
   echo "[OK] Viral genomes ${VIRAL_REF_VERSION} (step 47, $(grep -c '^>' "$dest") sequences): ${dest}"
 }
 
+# MASK_FASTA_PY SRC BED OUT: SRC with every BED row on one of its sequences
+# set to N, written to OUT byte for byte otherwise (same lines, same case).
+# Prints how many rows it applied; rows on sequences SRC lacks are named.
+# tests/test_fixitfelix.sh runs this program as it is written here.
+MASK_FASTA_PY=$(cat <<'PY'
+import sys
+
+src, bed, out = sys.argv[1:4]
+rows = {}
+for line in open(bed):
+    c = line.split()
+    if len(c) >= 3 and not line.startswith(("#", "track", "browser")):
+        rows.setdefault(c[0], []).append((int(c[1]), int(c[2])))
+used = set()
+masked = 0
+with open(src, "rb") as f, open(out, "wb") as o:
+    iv, pos = [], 0
+    for line in f:
+        if line.startswith(b">"):
+            name = line[1:].split()[0].decode()
+            iv, pos = sorted(rows.get(name, [])), 0
+            if iv:
+                used.add(name)
+            o.write(line)
+            continue
+        if iv:
+            body = line.rstrip(b"\r\n")
+            end = pos + len(body)
+            hit = [(max(s, pos), min(e, end)) for s, e in iv if s < end and e > pos]
+            if hit:
+                b = bytearray(line)
+                for s, e in hit:
+                    b[s - pos:e - pos] = b"N" * (e - s)
+                    masked += e - s
+                line = bytes(b)
+            pos = end
+        o.write(line)
+n = sum(len(v) for k, v in rows.items() if k in used)
+print(f"masked {n} of {sum(len(v) for v in rows.values())} rows ({masked} bases); "
+      f"rows on sequences the FASTA lacks: {', '.join(sorted(set(rows) - used)) or 'none'}")
+PY
+)
+
+# install_masked_reference (--masked-reference): REF_FASTA (the default
+# no-ALT analysis set) with the false duplications of GRCh38 set to N, in
+# <REF_FASTA without extension>_maskedGRC.fasta beside it, with its .fai and
+# .dict. A false duplication is a stretch GRCh38 holds twice where people
+# have one copy (chr21 holds second copies of KCNE1, CBS, U2AF1 and CRYAA):
+# reads of the real gene fit both copies and get MAPQ 0. Masked, the false
+# copy takes no reads. Sequence names, lengths and coordinates do not change.
+# The list is GRC_EXCLUSIONS_URL (sha256 checked); the FASTA it writes must
+# have GRC_MASKED_REF_SHA256, or MASKED_REF_SHA256 when that is set (a source
+# other than NCBI's file, as the CI case's chr21), or it is deleted.
+install_masked_reference() {
+  local src=$REF_FASTA dest bed want got dir log
+  case "$src" in
+    *.gz) echo "[WARN] --masked-reference needs an unpacked FASTA; REF_FASTA is ${src}."; return 1 ;;
+    *_maskedGRC.*) echo "[WARN] REF_FASTA (${src}) is already a masked reference. Unset it, so the mask is built from the default reference."; return 1 ;;
+  esac
+  dest="${src%.*}_maskedGRC.fasta"
+  dir=$(dirname "$dest")
+  want=${MASKED_REF_SHA256:-$GRC_MASKED_REF_SHA256}
+  bed="${dir}/${GRC_EXCLUSIONS_URL##*/}"
+  if [ -s "$dest" ] && [ -s "${dest}.fai" ] && [ -s "${dest%.*}.dict" ] && [ "$(_digest sha256 "$dest")" = "$want" ]; then
+    echo "[OK] Masked reference already present (sha256 matches): ${dest}"
+  else
+    for f in "$src" "${src}.fai"; do
+      [ -s "$f" ] || { echo "[WARN] ${f} is missing: install the reference first (${0} ${GENOME_DIR})."; return 1; }
+    done
+    if [ -s "$bed" ] && [ "$(_digest sha256 "$bed")" = "$GRC_EXCLUSIONS_SHA256" ]; then
+      :
+    elif ! fetch "$GRC_EXCLUSIONS_URL" "$bed" sha256 "$GRC_EXCLUSIONS_SHA256"; then
+      echo "[WARN] Could not download the GRC's list of false duplications (${GRC_EXCLUSIONS_URL})."
+      return 1
+    fi
+    # Only the partial output goes now: a masked reference already there stays
+    # until its replacement has passed the sha256 check.
+    rm -f "${dest}.part"
+    echo "Masking the false duplications of $(basename "$src") (a few minutes for GRCh38)..."
+    if ! log=$(run_in --rw "$dir" "$PYTHON_IMAGE" python3 -c "$MASK_FASTA_PY" \
+          "$(cpath "$src")" "$(cpath "$bed")" "$(cpath "${dest}.part")"); then
+      rm -f "${dest}.part"
+      echo "[WARN] Could not write the masked reference."
+      return 1
+    fi
+    echo "  ${log}"
+    got=$(_digest sha256 "${dest}.part")
+    if [ "$got" != "$want" ]; then
+      rm -f "${dest}.part"
+      echo "[WARN] The masked reference has sha256 ${got}, not ${want}: $(basename "$src") is not the file it is pinned for (NCBI's no-ALT analysis set). Removed it."
+      return 1
+    fi
+    mv -f "${dest}.part" "$dest"
+    rm -f "${dest}.fai" "${dest%.*}.dict"
+    # The index and the dictionary go next to the FASTA, so its directory is writable here.
+    if ! run_in --rw "$dir" "$SAMTOOLS_IMAGE" samtools faidx "$(cpath "$dest")" \
+       || ! run_in --rw "$dir" "$SAMTOOLS_IMAGE" samtools dict -o "$(cpath "${dest%.*}.dict")" "$(cpath "$dest")"; then
+      rm -f "${dest}.fai" "${dest%.*}.dict"
+      echo "[WARN] Could not index the masked reference. Kept the FASTA (its sha256 matches) and removed its partial index; run setup again."
+      return 1
+    fi
+    echo "[OK] Masked reference (sha256 matches): ${dest}"
+  fi
+  echo "  Use it for a sample by realigning it (docs/realignment.md#the-masked-reference):"
+  printf '    export REF_FASTA=%q   # bash steps; the Nextflow run takes --reference %q\n' "${dest#"${GENOME_DIR}"/}" "$dest"
+}
+
 # install_exomiser_data: Exomiser's hg38 and phenotype data of release
 # EXOMISER_DATA_VERSION (step 48) into reference/exomiser-<release>/, the
 # folder Exomiser reads as its data directory. Each archive is checked against
@@ -522,13 +635,23 @@ install_megane_kmers() {
 # fails its check is removed and nothing is converted; the steps then use
 # the catalogs inside their images. catalog.stamp names the inputs and the
 # converter, so a changed one converts again.
+# STR_EXTRA_LOCI=yes (opt-in) also appends assets/str_extra_loci.json, the
+# repeats STRchive leaves out (CFTR TG/poly-T, UGT1A1 TA): ExpansionHunter
+# sizes them and Stranger leaves them ungraded (docs/09-str-expansions.md).
+# The stamp names that file's sha256, or extra=off.
 install_strchive_data() {
   local dir="${GENOME_DIR}/reference/strchive-${STRCHIVE_VERSION}" url name sha stamp
+  local extra_json="${PGP_ROOT}/assets/str_extra_loci.json" extra_sha=off extra_args=()
+  case "${STR_EXTRA_LOCI:-no}" in
+    yes) extra_sha=$(_digest sha256 "$extra_json") extra_args=(--extra /pgp-extra/str_extra_loci.json) ;;
+    no) ;;
+    *) echo "[WARN] STR_EXTRA_LOCI is '${STR_EXTRA_LOCI}', not yes or no: the extra repeats are left out." ;;
+  esac
   # Whole URLs, one per line, so scripts/ci/check-links.sh asks each one.
   local eh_url="https://github.com/dashnowlab/STRchive/releases/download/${STRCHIVE_VERSION}/STRchive-disease-loci-${STRCHIVE_VERSION}.hg38.expansionhunter.json"
   local loci_url="https://github.com/dashnowlab/STRchive/releases/download/${STRCHIVE_VERSION}/STRchive-loci-${STRCHIVE_VERSION}.json"
   local eh=${eh_url##*/} loci=${loci_url##*/}
-  stamp="release=${STRCHIVE_VERSION} eh=${STRCHIVE_EH_SHA256} loci=${STRCHIVE_LOCI_SHA256} converter=$(_digest sha256 "${PGP_ROOT}/bin/strchive_convert.py")"
+  stamp="release=${STRCHIVE_VERSION} eh=${STRCHIVE_EH_SHA256} loci=${STRCHIVE_LOCI_SHA256} converter=$(_digest sha256 "${PGP_ROOT}/bin/strchive_convert.py") extra=${extra_sha}"
   if [ -s "${dir}/catalog.json" ] && [ -s "${dir}/str_ranges.tsv" ] && [ "$(cat "${dir}/catalog.stamp" 2>/dev/null)" = "$stamp" ]; then
     echo "[OK] STRchive ${STRCHIVE_VERSION} catalog (steps 09 and 9b) already present."
     return 0
@@ -544,9 +667,10 @@ install_strchive_data() {
       return 1
     fi
   done
-  if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" python3 /pgp-bin/strchive_convert.py \
+  if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${PGP_ROOT}/assets:/pgp-extra:ro" \
+       "$PYTHON_IMAGE" python3 /pgp-bin/strchive_convert.py \
        --eh "$(cpath "${dir}/${eh}")" --loci "$(cpath "${dir}/${loci}")" --release "$STRCHIVE_VERSION" \
-       --out "$(cpath "${dir}/catalog.json")" --ranges "$(cpath "${dir}/str_ranges.tsv")" \
+       --out "$(cpath "${dir}/catalog.json")" --ranges "$(cpath "${dir}/str_ranges.tsv")" ${extra_args[@]+"${extra_args[@]}"} \
        || [ ! -s "${dir}/catalog.json" ] || [ ! -s "${dir}/str_ranges.tsv" ]; then
     rm -f "${dir}/catalog.json" "${dir}/str_ranges.tsv"
     echo "[WARN] Could not convert the STRchive ${STRCHIVE_VERSION} catalog (bin/strchive_convert.py). Steps 09 and 9b use the catalogs inside their images."
@@ -1693,6 +1817,7 @@ case "$OPT_IN" in
   consumer-sites) install_consumer_sites; exit $? ;;
   ancient-panel) install_ancient_panel; exit $? ;;
   viral-data) install_viral_data; exit $? ;;
+  masked-reference) install_masked_reference; exit $? ;;
   exomiser-data) install_exomiser_data && ensure_image EXOMISER_IMAGE 48; exit $? ;;
   chip-data) install_chip_data; exit $? ;;
   strchive-data) install_strchive_data; exit $? ;;

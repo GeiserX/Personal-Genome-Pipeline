@@ -41,3 +41,63 @@ haplotype	TAS2R38	AVI	C,A,T
 combination	TAS2R38	PAV/PAV	PAV/PAV	Two copies of PAV, the taster form: in Bufe 2005 this group rated PTC and PROP the most bitter.
 combination	TAS2R38	PAV/AVI	PAV/AVI	One PAV and one AVI copy: a taster. In Bufe 2005 this group recognised PTC and PROP as bitter at concentrations close to those of PAV/PAV; how bitter they rated them lay between the two homozygous groups and varied widely.
 combination	TAS2R38	AVI/AVI	AVI/AVI	Two copies of AVI, the non-taster form: in Bufe 2005 the AVI receptor did not respond to PTC, and this group recognised PTC as bitter only at far higher concentrations. PROP responses varied more.
+rule	APOL1	APOL1	APOL1 kidney risk variants (G1 read, G2 not read)	no	yes	G1 is two missense changes that sit on one copy, S342G (rs73885319) and I384M (rs60910145), in perfect linkage disequilibrium in Genovese 2010, so they are read together without phase. G2 (rs71785313) is a 6-base deletion of N388 and Y389; this rule table reads single-base sites only, so G2 is not read and a G2 copy reads as G0 here. G1 and G2 never share a copy. In African Americans, two risk copies (G1 or G2) went with focal segmental glomerulosclerosis (odds ratio 10.5) and hypertension-attributed end-stage kidney disease (odds ratio 7.3), and one copy did not raise the risk (a recessive pattern). Both variants are common on African chromosomes and were absent from the European chromosomes studied.	20647424
+site	APOL1	rs73885319	chr22	36265860	A	G
+site	APOL1	rs60910145	chr22	36265988	T	G
+haplotype	APOL1	G0	A,T
+haplotype	APOL1	G1	G,G
+combination	APOL1	G0/G0	G0/G0	No G1 copy. G2 is not read here, so this says nothing about it: two G2 copies would still be the high-risk genotype.
+combination	APOL1	G0/G1	G0/G1	One G1 copy. G2 is not read here: if the other copy carries G2, this is G1/G2, a high-risk genotype; with no G2 it is one risk copy, which did not raise the risk in Genovese 2010.
+combination	APOL1	G1/G1	G1/G1	Two G1 copies: the high-risk genotype of Genovese 2010, which went with focal segmental glomerulosclerosis and hypertension-attributed kidney failure in African Americans. A risk factor, not a diagnosis.
+rule	SERPINA1	SERPINA1	Alpha-1 antitrypsin Pi type (M, S, Z)	no	yes	The two common deficiency alleles of SERPINA1: S (Glu264Val, rs17580) and Z (Glu342Lys, rs28929474). SERPINA1 lies on the minus strand, so the alleles here are the complement of the codon bases. M stands for a copy with neither S nor Z; other deficiency and null alleles are not read. The readings follow the ATS/ERS 2003 standards; a serum alpha-1 antitrypsin level confirms a deficiency. Z is most common in people of northern European descent.	14522813
+site	SERPINA1	rs17580	chr14	94380925	T	A
+site	SERPINA1	rs28929474	chr14	94378610	C	T
+haplotype	SERPINA1	M	T,C
+haplotype	SERPINA1	S	A,C
+haplotype	SERPINA1	Z	T,T
+combination	SERPINA1	M/M	PiMM	No S and no Z copy: the usual type, with a normal alpha-1 antitrypsin level unless a rarer allele is present.
+combination	SERPINA1	M/S	PiMS	One S copy: a carrier, with a level close to normal.
+combination	SERPINA1	M/Z	PiMZ	One Z copy: a carrier, with an intermediate alpha-1 antitrypsin level. Smoking is the main added risk to the lungs.
+combination	SERPINA1	S/S	PiSS	Two S copies: a mildly lowered level, not usually a deficiency that raises the risk of disease.
+combination	SERPINA1	S/Z	PiSZ	One S and one Z copy: a moderate deficiency, with a raised risk of emphysema, above all in smokers. Worth a serum level and a talk with a doctor.
+combination	SERPINA1	Z/Z	PiZZ	Two Z copies: severe alpha-1 antitrypsin deficiency, with a raised risk of early emphysema and of liver disease. Worth a serum level and a talk with a doctor.
+rule	HFE	HFE	HFE haemochromatosis genotype (C282Y, H63D)	no	yes	The two HFE missense changes of Feder 1996: C282Y (rs1800562), found homozygous in 83% of 178 patients with hereditary haemochromatosis, and H63D (rs1799945). The two sites are about 2 kb apart and read without phase: heterozygous at both reads as C282Y/H63D, one change on each copy. Many people with a risk genotype never build up iron; ferritin and transferrin saturation tell. The secondary-findings list reports C282Y homozygotes too (assets/acmg_sf.tsv); this line is the reading of every genotype. C282Y is most common in people of northern European descent.	8696333
+site	HFE	rs1800562	chr6	26092913	G	A
+site	HFE	rs1799945	chr6	26090951	C	G
+haplotype	HFE	wt	G,C
+haplotype	HFE	C282Y	A,C
+haplotype	HFE	H63D	G,G
+combination	HFE	wt/wt	wt/wt	Neither C282Y nor H63D.
+combination	HFE	wt/C282Y	wt/C282Y	One C282Y copy: a carrier. One copy alone rarely leads to iron overload.
+combination	HFE	wt/H63D	wt/H63D	One H63D copy: a common carrier type that rarely leads to iron overload.
+combination	HFE	C282Y/C282Y	C282Y/C282Y	Two C282Y copies: the genotype of most people with HFE haemochromatosis. Not everyone with it builds up iron; ferritin and transferrin saturation tell, and iron overload is treatable when found early.
+combination	HFE	C282Y/H63D	C282Y/H63D	One C282Y and one H63D copy: a compound heterozygote, with a lower risk of iron overload than two C282Y copies. Ferritin and transferrin saturation tell.
+combination	HFE	H63D/H63D	H63D/H63D	Two H63D copies: rarely leads to iron overload on its own.
+rule	GC	GC	Vitamin D-binding protein type (Gc1F, Gc1S, Gc2)	no	yes	rs7041 (Asp432Glu) and rs4588 (Thr436Lys) together give the three common vitamin D-binding protein types: Gc1F (Asp, Thr), Gc1S (Glu, Thr) and Gc2 (Asp, Lys). GC lies on the minus strand, so the alleles here are the complement of the codon bases. In Powe 2013 the two sites explained 79.4% of the variation in the protein level and 9.9% of that of total 25-hydroxyvitamin D. Gc1F was the most common type in black participants and Gc1S in white ones. The monoclonal assay that study used was questioned in later letters, so the protein levels are those of that assay. A protein type, not a vitamin D deficiency.	24256378
+site	GC	rs7041	chr4	71752617	A	C
+site	GC	rs4588	chr4	71752606	G	T
+haplotype	GC	Gc1F	A,G
+haplotype	GC	Gc1S	C,G
+haplotype	GC	Gc2	A,T
+combination	GC	Gc1F/Gc1F	Gc1F/Gc1F	Two Gc1F copies: in Powe 2013 this group had the lowest vitamin D-binding protein level (mean 93 micrograms per millilitre).
+combination	GC	Gc1F/Gc1S	Gc1F/Gc1S	One Gc1F and one Gc1S copy: in Powe 2013 this group had an intermediate protein level (mean 285 micrograms per millilitre).
+combination	GC	Gc1F/Gc2	Gc1F/Gc2	One Gc1F and one Gc2 copy: Powe 2013 gave protein levels for the homozygous groups and Gc1F/Gc1S only.
+combination	GC	Gc1S/Gc1S	Gc1S/Gc1S	Two Gc1S copies: in Powe 2013 this group had the highest vitamin D-binding protein level (mean 468 micrograms per millilitre).
+combination	GC	Gc1S/Gc2	Gc1S/Gc2	One Gc1S and one Gc2 copy: Powe 2013 gave protein levels for the homozygous groups and Gc1F/Gc1S only.
+combination	GC	Gc2/Gc2	Gc2/Gc2	Two Gc2 copies: in Powe 2013 this group had an intermediate protein level (mean 190 micrograms per millilitre).
+rule	CAD9p21	CDKN2B-AS1	Chromosome 9p21 heart disease risk haplotype	no	yes	Two tags of the 9p21 risk haplotype near CDKN2A and CDKN2B: rs10757278 (G, Helgadottir 2007, myocardial infarction) and rs1333049 (C, the strongest coronary artery disease signal of the WTCCC 2007 scan). McPherson 2007 found the same interval, with no link to cholesterol, blood pressure or diabetes. The two are read together without phase; a copy with only one of the two risk alleles is not read. The studies were of people of European descent.	17478679,17554300,17478681
+site	CAD9p21	rs10757278	chr9	22124478	A	G
+site	CAD9p21	rs1333049	chr9	22125504	G	C
+haplotype	CAD9p21	nonrisk	A,G
+haplotype	CAD9p21	risk	G,C
+combination	CAD9p21	nonrisk/nonrisk	no risk copy	No copy of the 9p21 risk haplotype.
+combination	CAD9p21	nonrisk/risk	one risk copy	One copy of the 9p21 risk haplotype: in Helgadottir 2007 each risk copy raised the odds of myocardial infarction about 1.28 times. A common variant with a modest effect, not a diagnosis.
+combination	CAD9p21	risk/risk	two risk copies	Two copies of the 9p21 risk haplotype, as in about 21% of the people Helgadottir 2007 studied: their estimated risk of myocardial infarction was 1.64 times that of non-carriers (McPherson 2007: about 30 to 40% higher risk of coronary heart disease). A common variant with a modest effect, not a diagnosis.
+rule	MAPT	MAPT	17q21.31 inversion lineage (H1, H2)	no	yes	The 17q21.31 region around MAPT comes in two lineages, H1 and H2, that differ by a 900-kb inversion and do not recombine (Stefansson 2005); H2 was found in about 20% of European chromosomes, rarely in Africans and almost never in East Asians. Two H1/H2 tags are read together: rs1052553 in MAPT (A is H1, Wider 2010) and rs8070723 (Hoglinger 2011's proxy for H1/H2, its minor allele G in H2). A copy with H1 at one tag and H2 at the other is not read. GRCh38 carries H1.	15654335,19912324,21685912
+site	MAPT	rs1052553	chr17	45996523	A	G
+site	MAPT	rs8070723	chr17	46003698	A	G
+haplotype	MAPT	H1	A,A
+haplotype	MAPT	H2	G,G
+combination	MAPT	H1/H1	H1/H1	Two H1 copies, the common lineage. In Hoglinger 2011 H1 was the risk lineage for progressive supranuclear palsy (95% of patient chromosomes against 77.5% of controls), and in Wider 2010 for Parkinson's disease (odds ratio 1.43 per H1 tag allele). Both diseases are rare, and most people with H1/H1 never develop them.
+combination	MAPT	H1/H2	H1/H2	One H1 and one H2 copy. In Stefansson 2005 H2 carrier women in Iceland had more children than non-carriers.
+combination	MAPT	H2/H2	H2/H2	Two H2 copies, the rarer lineage.
