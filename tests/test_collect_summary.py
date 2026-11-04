@@ -1274,6 +1274,93 @@ def report_followups_sections(work, schema):
           {k for l in ed["loci"] for k in l}, ed)
 
 
+def str_extra_readings(work, schema):
+    """Step 09's counts of the repeats STRchive leaves out (assets/str_extra_loci.json), read into results."""
+    import html as htmlmod
+    fmt = "GT:REPCN"
+
+    def sample(name, tg, t, ugt, r117h=None, ugt_pc=None, stranger=False):
+        x = os.path.join(work, "str-extra", name)
+        eh = (f"chr7\t117548606\t.\tT\t<STR>\t.\tPASS\tEND=117548628;REPID=CFTR;VARID=CFTR_TG\t{fmt}\t0/1:{tg}\n"
+              f"chr7\t117548628\t.\tT\t<STR>\t.\tPASS\tEND=117548635;REPID=CFTR;VARID=CFTR_T\t{fmt}\t0/1:{t}\n"
+              if tg else "")
+        eh += (f"chr2\t233760234\t.\tA\t<STR>\t.\tPASS\tEND=233760248;REPID=UGT1A1;VARID=UGT1A1\t{fmt}\t0/1:{ugt}\n"
+               if ugt else "")
+        eh += f"chr4\t3074876\t.\tC\t<STR>\t.\tPASS\tEND=3074933;REPID=HTT;VARID=HTT\t{fmt}\t0/0:17/17\n"
+        put(f"{x}/expansion_hunter/{name}_eh.vcf", VCF_HEAD.replace("\tS\n", f"\t{name}\n") + eh, age_days=2)
+        if stranger:
+            put(f"{x}/expansion_hunter/{name}_eh_stranger.vcf", VCF_HEAD.replace("\tS\n", f"\t{name}\n") + eh,
+                age_days=1)
+            put(f"{x}/expansion_hunter/{name}_eh_catalog.json", json.dumps([
+                {"LocusId": "CFTR", "NoThresholds": "the CFTR tract"},
+                {"LocusId": "UGT1A1", "NoThresholds": "the UGT1A1 repeat"}]))
+        if r117h:
+            put(f"{x}/traits/{name}_traits.tsv", "\t".join(collect_summary.traits_report.OUT_COLUMNS) + "\n"
+                + f"rs78655421\tCFTR\tchr7\t117530975\tCFTR R117H\t{r117h}\tcalled\tr\tno\tn\t32404922\n")
+        if ugt_pc:
+            put(f"{x}/cpic/{name}_phenotypes.tsv", "Gene\tDiplotype\tPhenotype\tStatus\n"
+                f"UGT1A1\t{ugt_pc}\tsome function\tnon-normal\n")
+        summ, txt, html_ = render(x, name)
+        ed = summ["sections"]["expansions"]["data"]
+        return summ, ed, {r["locus"]: r for r in ed.get("readings") or []}, txt, htmlmod.unescape(html_)
+
+    # TG12-5T on one copy and TG11-7T on the other, no R117H; UGT1A1 TA6/TA7.
+    summ, ed, rd, txt, html_ = sample("EXA", "11/12", "7/5", "7/8", r117h="G/G", ugt_pc="*1/*28", stranger=True)
+    c, u = rd.get("CFTR", {}), rd.get("UGT1A1", {})
+    check("extra repeats: the two CFTR records are named by VARID, CFTR_TG and CFTR_T",
+          [l["locus"] for l in ed["loci"] if l["locus"].startswith("CFTR")] == ["CFTR_T", "CFTR_TG"],
+          [l["locus"] for l in ed["loci"]])
+    check("extra repeats: CFTR is not graded once, looked up by its locus",
+          ed.get("not_graded") == {"CFTR": "the CFTR tract", "UGT1A1": "the UGT1A1 repeat"}, ed.get("not_graded"))
+    check("extra repeats: CFTR TG11/TG12 5T/7T, with TG12-5T/TG11-7T among the two pairings the counts allow",
+          c.get("genotype") == "TG11/TG12 5T/7T" and "TG12-5T/TG11-7T" in c.get("pairings", [])
+          and len(c.get("pairings", [])) == 2, c)
+    check("extra repeats: the 5T line, R117H not carried",
+          c.get("five_t") is True and c.get("reading", "").startswith("5T: 1 copy with the 5T poly-T tract")
+          and "No R117H copy" in c["reading"] and c.get("phase") == "not_needed", c)
+    check("extra repeats: UGT1A1 7/8 TA units is *1/*28 (TA6/TA7), and agrees with PharmCAT's *1/*28",
+          (u.get("genotype"), u.get("agreement")) == ("*1/*28", "agrees") and "TA6/TA7" in u.get("reading", ""), u)
+    check("extra repeats: 5-HTTLPR is printed as not tested, with the CPIC 2023 reason",
+          rd.get("SLC6A4", {}).get("status") == "not_tested" and "37032427" in rd["SLC6A4"]["source"], rd.get("SLC6A4"))
+    check("extra repeats: the text report prints the 5T line, the UGT1A1 call and the 5-HTTLPR line",
+          "CFTR intron 9 (legacy IVS8) TG and poly-T tract: TG11/TG12 5T/7T" in txt and "    5T: 1 copy" in txt
+          and "UGT1A1 promoter TA repeat: *1/*28" in txt
+          and "SLC6A4 5-HTTLPR promoter length polymorphism: not tested" in txt, txt)
+    card = html_.split("<h2>Repeat Expansions</h2>", 1)[-1].split("<h2>", 1)[0]
+    check("extra repeats: the HTML card has the three readings",
+          "TG11/TG12 5T/7T" in card and "5T: 1 copy" in card and "*1/*28" in card and "5-HTTLPR" in card, card)
+    check("extra repeats: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+
+    # Red control: TG11-7T on both copies gives no 5T line.
+    _, _, rd, txt, _ = sample("EXB", "11/11", "7/7", "7/7")
+    c = rd.get("CFTR", {})
+    check("extra repeats red control: TG11-7T/TG11-7T has no 5T line",
+          (c.get("genotype"), c.get("five_t")) == ("TG11-7T/TG11-7T", False) and "5T:" not in txt
+          and c.get("reading", "").startswith("No 5T copy"), c)
+    check("extra repeats: UGT1A1 7/7 is *1/*1, not compared without a PharmCAT call",
+          (rd["UGT1A1"]["genotype"], rd["UGT1A1"]["agreement"]) == ("*1/*1", "not_compared"), rd["UGT1A1"])
+
+    # One R117H copy and one 5T copy, one TG count: the pairing is known, the R117H phase is not.
+    _, _, rd, _, _ = sample("EXC", "12/12", "5/7", "8/8", r117h="G/A", ugt_pc="*1/*1")
+    c = rd.get("CFTR", {})
+    check("extra repeats: TG12/TG12 5T/7T reads as TG12-5T/TG12-7T, R117H phase unknown",
+          c.get("genotype") == "TG12-5T/TG12-7T" and c.get("phase") == "unknown" and "phase unknown" in c["reading"]
+          and "TG12 on the 5T copy" in c["reading"], c)
+    check("extra repeats: UGT1A1 *28/*28 differs from PharmCAT's *1/*1",
+          (rd["UGT1A1"]["genotype"], rd["UGT1A1"]["agreement"]) == ("*28/*28", "differs"), rd["UGT1A1"])
+    _, _, rd, _, _ = sample("EXD", "11/12", "5/5", "6/9", r117h="G/A")
+    check("extra repeats: 5T on both copies with R117H is in cis; UGT1A1 6/9 units is *36/*37",
+          rd["CFTR"].get("phase") == "in_cis" and rd["UGT1A1"]["genotype"] == "*36/*37", rd)
+
+    # Without the opt-in the extra loci are not in step 09's output.
+    _, ed, rd, txt, _ = sample("EXE", None, None, None)
+    check("extra repeats: without the loci CFTR and UGT1A1 are not sized and say how to add them",
+          [rd[k]["status"] for k in ("CFTR", "UGT1A1", "SLC6A4")] == ["not_sized", "not_sized", "not_tested"]
+          and "STR_EXTRA_LOCI=yes" in rd["CFTR"]["reading"] and "CFTR intron 9 (legacy IVS8) TG and poly-T tract: "
+          "not sized" in txt, rd)
+
+
 SMN_COLS = ("chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\t"
             "homologous_regions\n")
 
@@ -2522,6 +2609,7 @@ def main():
         comphet_phase_section(work, schema)
         annotsv_section(work, schema)
         report_followups_sections(work, schema)
+        str_extra_readings(work, schema)
         parascopy_section(work, schema)
         report_sections_mito_roh_telomere_cnv(work, schema)
         roh_upd_karyotype(work, schema)
