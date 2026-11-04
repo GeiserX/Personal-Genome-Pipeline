@@ -61,7 +61,7 @@ process HTML_REPORT {
     for f in input/*; do
         case "\$(basename "\$f")" in
             sample.vcf.gz) ;;
-            ${id}_clinvar_hits.vcf|${id}_clinvar_cdna_check.tsv) place clinvar "\$f" ;;
+            ${id}_clinvar_hits.vcf|${id}_clinvar_cdna_check.tsv|${id}_clinvar_cdna_scan.tsv|${id}_clinvar_deep_intronic.tsv) place clinvar "\$f" ;;
             ${id}.report.json|${id}.report.html)          place pharmcat "\$f" ;;
             ${id}_phenotypes.tsv|${id}_cpic_recommendations.txt) place cpic "\$f" ;;
             ${id}_clinical.vcf.gz)                        place clinical "\$f" ;;
