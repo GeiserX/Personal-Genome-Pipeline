@@ -111,3 +111,4 @@ Terms used throughout this pipeline's documentation, explained for people who ar
 **WGS** — Whole Genome Sequencing. Sequencing the entire ~3.1 billion base pairs of a genome. Produces FASTQ files that are processed through this pipeline.
 
 **X-linked** — A gene located on the X chromosome. Males (XY) have only one copy, so a single pathogenic variant can cause disease. Females (XX) have two copies and may be carriers.
+
