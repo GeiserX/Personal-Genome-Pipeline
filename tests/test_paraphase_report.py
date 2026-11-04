@@ -307,8 +307,12 @@ def main():
         genes = pr.load_genes()
         got = [(r, g) for r, entries in genes.items() for g, _ in entries]
         check("the catalog holds the expected rows, in order", got == EXPECTED_ROWS, got)
-        dropped = [x for x in EXPECTED_ROWS if x != ("neb", "NEB triplicate repeat")]
-        check("control: a catalog with the NEB row dropped is not the expected one", dropped != got)
+        no_neb = os.path.join(work, "genes-no-neb.tsv")
+        with open(pr.GENES_TSV) as f, open(no_neb, "w") as g:
+            g.writelines(x for x in f if not x.startswith("neb\t"))
+        dropped = [(r, g) for r, entries in pr.load_genes(no_neb).items() for g, _ in entries]
+        check("control: the catalog with its NEB row dropped is not the expected one",
+              dropped != EXPECTED_ROWS and len(dropped) == len(EXPECTED_ROWS) - 1, len(dropped))
         rc, out = run("table", "--sample", "S", "--json", j, "--out-cn", cn, "--out-variants", var)
         with open(cn) as f:
             table = f.read()
@@ -325,6 +329,10 @@ def main():
             ok = len(rows_) == len(want) and all(
                 (x[1], x[2], x[3]) == w[:3] and w[3] in x[4] for x, w in zip(rows_, want))
             check(f"{name}: the synthetic JSON gives its catalog rows", ok, rows_)
+        both = {"TPSAB1": dict(NEW_REGIONS["TPSAB1"][0], region_specific_info={"gene_cn": 2})}
+        rows_ = pr.cn_table(both)
+        check("TPSAB1: a total_cn row gives the whole family even beside a gene_cn",
+              [x[2] for x in rows_] == ["5"] and "whole gene family" in rows_[0][4], rows_)
         check("the new regions with a field of their own are listed first",
               [x[0] for x in t][:4] == ["CFHclust", "CYP11B1", "f8", "ikbkg"], [x[0] for x in t])
         for name in ("f8", "opn1lw", "ikbkg", "neb", "CYP11B1", "CFHclust"):

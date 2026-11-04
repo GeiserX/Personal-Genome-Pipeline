@@ -50,11 +50,6 @@ VARIANT_HEADER = ["region", "chrom", "pos", "ref", "alt", "filter", "haplotypes"
 GENES_TSV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets",
                          "paraphase_genes.tsv")
 GENES_COLUMNS = ["region", "gene", "field", "reading", "source"]
-# Fields read by their own rule; every other field is a number in region_specific_info.
-RULE_FIELDS = ("genotype", "annotated_alleles", "final_haplotypes", "total_cn", "sv_called", "repeat_name",
-               "fusions_called")
-# Fields that live in region_specific_info, so a region without one is not assessed there.
-RSI_FIELDS = ("sv_called", "repeat_name", "fusions_called")
 
 
 def load_genes(path=None):
@@ -273,7 +268,7 @@ def repeat_row(gene, region):
     return (gene, cn, "called" if cn is not None else "no call", detail or "no haplotype assigned to a repeat copy")
 
 
-def fusion_row(gene, name, region):
+def fusion_row(gene, region):
     """A gene family's copies, with the fusions (deletions, duplications) Paraphase names."""
     rsi = region.get("region_specific_info") or {}
     if "fusions_called" not in rsi:
@@ -302,14 +297,19 @@ def gene_rows(name, region, genes=None):
             rows += [r for r in hba_rows(region) if r[0] == gene]
         elif field == "annotated_alleles":
             rows += [(gene,) + r[1:] for r in rccx_rows(region)]
-        elif field in ("final_haplotypes", "total_cn"):
+        elif field == "final_haplotypes":
             rows += [(gene,) + r[1:] for r in generic_rows(name, region)]
+        elif field == "total_cn":
+            # The whole family, even when Paraphase also writes a gene_cn.
+            cn = region.get("total_cn")
+            rows.append((gene, cn, "called" if cn is not None else "no call",
+                         "copies of the whole gene family (gene and paralogs together)"))
         elif field == "sv_called":
             rows.append(sv_row(gene, region))
         elif field == "repeat_name":
             rows.append(repeat_row(gene, region))
         elif field == "fusions_called":
-            rows.append(fusion_row(gene, name, region))
+            rows.append(fusion_row(gene, region))
         else:
             rows.append(number_row(gene, field, rsi))
     return rows
