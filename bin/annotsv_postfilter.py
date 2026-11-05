@@ -453,8 +453,14 @@ def main(argv=None):
         for r, s in zip(checked, consensus_support(checked, a.consensus)):
             r.update({k: "" if v is None else v for k, v in s.items()})
         cols += SUPPORT
-    # Last, so a sample named like a column above cannot shadow it.
-    cols += [k for k in (sample_columns(rows[0]) if rows else []) if k not in cols]
+    # Last. A sample named like a column above would lose its GT and PS, so
+    # that stops the step instead.
+    sample = sample_columns(rows[0]) if rows else []
+    clash = [k for k in sample if k in cols]
+    if clash:
+        sys.exit(f"ERROR: the sample column {clash[0]} has the name of a checked-table column, so its GT and PS "
+                 "would be lost; rename the sample")
+    cols += sample
     tmp = a.out + ".part"
     with open(tmp, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, delimiter="\t", lineterminator="\n", extrasaction="ignore")

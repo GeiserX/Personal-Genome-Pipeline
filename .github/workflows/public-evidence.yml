@@ -67,7 +67,7 @@ jobs:
           CHROMOSOMES: ${{ inputs.chromosomes }}
         run: |
           set -euo pipefail
-          read -ra want <<< "${CHROMOSOMES//,/ }"
+          read -ra want <<< "$(printf '%s' "$CHROMOSOMES" | tr ',\r\n' '   ')"
           [ "${want[*]:-all}" != all ] || mapfile -t want < <(seq 1 22)
           for c in "${want[@]}"; do
             [[ "$c" =~ ^([1-9]|1[0-9]|2[0-2])$ ]] || { echo "chromosomes: '${c}' is not an autosome 1 to 22"; exit 1; }
@@ -337,7 +337,7 @@ jobs:
             # Europeans: the union of the Altai and Vindija segments, LOD 4,
             # 50 kb or longer, the cutoffs of step 43 (docs/43-archaic.md).
             if [ "$WANT" -eq 22 ]; then
-              where=$(awk -v m="$mb" 'BEGIN {print (m < 49.9 ? "below" : (m > 82.9 ? "above" : "inside"))}')
+              where=$(awk -v b="$(kv neanderthal_bp)" 'BEGIN {print (b < 49.9e6 ? "below" : (b > 82.9e6 ? "above" : "inside"))}')
               cmp="HG002's ${mb} Mb of Neanderthal sequence is ${where} the published range: Chen et al. 2020 released per-person calls with the same method and cutoffs (Altai and Vindija union, LOD 4, 50 kb or longer), and Europeans carry 49.9 to 82.9 Mb in them (see docs/43-archaic.md)."
             else
               cmp="HG002 has ${mb} Mb of Neanderthal sequence on these ${WANT} autosomes. The published range of 49.9 to 82.9 Mb (Chen et al. 2020, Europeans, Altai and Vindija union, LOD 4, 50 kb or longer) is for the 22 autosomes, so it is not compared here."

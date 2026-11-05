@@ -37,7 +37,8 @@ Checks:
      Delly call with FORMAT GT only (as step 05 adds it) has support over
      1,000 bp and is "not checked" at 800 bp; the
      summary line counts the rows moved to class 3; every written row keeps
-     AnnotSV's FORMAT and sample columns;
+     AnnotSV's FORMAT and sample columns, and a sample named like a checked
+     column (Caller) stops the step instead of losing its GT;
   8. red controls: without --rules the DSPP and IGH deletions stay class 4;
      and the rule table itself: every row has a known rule, IGH lies on
      chr14 between 105.5 and 107 Mb, the MHC is GRCh38's 28,510,120 to
@@ -209,6 +210,13 @@ def rules_section(work):
     check("every row keeps AnnotSV's FORMAT and sample column (GT and the depth fields)",
           (col("D_OK", "FORMAT"), col("D_OK", "S1"), col("NODEPTH", "S1")) == ("GT:DHFFC", "0/1:0.5", "0/1"),
           got.get("D_OK"))
+    clash = os.path.join(work, "clash.tsv")
+    with open(clash, "w") as f:
+        f.write("\t".join("Caller" if h == "S1" else h for h in HEAD7) + "\n" + ROWS7)
+    p = subprocess.run([sys.executable, os.path.join(REPO, "bin", "annotsv_postfilter.py"), "--class45", clash,
+                        "--out", os.path.join(work, "clash_checked.tsv")], capture_output=True, text=True)
+    check("a sample named Caller stops the step instead of losing its GT and PS",
+          p.returncode != 0 and "rename the sample" in p.stderr, (p.returncode, p.stderr[-300:]))
 
     # 8. red controls
     plain, _ = run7(work, "norules", with_rules=False)
