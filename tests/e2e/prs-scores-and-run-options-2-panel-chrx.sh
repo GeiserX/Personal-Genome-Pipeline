@@ -27,9 +27,8 @@ PANEL_NAME=GRCh38_HAPNEST_reference
 PANEL="${GENOME_DIR}/reference/pgsc_calc/${PANEL_NAME}.tar.zst"
 PSITES="${PANEL%.tar.zst}_GRCh38_sites.tsv"
 
-echo "+ ANCESTRY_PANEL_NAME=${PANEL_NAME} scripts/setup.sh --ancestry-panel"
-ANCESTRY_PANEL_NAME="$PANEL_NAME" "${REPO}/scripts/setup.sh" --ancestry-panel "$GENOME_DIR" 2>&1 | tee "$STEP_LOG"
-check_eq "setup.sh --ancestry-panel exits 0" "${PIPESTATUS[0]}" 0
+# From the Actions cache when it is there, with EBI unreachable (lib.sh).
+setup_ancestry_panel "$PANEL_NAME" "$PANEL"
 check_ge "GRCh38 SNVs in the panel's site list" "$(wc -l < "$PSITES" 2>/dev/null | tr -d ' ')" 1000
 # The panel's own chrX variants (its .pvar or .pvar.zst files: chromosome X or 23).
 PVARS=$(tar --zstd -tf "$PANEL" 2>/dev/null | grep -E '\.pvar(\.zst)?$' | tr '\n' ' ')

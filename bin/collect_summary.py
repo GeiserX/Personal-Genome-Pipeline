@@ -120,7 +120,7 @@ IMPACT_RANK = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
 RUN_ALL_STEPS = {"03a", "03b", "03c", "03d", "04", "04b", "05", "06", "07", "08", "09", "09b", "10", "11",
                  "12", "13", "14", "15", "16", "16b", "17", "18", "19", "20", "21", "22", "23", "25", "26",
                  "26b", "27", "28", "29", "30", "31", "32", "33", "35", "35b", "37", "38", "39", "40", "41",
-                 "42", "43", "44", "45", "46", "47", "48", "49", "50", "51", "52"}
+                 "42", "43", "44", "45", "46", "47", "48", "49", "50", "51", "52", "53"}
 
 # What this pipeline does not assess, whatever ran.
 NOT_ASSESSED = [
@@ -2742,6 +2742,57 @@ def sec_vntyper(d, s):
                                              "vntr_mean_depth", "coverage_qc", "sensitivity", "message", "advice")}
 
 
+LOCITYPER_COLUMNS = ("locus", "region", "status", "genotype", "haplotype_1", "haplotype_2", "quality",
+                     "total_reads", "unexplained_reads", "weighted_distance", "warnings", "filter", "reason")
+
+
+def sec_locityper(d, s):
+    """Step 53's table (locityper/<id>_locityper.tsv, bin/locityper_report.py):
+    one row per locus of assets/locityper_loci.bed, the two pangenome
+    haplotypes Locityper picked with its quality and the authors' filter.
+    collect() adds each locus's primary call (locityper_primary)."""
+    p = first_existing(d, [f"locityper/{s}_locityper.tsv"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    if not rows or not set(LOCITYPER_COLUMNS) <= set(rows[0]):
+        raise Unreadable(f"{os.path.basename(p)} lacks a row or one of the columns {', '.join(LOCITYPER_COLUMNS)}")
+    loci = [{k: (r.get(k) or ".") for k in LOCITYPER_COLUMNS} for r in rows]
+    return p, {"loci": loci, "called": sum(x["status"] == "called" for x in loci),
+               "passed": sum(x["filter"] == "pass" for x in loci)}
+
+
+def locityper_primary(sections):
+    """The primary caller's call at each Locityper locus, as text, so the
+    report shows the two side by side: T1K (step 08) for HLA-DRB1 and
+    HLA-DQB1, T1K's KIR pass (KIR=true) for KIR, pypgx (step 32) and Cyrius
+    (step 21) for CYP2D6. FCGR has no primary caller here. Locityper names
+    pangenome haplotypes, not alleles, so the two are shown, not compared."""
+    def old(key):  # a table older than the last run-all.sh run says so
+        return " (stale: from an earlier run)" if sections[key]["state"] == "stale" else ""
+
+    hla = sections["hla"]["data"] if sections["hla"]["state"] in ("ok", "stale") else {}
+    by_gene = {x["gene"]: x for x in hla.get("loci", [])}
+    out = {}
+    for g in ("HLA-DRB1", "HLA-DQB1"):
+        x = by_gene.get(g) or by_gene.get(g.replace("HLA-", ""))
+        out[g] = ("T1K (step 08): " + ("/".join(x["alleles"]) or "no allele")
+                  + (" (low confidence)" if x.get("low_confidence") else "") + old("hla")) if x else "T1K (step 08) did not run"
+    kir = hla.get("kir")
+    out["KIR"] = (f"T1K KIR pass (step 08): {len(kir['typed'])} genes typed{old('hla')}" if kir and kir.get("typed")
+                  else "T1K's KIR pass (step 08, KIR=true) gave no call")
+    cyp = []
+    if sections["pypgx"]["state"] in ("ok", "stale"):
+        cyp.append(f"pypgx (step 32): {sections['pypgx']['data'].get('cyp2d6', 'not called')}{old('pypgx')}")
+    if sections["cyrius"]["state"] in ("ok", "stale"):
+        cy = sections["cyrius"]["data"]
+        usable = "" if cy.get("filter") == "PASS" else f" (not usable: Filter {cy.get('filter') or 'missing'})"
+        cyp.append(f"Cyrius (step 21): {cy.get('genotype', 'none')}{usable}{old('cyrius')}")
+    out["CYP2D6"] = "; ".join(cyp) or "pypgx (step 32) and Cyrius (step 21) did not run"
+    out["FCGR"] = "no other step calls FCGR"
+    return out
+
+
 def sec_viral(d, s):
     """Step 47's table (viral/<id>_viral.tsv, bin/viral_report.py): one row per
     viral genome; the HHV-6 line and the genomes with reads (phiX included)."""
@@ -4533,6 +4584,7 @@ SECTIONS = [
     ("bloodtype", "Blood groups (predicted)", "41", sec_bloodtype),
     ("lpa", "Lp(a): LPA KIV-2 repeat count", "46", sec_lpa),
     ("vntyper", "MUC1 VNTR frameshifts (VNtyper)", "52", sec_vntyper),
+    ("locityper", "Locityper second opinion at hard loci", "53", sec_locityper),
     ("mito", "Mitochondrial variants", "20", sec_mito),
     ("traits", "Traits panel", "42", sec_traits),
     ("archaic", "Archaic ancestry (IBDmix)", "43", sec_archaic),
@@ -4690,6 +4742,10 @@ def collect(sample, sample_dir, declared_sex=None):
         sections[key] = sec
 
     cyp2d6 = cyp2d6_block(sample, sample_dir, sections)
+    if sections["locityper"]["state"] in ("ok", "stale"):
+        primary = locityper_primary(sections)
+        for x in sections["locityper"]["data"]["loci"]:
+            x["primary"] = primary.get(x["locus"], "no other step calls this locus")
     declared = (declared_sex or (status or {}).get("declared_sex") or manifest_value(manifest, "run", "declared_sex")
                 or sections["sample_qc"]["data"].get("declared_sex") or None)
     cnvpytor_sex_filter(sections["cnvpytor"]["data"], declared)
