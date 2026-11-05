@@ -4,7 +4,8 @@ synthetic pileups (no real sample).
 
 The tree:
     (root) -> A (a1, a2/a2alt) -> B (b1, b2, b3) -> C (c1, c2)
-                               -> X (x1)        -> Y (y1)
+                               -> X (x1)        -> Y (y1) -> Z (z1) -> W (w1)
+                               -> P (p1)        -> Q (q1, q1b; one site)
 Checks:
   1. every SNP derived along A-B-C: C is the terminal branch at level 3, with
      the counts of each level, and nothing ancestral in its block;
@@ -13,9 +14,16 @@ Checks:
   3. no-calls: C's SNPs read at depth 9 (below 10), or by a 50/50 mix of
      bases, are no-calls, not derived; a SNP no table places counts as a
      SNP but not as on the tables;
-  4. a negative branch blocks the branches below it: X ancestral, Y derived
-     (deeper than B) is not the terminal branch; without X's ancestral call
-     Y wins, because it is deeper;
+  4. a negative branch blocks the branches below it unless the branches
+     below outvote it: X has one SNP, x1. x1 ancestral with one derived SNP
+     below (y1) blocks, so B is the terminal branch; x1 ancestral with two
+     derived SNPs below (y1, z1) is outvoted, so Z wins and x1 is reported
+     as the outvoted site; without x1's call Z wins with nothing reported;
+     a branch with two ancestral SNPs (A: a1, a2alt) blocks however much
+     derived support sits below it; two single-ancestral-SNP branches on
+     one path (x1, y1) block too, even with two derived SNPs below (z1, w1);
+     two SNP names at one position (Q: q1, q1b) are one site, so p1
+     ancestral with only Q derived below still blocks;
   5. nothing derived anywhere: Hg NA, level 0;
   6. the first table wins for a name both tables place, and a SNP in the
      pseudoautosomal region is never asked for;
@@ -51,12 +59,17 @@ TREE = {"id": "", "snps": "", "children": [
             {"id": "C", "snps": "c1, c2", "children": []}]},
         {"id": "X", "snps": "x1", "children": [
             {"id": "Y", "snps": "y1", "children": [
-                {"id": "Z", "snps": "z1", "children": []}]}]}]}]}
+                {"id": "Z", "snps": "z1", "children": [
+                    {"id": "W", "snps": "w1", "children": []}]}]}]},
+        {"id": "P", "snps": "p1", "children": [
+            {"id": "Q", "snps": "q1, q1b", "children": []}]}]}]}
 
 # name -> (position, ancestral, derived); bnot is on no table
 FTDNA = {"a1": (3000100, "C", "T"), "a2alt": (3000200, "G", "A"), "b1": (3000300, "A", "G"),
          "b2": (3000400, "T", "C"), "b3": (3000500, "C", "G"), "c1": (3000600, "G", "T"),
          "x1": (3000800, "A", "C"), "y1": (3000900, "T", "A"), "z1": (3001000, "G", "C"),
+         "w1": (3001100, "C", "A"), "p1": (3001200, "T", "G"), "q1": (3001300, "A", "T"),
+         "q1b": (3001300, "A", "T"),
          "par": (2000000, "A", "G")}
 YFULL = {"a1": (3999999, "C", "T"), "c2": (3000700, "A", "T")}
 
@@ -153,13 +166,29 @@ def main():
         check("3. a SNP no table places is counted but not on the tables (bnot)",
               path[1:2] and path[1]["SNPs"] == "4" and path[1]["On_tables"] == "3", path)
 
-        # 4. a negative branch blocks the walk below it
-        r, row, path = run(d, {**ALL_A, **ALL_B, "x1": "A", "y1": "D", "z1": "D"}, "blocked")
-        check("4. X ancestral: Z (deeper, derived) is not the terminal branch, B is",
-              row.get("Hg") == "B", row)
+        # 4. a negative branch blocks the walk below it, unless outvoted
+        r, row, path = run(d, {**ALL_A, **ALL_B, "x1": "A", "y1": "D"}, "blocked")
+        check("4. x1 ancestral, one derived SNP below: Y is blocked, B is the terminal branch",
+              row.get("Hg") == "B" and row.get("Outvoted_ancestral") == ".", row)
+        r, row, path = run(d, {**ALL_A, **ALL_B, "x1": "A", "y1": "D", "z1": "D"}, "outvoted")
+        check("4. x1 ancestral, two derived SNPs below: Z is the terminal branch",
+              row.get("Hg") == "Z" and [x["Branch"] for x in path] == ["A", "X", "Y", "Z"], (row, path))
+        check("4. and x1 is reported as the outvoted ancestral site",
+              row.get("Outvoted_ancestral") == "x1" and path[1:2] and path[1]["Ancestral"] == "1", (row, path))
+        check("4. the step line names the outvoted site", "outvoted" in r.stdout and "x1" in r.stdout, r.stdout)
         r, row, path = run(d, {**ALL_A, **ALL_B, "y1": "D", "z1": "D"}, "unblocked")
-        check("4. X with no call: Z, the deeper branch, wins", row.get("Hg") == "Z"
-              and [x["Branch"] for x in path] == ["A", "X", "Y", "Z"], (row, path))
+        check("4. X with no call: Z, the deeper branch, wins, nothing outvoted", row.get("Hg") == "Z"
+              and [x["Branch"] for x in path] == ["A", "X", "Y", "Z"]
+              and row.get("Outvoted_ancestral") == ".", (row, path))
+        r, row, path = run(d, {"a1": "A", "a2alt": "A", **ALL_B, "c1": "D", "c2": "D"}, "twoanc")
+        check("4. two ancestral SNPs on A block B and C below it: Hg NA",
+              row.get("Hg") == "NA" and path == [], (row, path))
+        r, row, path = run(d, {**ALL_A, **ALL_B, "x1": "A", "y1": "A", "z1": "D", "w1": "D"}, "twosingles")
+        check("4. two single-ancestral branches on one path (X, Y) block Z and W: B is the terminal branch",
+              row.get("Hg") == "B" and row.get("Outvoted_ancestral") == ".", (row, path))
+        r, row, path = run(d, {**ALL_A, **ALL_B, "p1": "A", "q1": "D"}, "onesite")
+        check("4. p1 ancestral, two names at one derived site below (q1, q1b): Q is blocked, B is the terminal branch",
+              row.get("Hg") == "B" and row.get("Outvoted_ancestral") == ".", (row, path))
 
         # 5. nothing derived
         r, row, path = run(d, {"a1": "A", "a2alt": "A"}, "none")

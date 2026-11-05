@@ -63,7 +63,7 @@ check "the step prints the current-tree line" \
   has "^Current tree \\(YFull YTree ${YTREE_VERSION//./\\.} \\(CC BY 4\\.0\\)\\): [A-Z]" "$(cat "$STEP_LOG")"
 check "and still prints Yleaf's line, with the tree it comes from" \
   has '^Y haplogroup: ' "$(cat "$STEP_LOG")"
-check "Yleaf's own tree is named" has "^  \\(Yleaf ${YLEAF_DATA_VERSION//./\\.}, on its own tree, YFull v10\\.01\\)" "$(cat "$STEP_LOG")"
+check "Yleaf's own tree is named" has "^  \\(Yleaf ${YLEAF_DATA_VERSION//./\\.}, on its own tree, YFull v14\\.01\\)" "$(cat "$STEP_LOG")"
 check "the step removed its tree pileup" test ! -e "${OUT}/tree_pileup.txt"
 
 # --- Red controls: the same pileup, judged on swapped tables and at a depth no read reaches ---
