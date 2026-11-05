@@ -46,6 +46,12 @@ adds the same two columns here:
                      consensus VCF's sample columns, which step 22 names
                      after the callers), else the SV's own caller
 
+The table ends with AnnotSV's FORMAT column and the sample column after it,
+as the input has them (the caller's GT and, when the caller phased the call,
+PS): the reports pair a deletion with a small variant of the same gene by that
+phase (bin/collect_summary.py two_hits), and a 0/0 call is no deletion. An
+input without FORMAT writes neither.
+
 Some class 4 and 5 calls are common or unreliable for a known reason, and
 the table moves them to class 3. ACMG_class is the class after these checks;
 AnnotSV_class keeps AnnotSV's own. Rule names each check that fired and
@@ -191,13 +197,20 @@ def population(row):
 def sample_format(row):
     """{FORMAT key: value} of the first sample column, the one after FORMAT
     in AnnotSV's header; {} when the row has none."""
+    cols = sample_columns(row)
+    if not cols:
+        return {}
+    return dict(zip((row.get("FORMAT") or "").split(":"), (row.get(cols[1]) or "").split(":")))
+
+
+def sample_columns(row):
+    """["FORMAT", <the sample column>] of AnnotSV's header, the two columns
+    sample_format reads; [] when the row has no sample column."""
     keys = list(row)
     if "FORMAT" not in keys:
-        return {}
+        return []
     i = keys.index("FORMAT") + 1
-    if i >= len(keys) or keys[i] == "Annotation_mode":
-        return {}
-    return dict(zip((row.get("FORMAT") or "").split(":"), (row.get(keys[i]) or "").split(":")))
+    return [] if i >= len(keys) or keys[i] == "Annotation_mode" else keys[i - 1:i + 1]
 
 
 def number(v):
@@ -319,6 +332,7 @@ def check_rows(rows, transcripts=None, rules=None):
     out = []
     for r in rows:
         o = {k: r.get(k, "") for k in KEEP}
+        o.update({k: r.get(k) or "" for k in sample_columns(r)})
         o["Caller"] = info_value(r.get("INFO"), "SVCALLER") or "."
         if sv_type(r) != "DEL":
             o["Exon_edge"], o["Exon_edge_detail"] = ".", ""
@@ -439,6 +453,8 @@ def main(argv=None):
         for r, s in zip(checked, consensus_support(checked, a.consensus)):
             r.update({k: "" if v is None else v for k, v in s.items()})
         cols += SUPPORT
+    # Last, so a sample named like a column above cannot shadow it.
+    cols += [k for k in (sample_columns(rows[0]) if rows else []) if k not in cols]
     tmp = a.out + ".part"
     with open(tmp, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, delimiter="\t", lineterminator="\n", extrasaction="ignore")

@@ -36,7 +36,8 @@ Checks:
      "not checked" and keeps its class; a CNVpytor call has support; a
      Delly call with FORMAT GT only (as step 05 adds it) has support over
      1,000 bp and is "not checked" at 800 bp; the
-     summary line counts the rows moved to class 3;
+     summary line counts the rows moved to class 3; every written row keeps
+     AnnotSV's FORMAT and sample columns;
   8. red controls: without --rules the DSPP and IGH deletions stay class 4;
      and the rule table itself: every row has a known rule, IGH lies on
      chr14 between 105.5 and 107 Mb, the MHC is GRCh38's 28,510,120 to
@@ -205,6 +206,9 @@ def rules_section(work):
     want = sorted(["TR_IN", "IGH_IN", "IGH_MOST", "MHC_IN", "ALIAS", "D_LOW", "DUP_LOW", "DELLY2"])
     check("exactly the eight rows above are moved to class 3", moved == want, moved)
     check("the summary line counts them", "moved to class 3: 8; depth support no: 3, not checked: 2" in err, err)
+    check("every row keeps AnnotSV's FORMAT and sample column (GT and the depth fields)",
+          (col("D_OK", "FORMAT"), col("D_OK", "S1"), col("NODEPTH", "S1")) == ("GT:DHFFC", "0/1:0.5", "0/1"),
+          got.get("D_OK"))
 
     # 8. red controls
     plain, _ = run7(work, "norules", with_rules=False)
