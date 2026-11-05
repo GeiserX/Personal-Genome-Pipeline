@@ -339,7 +339,10 @@ install_kir_data() {
 # of Yleaf YTREE_POSITIONS_VERSION, each at a pinned commit and sha256, and
 # the chrY strict accessibility mask of the 1000 Genomes Project
 # (YCALLABLE_MASK_RELEASE) that the private SNP list keeps to. A failed
-# download of the current tree is a warning, not a failure.
+# download of the current tree is a warning, not a failure. The mask is
+# checked against YCALLABLE_MASK_SHA256 on every run: one that matches is
+# kept with no download, also when a new tree pin installs the tables again,
+# and one that fails is downloaded again on its own.
 install_yleaf_data() {
   local dest="${GENOME_DIR}/reference/yleaf-${YLEAF_DATA_VERSION}" tgz
   if [ -s "${dest}/data/hg38/new_positions.txt" ] && [ -s "${dest}/data/hg_prediction_tables/tree.json" ]; then
@@ -367,31 +370,57 @@ install_yleaf_data() {
 
   # version.txt names every pin (releases, commits, sha256), so a re-pin of
   # any of them, at the same tree release too, installs the tables again.
-  local yt="${dest}/data/ytree" label="YFull YTree ${YTREE_VERSION} (CC BY 4.0)" want
+  local yt="${dest}/data/ytree" label="YFull YTree ${YTREE_VERSION} (CC BY 4.0)" want mask_ok=false
+  local mask_url="https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/working/${YCALLABLE_MASK_RELEASE}_genome_mask_GRCh38/StrictMask/${YCALLABLE_MASK_RELEASE}.chrY.mask.fasta.gz"
+  local mask="${yt}/callable_mask_chrY.fasta.gz"
+  if [ -s "$mask" ] && [ "$(_digest sha256 "$mask")" = "$YCALLABLE_MASK_SHA256" ]; then
+    mask_ok=true
+  fi
   want="$(printf 'tree\t%s\npositions\tYleaf %s GRCh38 SNP tables (GPL-3.0)\npins\t%s %s %s %s %s %s %s' \
     "$label" "$YTREE_POSITIONS_VERSION" "$YTREE_COMMIT" "$YTREE_SHA256" \
     "$YTREE_POSITIONS_COMMIT" "$YTREE_FTDNA_SHA256" "$YTREE_YFULL_SHA256" \
     "$YCALLABLE_MASK_RELEASE" "$YCALLABLE_MASK_SHA256")"
   if [ -s "${yt}/version.txt" ] && [ "$(cat "${yt}/version.txt")" = "$want" ]; then
-    echo "[OK] Current Y tree (${label}, step 37) already present."
+    if $mask_ok; then
+      echo "[OK] Current Y tree (${label}, step 37) already present."
+      return 0
+    fi
+    # The tables are current but the mask is missing or fails its sha256:
+    # fetch it alone. Without it step 37 skips the private SNP list.
+    echo "[WARN] ${mask} is missing or fails its sha256; downloading it again."
+    rm -f "$mask"
+    if fetch "$mask_url" "$mask" sha256 "$YCALLABLE_MASK_SHA256"; then
+      echo "[OK] Current Y tree (${label}, step 37) present, chrY callable mask downloaded again."
+    else
+      echo "[WARN] Could not download the chrY callable mask; step 37 will skip the private SNP list. Run this again to retry."
+    fi
     return 0
   fi
   rm -rf "${yt}.part"
   mkdir -p "${yt}.part"
+  # A mask that matches its pin is kept: a new tree pin does not download it again.
+  if $mask_ok; then
+    cp "$mask" "${yt}.part/callable_mask_chrY.fasta.gz"
+  fi
   if ! fetch "https://raw.githubusercontent.com/YFullTeam/YTree/${YTREE_COMMIT}/current_tree.json" \
          "${yt}.part/current_tree.json" sha256 "$YTREE_SHA256" \
      || ! fetch "https://raw.githubusercontent.com/genid/Yleaf/${YTREE_POSITIONS_COMMIT}/yleaf/data/hg38/ftdna_positions_hg38.txt" \
          "${yt}.part/positions_ftdna_hg38.txt" sha256 "$YTREE_FTDNA_SHA256" \
      || ! fetch "https://raw.githubusercontent.com/genid/Yleaf/${YTREE_POSITIONS_COMMIT}/yleaf/data/hg38/new_positions.txt" \
          "${yt}.part/positions_yfull_hg38.txt" sha256 "$YTREE_YFULL_SHA256" \
-     || ! fetch "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/working/${YCALLABLE_MASK_RELEASE}_genome_mask_GRCh38/StrictMask/${YCALLABLE_MASK_RELEASE}.chrY.mask.fasta.gz" \
-         "${yt}.part/callable_mask_chrY.fasta.gz" sha256 "$YCALLABLE_MASK_SHA256"; then
+     || { ! $mask_ok && ! fetch "$mask_url" "${yt}.part/callable_mask_chrY.fasta.gz" sha256 "$YCALLABLE_MASK_SHA256"; }; then
     # Yleaf's own data is in place, so step 37 still runs: it says the
     # current tree is not installed and writes Yleaf's result only. An older
     # tree from an earlier pin goes too, so no step places on tables that
-    # versions.env no longer names.
+    # versions.env no longer names. A mask that matches its pin stays: with
+    # no version.txt beside it no step reads it, and the next run keeps it.
     echo "[WARN] Could not download the current Y tree (${label}); step 37 will place the sample on Yleaf's tree only. Run this again to retry."
-    rm -rf "${yt}.part" "$yt"
+    rm -rf "${yt}.part"
+    if $mask_ok; then
+      find "$yt" -mindepth 1 -maxdepth 1 ! -name callable_mask_chrY.fasta.gz -exec rm -rf {} +
+    else
+      rm -rf "$yt"
+    fi
     return 0
   fi
   printf '%s\n' "$want" > "${yt}.part/version.txt"
