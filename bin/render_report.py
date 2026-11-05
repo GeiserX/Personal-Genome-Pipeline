@@ -1107,6 +1107,8 @@ def text_report(s):
     if head("parascopy", "SMN1/SMN2 Copy Number (Parascopy, short reads)"):
         for line in parascopy_lines(S["parascopy"]["data"]):
             w(f"  {line}")
+        for line in parascopy_locus_lines(S["parascopy"]["data"]):
+            w(f"  {line}")
         w(f"  {PARASCOPY_NOTE}")
         w("")
     at("paralogs")
@@ -1638,8 +1640,8 @@ def paralog_lines(d):
     return out
 
 
-PARASCOPY_NOTE = ("Parascopy reads short reads at SMN1 and SMN2 only; CYP21A2 has no Parascopy model and is not "
-                  "assessed. A quality under 20 or a filter other than PASS leaves a copy unresolved. HBA1 and "
+PARASCOPY_NOTE = ("Parascopy reads short reads at SMN1 and SMN2 and at the other loci of its catalog; CYP21A2 has "
+                  "no Parascopy model and is not assessed. A quality under 20 or a filter other than PASS leaves a copy unresolved. HBA1 and "
                   "HBA2 have no Parascopy model either: step 35 counts the alpha-globin genes together from read "
                   "depth against flanking sequence, which cannot say which gene or which chromosome lost a copy. "
                   "A research estimate, not a diagnostic test: confirm a result with a clinical laboratory (MLPA "
@@ -1656,6 +1658,23 @@ def parascopy_lines(d):
             f"Reading: {d.get('reading', '.')}"] + ([hba_line(d["hba"])] if d.get("hba") else [])
 
 
+PARASCOPY_LOCI_NOTE = ("The other loci of step 35's catalog (assets/paralog_loci.tsv): agCN is the copies of the "
+                       "gene and its paralogs together, read only with filter PASS and quality 20 or more; "
+                       "which copy gained or lost one is not said. Not assessed names the reason (most often: "
+                       "no read over the locus).")
+
+
+def parascopy_locus_lines(d):
+    """One line per catalog locus other than SMN1, the same in both reports."""
+    out = []
+    for x in d.get("loci") or []:
+        line = f"{x['genes'].replace(',', ', ')} (agCN): {x['text']}"
+        if x.get("status") == "called" and x.get("reading", ".") != ".":
+            line += f". Reading: {x['reading']}"
+        out.append(line)
+    return out
+
+
 def hba_line(h):
     """Step 35's HBA1/HBA2 count from depth, one line."""
     if h.get("status") == "called":
@@ -1663,6 +1682,17 @@ def hba_line(h):
     else:
         value = h.get("message", "not assessed")
     return f"HBA1 and HBA2 together (alpha-globin genes, from depth): {value}"
+
+
+def parascopy_loci_html(d):
+    """The other catalog loci as one table: genes, copies (agCN), reading."""
+    loci = d.get("loci") or []
+    if not loci:
+        return []
+    rows = "".join(f"<tr><td>{E(x['genes'].replace(',', ', '))}</td><td>{E(x['text'])}</td>"
+                   f"<td>{E(x['reading'] if x.get('status') == 'called' else '.')}</td></tr>" for x in loci)
+    return ["    <table><tr><th>Genes</th><th>Copies together (agCN)</th><th>Reading</th></tr>" + rows + "</table>",
+            small_note(PARASCOPY_LOCI_NOTE)]
 
 
 def paralogs_unchecked(S):
@@ -1695,7 +1725,7 @@ def sf_rows(sf):
     the same in both reports: ClinVar hits, rare HIGH-impact records, then
     class 4 and 5 SVs."""
     def extra(x):
-        return "".join(f"; {v}" for v in (x.get("severity"), x.get("rule_note")) if v)
+        return "".join(f"; {v}" for v in (x.get("severity"), x.get("rule_note"), x.get("two_hit")) if v)
     rows = [(x["gene"], x["variant"], x["genotype"],
              "ClinVar " + x["significance"] + ("; low-confidence call: check the reads" if x.get("low_confidence") else "")
              + extra(x)) for x in sf["clinvar_hits"]]
@@ -1715,8 +1745,9 @@ def sf_apart_lines(sf):
     no rule could be applied."""
     if sf.get("unavailable"):
         return [f"Secondary findings: not assessed, {sf['unavailable']}"]
-    return [f"{x['gene']} {x['variant']} {x.get('genotype') or '.'} ({x['source']}): not reported, {x['reason']}"
-            for x in sf.get("not_reported", [])]
+    return ([f"{x['gene']} {x['variant']} {x.get('genotype') or '.'} ({x['source']}): not reported, {x['reason']}"
+             for x in sf.get("not_reported", [])]
+            + ([sf["two_hit_note"]] if sf.get("two_hit_note") else []))
 
 
 def carrier_lines(c):
@@ -1725,12 +1756,31 @@ def carrier_lines(c):
         return [f"Carrier list: not made, {c['unavailable']}"]
     lines = [f"Carrier list ({c['genes_on_list']} genes): {len(c['carriers'])} finding(s)"
              + (f", {len(c['set_aside'])} set aside" if c["set_aside"] else "")]
+    def hemi(x):
+        return f" ({x['hemizygous']})" if x.get("hemizygous") else ""
     for x in c["carriers"]:
-        lines.append(f"{x['gene']} ({x['condition']}; {x['inheritance']}): {x['variant']} {x['genotype']}, "
+        lines.append(f"{x['gene']} ({x['condition']}; {x['inheritance']}): {x['variant']} {x['genotype']}{hemi(x)}, "
                      f"ClinVar {x['significance']}")
     for x in c["set_aside"]:
-        lines.append(f"Set aside: {x['gene']} {x['variant']} {x['genotype']}: {x['name']} is a {x['kind']} allele, "
-                     "not a carrier finding on its own")
+        lines.append(f"Set aside: {x['gene']} {x['variant']} {x['genotype']}{hemi(x)}: {x['name']} is a {x['kind']} "
+                     "allele, not a carrier finding on its own")
+    return lines + two_hit_lines(c.get("two_hits"))
+
+
+def two_hit_lines(t):
+    """The genes a called deletion and a ClinVar hit both reach (collect_summary.two_hits), and which deletion
+    callers were read; none for a summary written before the rule."""
+    if not t:
+        return []
+    lines = []
+    for x in t["genes"]:
+        allele = f" ({x['allele']})" if x.get("allele") else ""
+        lines.append(f"{x['verdict'].capitalize()}: {x['gene']} ({x['condition']}; AR), both copies may be hit: "
+                     f"{x['deletion']} and {x['variant']} {x['genotype']}{allele}; {x['why']}")
+    lines.append("Two hits across callers (a deletion plus a variant on the other copy): "
+                 + (f"{len(t['genes'])} gene(s); " if t["genes"] else "none found; ")
+                 + "deletions read from " + ("; ".join(t["deletions_read"]) or "no caller")
+                 + (f"; not read: {'; '.join(t['deletions_not_read'])}" if t["deletions_not_read"] else ""))
     return lines
 
 
@@ -2530,6 +2580,7 @@ def html_report(s, index=None):
         a("parascopy", card(S["parascopy"], "SMN1/SMN2 Copy Number (Parascopy)",
                [stat("Status", done_badge(S["parascopy"]))]
                + [stat(*(E(x) for x in line.split(": ", 1))) for line in parascopy_lines(S["parascopy"]["data"])]
+               + parascopy_loci_html(S["parascopy"]["data"])
                + [small_note(PARASCOPY_NOTE)]))
     unchecked = paralogs_unchecked(S)
     if unchecked:

@@ -385,9 +385,14 @@ jobs:
       # base outputs unpack only under the work area they were packed in, so
       # a shard leg takes the base leg's choice when its artifact arrives.
       - name: Free disk space and pick the work area
+        # A shard starts its cases with about 15 GB free on /, and shard 1
+        # needs most of it: the toolchains below are not used by any case.
         run: |
+          df -h / /mnt
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
-            /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+            /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium /opt/microsoft /opt/az \
+            /opt/hostedtoolcache/Python /opt/hostedtoolcache/PyPy /opt/hostedtoolcache/go /opt/hostedtoolcache/Ruby
           df -h / /mnt
           work="${RUNNER_TEMP}/e2e-work"
           if [ "$(df --output=avail -k /mnt | tail -1)" -gt "$(df --output=avail -k / | tail -1)" ]; then

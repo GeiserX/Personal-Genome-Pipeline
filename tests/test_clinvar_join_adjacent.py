@@ -9,8 +9,10 @@ awk, mawk):
      0/1 and 1/0 are the same het call;
   2. phased records are joined only in the same phase set (FORMAT/PS) with
      the same GT: other phase sets and the other haplotype are not joined;
-  3. a het next to a hom, a half call (./1), overlapping records and records
-     11 bp apart are not joined; 10 bp apart are;
+  3. a het next to a hom, an unphased half call (./1), overlapping records
+     and records 11 bp apart are not joined; 10 bp apart are; a phased half
+     call (1|.) joins a record with its ALT on the same haplotype and keeps
+     "." on the other;
   4. a single SNV gives no combined record;
   5. finish drops a combined record whose part disagrees with the reference;
   6. the combined records come out in POS order;
@@ -154,7 +156,18 @@ def awk_checks(name, awk, work):
     out, raw = join(awk, [rec(30000203, "T", "A", "0/1"), rec(30000208, "T", "C", "1/1")])
     check(f"{name}: a het next to a hom: not joined", out == [], raw)
     out, raw = join(awk, [rec(30000203, "T", "A", "./1"), rec(30000208, "T", "C", "./1")])
-    check(f"{name}: half calls (./1): not joined", out == [], raw)
+    check(f"{name}: unphased half calls (./1): not joined", out == [], raw)
+    out, raw = join(awk, [rec(30000203, "T", "A", "1|.", 100), rec(30000208, "T", "C", "1|0", 100)])
+    check(f"{name}: a phased half call (1|.) and 1|0 in one phase set: joined, '.' kept on the other haplotype",
+          out is not None and [core(r) for r in out] == [("30000203", "TGTAAT", "AGTAAC", "GT:PS", "1|.:100")], raw)
+    out, raw = join(awk, [rec(30000203, "T", "A", "1|0", 100), rec(30000208, "T", "C", "1|.", 100)])
+    check(f"{name}: 1|0 then a phased half call (1|.): joined, '.' kept on the other haplotype",
+          out is not None and [core(r) for r in out] == [("30000203", "TGTAAT", "AGTAAC", "GT:PS", "1|.:100")], raw)
+    out, raw = join(awk, [rec(30000203, "T", "A", ".|1", 100), rec(30000208, "T", "C", ".|1", 100)])
+    check(f"{name}: two phased half calls on one haplotype: joined",
+          out is not None and [core(r) for r in out] == [("30000203", "TGTAAT", "AGTAAC", "GT:PS", ".|1:100")], raw)
+    out, raw = join(awk, [rec(30000203, "T", "A", "1|.", 100), rec(30000208, "T", "C", "0|1", 100)])
+    check(f"{name}: a phased half call and an ALT on the other haplotype: not joined", out == [], raw)
     out, raw = join(awk, [rec(30000203, "TGT", "T", "0/1"), rec(30000204, "G", "A", "0/1")])
     check(f"{name}: overlapping records: not joined", out == [], raw)
     out, raw = join(awk, [rec(30000203, "T", "A", "0/1"), rec(30000213, "G", "T", "0/1")])
@@ -197,6 +210,8 @@ def awk_checks(name, awk, work):
         "chr22\t30000404\t9900008\tC\tT\t50\tPASS\t" + cv.format(g="SYNTH5:5")[1:] + "\tGT\t0/1",
         "chr22\t30000500\t9900009\tA\tG\t50\tPASS\t" + cv.format(g="SYNTH6:6")[1:] + "\tGT:PS\t0|1:7",
         "chr22\t30000504\t9900010\tC\tT\t50\tPASS\t" + cv.format(g="SYNTH6:6")[1:] + "\tGT:PS\t1|0:7",
+        "chr22\t30000600\t9900011\tA\tG\t50\tPASS\t" + cv.format(g="SYNTH7:7")[1:] + "\tGT:PS\t1|.:8",
+        "chr22\t30000605\t9900012\tC\tT\t50\tPASS\t" + cv.format(g="SYNTH7:7")[1:] + "\tGT:PS\t1|0:8",
     ]
     with open(hits, "w") as f:
         f.write(HEAD + "\n".join(lines) + "\n")
@@ -216,7 +231,10 @@ def awk_checks(name, awk, work):
           info.get(("30000300",), "").endswith("PGP_ONE_ALLELE=chr22:30000305:C:T")
           and info.get(("30000305",), "").endswith("PGP_ONE_ALLELE=chr22:30000300:A:G"), info)
     check(f"{name}: tag: hits in two genes, or on the two haplotypes of a phase set, are unchanged",
-          all(x in got for x in lines[6:]), info)
+          all(x in got for x in lines[6:10]), info)
+    check(f"{name}: tag: a phased half call (1|.) and 1|0 in one gene and phase set: flagged both ways",
+          info.get(("30000600",), "").endswith("PGP_ONE_ALLELE=chr22:30000605:C:T")
+          and info.get(("30000605",), "").endswith("PGP_ONE_ALLELE=chr22:30000600:A:G"), info)
 
 
 POLY_HEAD = ("##fileformat=VCFv4.2\n##contig=<ID=chr22,length=50818468>\n"
