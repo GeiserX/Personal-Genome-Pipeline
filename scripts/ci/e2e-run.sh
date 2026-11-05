@@ -578,6 +578,12 @@ for c in "${CASES[@]}"; do
   rc=${PIPESTATUS[0]}
   set -e
   data_drop "$c"
+  # A lazy image goes when its case ends, so a leg holds one at a time; a
+  # later case that runs it pulls it again (DeepVariant's and PharmCAT's images
+  # took 15 GB together in the base leg of run 41960912641).
+  for i in ${E2E_LAZY_IMAGES:-}; do
+    docker image inspect "$i" > /dev/null 2>&1 && { docker image rm -f "$i" > /dev/null || true; }
+  done
   echo "::endgroup::"
   case "$rc" in
     0)   result=pass ;;

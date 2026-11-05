@@ -457,7 +457,11 @@ jobs:
           for g in 0 1 2 3; do
             # Only refs that can be saved: a digest bump never changes an entry.
             h=$(awk -v g="$g" '$1 == g && $2 !~ /@/ {print $2}' "${RUNNER_TEMP}/image-groups.txt" | sort | sha256sum | cut -c1-16)
-            echo "g${g}=e2e-images-g${g}-${h}" | tee -a "$GITHUB_OUTPUT"
+            # "ovl": saved from the overlay2 store (step "Docker image store").
+            # 7 of the 46 archives saved from containerd's store did not load
+            # into overlay2 (run 41960912641), and an exact key hit never
+            # saves again, so the old entries are left behind.
+            echo "g${g}=e2e-images-ovl-g${g}-${h}" | tee -a "$GITHUB_OUTPUT"
           done
 
       - name: Restore cached images, group 0
@@ -466,7 +470,7 @@ jobs:
         with:
           path: ${{ runner.temp }}/images/g0
           key: ${{ steps.keys.outputs.g0 }}
-          restore-keys: e2e-images-g0-
+          restore-keys: e2e-images-ovl-g0-
 
       - name: Restore cached images, group 1
         id: images1
@@ -474,7 +478,7 @@ jobs:
         with:
           path: ${{ runner.temp }}/images/g1
           key: ${{ steps.keys.outputs.g1 }}
-          restore-keys: e2e-images-g1-
+          restore-keys: e2e-images-ovl-g1-
 
       - name: Restore cached images, group 2
         id: images2
@@ -482,7 +486,7 @@ jobs:
         with:
           path: ${{ runner.temp }}/images/g2
           key: ${{ steps.keys.outputs.g2 }}
-          restore-keys: e2e-images-g2-
+          restore-keys: e2e-images-ovl-g2-
 
       - name: Restore cached images, group 3
         id: images3
@@ -490,7 +494,7 @@ jobs:
         with:
           path: ${{ runner.temp }}/images/g3
           key: ${{ steps.keys.outputs.g3 }}
-          restore-keys: e2e-images-g3-
+          restore-keys: e2e-images-ovl-g3-
 
       # One image per file; the four groups load side by side. An image that
       # does not load is pulled by e2e-run.sh like any missing image.
