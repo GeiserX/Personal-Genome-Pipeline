@@ -1146,6 +1146,29 @@ def vntyper(d):
             f.write(f"{k}\t{t[k]}\n")
 
 
+def locityper(d, rng):
+    """Step 53: bin/locityper_report.py's reading of a made-up Locityper run
+    that called every locus of assets/locityper_loci.bed with two HPRC panel
+    haplotypes and passed the authors' filter."""
+    import gzip
+    import tempfile
+    import locityper_report as lr
+    loci_path = os.path.join(REPO, "assets", "locityper_loci.bed")
+    panel = ["HG00438.1", "HG00733.2", "HG01891.1", "HG02257.2", "NA18906.1", "NA19240.2"]
+    out = os.path.join(d, "locityper")
+    os.makedirs(out, exist_ok=True)
+    with tempfile.TemporaryDirectory() as run:
+        for name, _ in lr.read_loci(loci_path):
+            res = {"genotype": ",".join(rng.sample(panel, 2)), "quality": round(rng.uniform(25, 60), 1),
+                   "total_reads": rng.randint(800, 4000), "unexpl_reads": rng.randint(0, 30),
+                   "weight_dist": round(rng.uniform(0.1, 3), 3)}
+            put(os.path.join(run, "loci", name, "success"), "")
+            with gzip.open(os.path.join(run, "loci", name, "res.json.gz"), "wt") as f:
+                json.dump(res, f)
+        if lr.main(["--gt-dir", run, "--loci", loci_path, "--out", os.path.join(out, f"{SAMPLE}_locityper.tsv")]):
+            raise SystemExit("locityper_report failed")
+
+
 def mei(d, rng):
     """Step 50: bin/mei_report.py run on a made-up MEGAnE VCF (a few Alu and L1
     insertions away from the catalog) and a made-up bedcov near 31x over every
@@ -1208,6 +1231,7 @@ def make(a):
              ("archaic", lambda r: archaic(d, r)), ("ancient", lambda r: ancient(d, r)),
              ("exomiser", lambda r: exomiser(d)), ("mocha", lambda r: mocha(d)),
              ("vntyper", lambda r: vntyper(d)), ("mei", lambda r: mei(d, r)),
+             ("locityper", lambda r: locityper(d, r)),
              ("callability", lambda r: callability(d, r))]
     for name, fn in parts:
         fn(random.Random(f"{a.seed}:{name}"))
