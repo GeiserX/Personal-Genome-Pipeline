@@ -180,7 +180,7 @@ The Nextflow ExpansionHunter module is only stub-run (`-profile test_all -stub` 
 
 ## The public-evidence workflow
 
-`.github/workflows/public-evidence.yml` runs two opt-in steps whole, on public data only, and writes what they measured to the job summary. It is not a gate; it runs by hand only (`workflow_dispatch`). Two inputs pick what runs: `chromosomes` (default `all`) names the autosomes for the archaic jobs, for example `22` for one job and that chromosome's three archaic files instead of 22 jobs and 150 GB, and `ancient` (default on) runs the ancient-footprint job:
+`.github/workflows/public-evidence.yml` runs two opt-in steps whole, on public data only, and writes what they measured to the job summary. It is not a gate; it runs by hand only (`workflow_dispatch`). Two inputs pick what runs: `chromosomes` (default `all`) names the autosomes for the archaic jobs, for example `22` for one chromosome job (plus the `empty` red control) and that chromosome's three archaic files instead of 22 chromosome jobs and 150 GB, and `ancient` (default on) runs the ancient-footprint job:
 
 ```bash
 gh workflow run public-evidence.yml -f chromosomes=22 -f ancient=false
