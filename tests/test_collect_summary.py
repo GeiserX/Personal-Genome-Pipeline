@@ -1924,8 +1924,10 @@ def main():
         check("HTML report: the same ClinVar count in its badge, yellow (never green) with a hit",
               'class="badge badge-yellow">3</span>' in html and 'badge-green">3<' not in html)
         rows = [l for l in html.splitlines() if l.strip().startswith("<tr><td>chr")]
-        check("HTML report: one row per hit, each with a Stars cell and an empty combined-allele cell",
-              len(rows) == 3 and rows[0].strip().endswith("<td>3</td><td></td><td>gnomAD AF unknown</td><td></td></tr>"),
+        check("HTML report: one row per hit, each with a Stars cell, an empty combined-allele cell and the viewer link",
+              len(rows) == 3 and rows[0].strip().endswith(
+                  '<td>3</td><td></td><td>gnomAD AF unknown</td><td></td><td><a class="locus" '
+                  'href="http://127.0.0.1:8765/#chr1:20" target="_blank" rel="noopener noreferrer">chr1:20</a></td></tr>'),
               rows)
         for r in sec["prs"]["data"]["scores"]:
             check(f"PRS row {r['pgs_id']} in both reports", r["pgs_id"] in txt and f"<td>{r['pgs_id']}</td>" in html)
@@ -2030,7 +2032,9 @@ def main():
         check("combined allele: the HTML table has the column and the notes, an SNV hit's cell empty",
               "<th>Stars</th><th>Combined allele</th>" in html_cv
               and any(f"<td>part of a combined allele: chr22:30000038 GCCAT&gt;CATGGG{unph}</td>" in r for r in cv_rows)
-              and any("<td>30000210</td>" in r and r.strip().endswith("<td></td></tr>") for r in cv_rows), cv_rows)
+              and any("<td>30000210</td>" in r and r.strip().endswith(
+                  '<td></td><td><a class="locus" href="http://127.0.0.1:8765/#chr22:30000210" target="_blank" '
+                  'rel="noopener noreferrer">chr22:30000210</a></td></tr>') for r in cv_rows), cv_rows)
         # The same hits phased (0|1, one phase set) or homozygous: both
         # parts are on one haplotype, so the notes carry no phase caveat.
         for gt_ in ("0|1", "1/1"):
