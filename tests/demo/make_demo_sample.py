@@ -614,6 +614,19 @@ def repeats_and_more(d, rng):
     put(os.path.join(d, "y_haplogroup", f"{SAMPLE}_y_haplogroup.txt"),
         "Sample_name\tHg\tHg_marker\tTotal_reads\tValid_markers\tQC-score\tQC-1\tQC-2\tQC-3\n"
         f"{SAMPLE}_sorted\tI-M253\tM253\t4021876\t1187\t0.982\t1.0\t0.991\t0.982\n")
+    # Step 37's placement on the current tree (bin/y_tree_place.py's columns), read
+    # by the report's y_tree section; the same I-M253 as above, five levels down.
+    put(os.path.join(d, "y_haplogroup", f"{SAMPLE}_y_tree.txt"),
+        "Sample_name\tHg\tLevel\tPath_derived\tPath_ancestral\tPath_no_call\tAncestral_in_terminal\t"
+        "SNPs_called\tMin_depth\tTree\tPositions\tOutvoted_ancestral\n"
+        f"{SAMPLE}\tI-M253\t5\t41\t0\t3\t0\t1187\t3\tYFull YTree v14.06.0\tYleaf hg38 position tables\t0\n")
+    put(os.path.join(d, "y_haplogroup", f"{SAMPLE}_y_tree_path.tsv"),
+        "Level\tBranch\tSNPs\tOn_tables\tDerived\tAncestral\tNo_call\tAncestral_SNPs\n"
+        "1\tCT\t12\t12\t11\t0\t1\t\n"
+        "2\tF\t9\t9\t9\t0\t0\t\n"
+        "3\tIJ\t8\t8\t7\t0\t1\t\n"
+        "4\tI\t7\t7\t7\t0\t0\t\n"
+        "5\tI-M253\t8\t8\t7\t0\t1\t\n")
 
 
 # --- steps 17, 23, 31 ----------------------------------------------------------------
@@ -909,7 +922,7 @@ TRAIT_ALT_COPIES = {
     "rs17822931": 0, "rs10427255": 1, "rs1815739": 1, "rs12913832": 1, "rs1800407": 0, "rs16891982": 2,
     "rs1426654": 0, "rs12203592": 0, "rs1805007": 0, "rs1805008": 0, "rs1805009": 0, "rs3827760": 0,
     "rs1801133": 1, "rs601338": 1, "rs2282679": 1, "rs887829": 1, "rs1801272": 0, "rs429358": 0, "rs7412": 0,
-    "rs10455872": 0, "rs3798220": 0,
+    "rs10455872": 0, "rs3798220": 0, "rs78655421": 0,
 }
 
 
