@@ -17,9 +17,12 @@ it carries no ClinVar allele.
 It reads the reads over each exon (EXONS.bed: chrom, 0-based start, end, the
 GENCODE basic exons setup.sh installs). A read counts for a junction when one
 of its pieces has a clip of at least MIN_CLIP bases within EDGE_SLACK bases
-of an exon end, another piece on the same contig has such a clip at a later
-exon start, at least MIN_INTRON and at most MAX_INTRON bases on, or when an N
-gap of its CIGAR runs from an exon end to an exon start. A junction counts
+of an exon end, another piece on the same contig and strand, later in the
+read (starting within EDGE_SLACK read bases of where the first stops), has such a clip at a
+later exon start, at least MIN_INTRON and at most MAX_INTRON bases on, or when
+an N gap of its CIGAR runs from an exon end to an exon start. Supplementary
+records count too, so a read whose primary alignment lies outside every exon
+(on a vector contig, say) still shows its junctions. A junction counts
 when at least MIN_READS reads show it. Junctions less than LOCUS_GAP bases
 apart form one locus (one gene, usually), and a locus is listed when it has
 at least MIN_JUNCTIONS junctions: one junction alone can be a chimeric read
@@ -45,7 +48,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from clip_check import EDGE_SLACK, MIN_CLIP, SKIP, parse_cigar, segment, sa_segments  # noqa: E402
+from clip_check import EDGE_SLACK, MIN_CLIP, SKIP, parse_cigar, segment  # noqa: E402
 
 MIN_READS = 2
 MIN_JUNCTIONS = 2
@@ -101,9 +104,35 @@ def gap_ok(donor, acceptor):
     return MIN_INTRON <= acceptor - donor <= MAX_INTRON
 
 
-def junctions(chrom, ref_start, cigar, sa, edges):
+def piece(ref_start, cigar, reverse):
+    """(ref_start, ref_end, left_clip, right_clip, reverse, query_start,
+    query_end) of one alignment. The query interval is in the reference's
+    orientation, as the CIGAR is, so two pieces on the same strand compare
+    directly: query_start is the left clip, query_end adds the read bases the
+    alignment holds (M, I, = and X)."""
+    s = segment(ref_start, cigar)
+    q = s[2] + sum(n for op, n in cigar if op in (0, 1, 7, 8))
+    return s + (reverse, s[2], q)
+
+
+def sa_pieces(sa, chrom):
+    """The pieces of the SA tag 'chr,pos,strand,CIGAR,mapq,nm;...' on chrom."""
+    out = []
+    for part in (sa or "").split(";"):
+        f = part.split(",")
+        if len(f) >= 4 and f[0] == chrom and f[1].isdigit():
+            out.append(piece(int(f[1]) - 1, parse_cigar(f[3]), f[2] == "-"))
+    return out
+
+
+def junctions(chrom, ref_start, cigar, sa, edges, reverse=False):
     """The (exon end, exon start) junctions one read shows on chrom: from its
-    pieces (the alignment and its SA alignments) and from its N gaps."""
+    pieces (the alignment and its SA alignments) and from its N gaps. Two
+    pieces pair only on the same strand and in read order, taken in the
+    reference's orientation of the read: the one clipped at the exon end comes
+    first along the read as aligned, the other starts where it stops,
+    give or take EDGE_SLACK read bases (the bases an aligner can put on either
+    side of a junction, or leave out of both)."""
     out = set()
     ends, starts = edges.ends.get(chrom), edges.starts.get(chrom)
     if not ends or not starts:
@@ -116,7 +145,7 @@ def junctions(chrom, ref_start, cigar, sa, edges):
                 out.add((d, a))
         if op in (0, 2, 3, 7, 8):  # M, D, N, =, X move along the reference
             r += n
-    pieces = [segment(ref_start, cigar)] + [s for c, s in sa_segments(sa) if c == chrom]
+    pieces = [piece(ref_start, cigar, reverse)] + sa_pieces(sa, chrom)
     for p in pieces:
         if p[3] < MIN_CLIP:
             continue
@@ -124,7 +153,9 @@ def junctions(chrom, ref_start, cigar, sa, edges):
         if d is None:
             continue
         for q in pieces:
-            if q is p or q[2] < MIN_CLIP:
+            if q is p or q[2] < MIN_CLIP or q[4] != p[4]:
+                continue
+            if not (p[5] < q[5] and abs(q[5] - p[6]) <= EDGE_SLACK):
                 continue
             a = Edges.nearest(starts, q[0])
             if a is not None and gap_ok(d, a):
@@ -134,19 +165,21 @@ def junctions(chrom, ref_start, cigar, sa, edges):
 
 def scan(reads_by_contig, edges):
     """{(chrom, exon end, exon start): set of read keys} over pysam-like reads.
-    reads_by_contig yields (chrom, reads); secondary, supplementary,
-    duplicate, QC-failed and unmapped alignments are skipped, so each read
-    counts once, from its primary alignment and its SA tag."""
+    reads_by_contig yields (chrom, reads); secondary, duplicate, QC-failed
+    and unmapped alignments are skipped. Primary and supplementary records
+    both count, each with its SA tag, so a read whose primary lies outside
+    every exon region still shows its junctions; a read counts once per
+    junction (the key is its name and mate), however many of its records
+    show it."""
     found = {}
     for chrom, reads in reads_by_contig:
         for r in reads:
-            if (r.is_unmapped or r.is_secondary or r.is_supplementary or r.is_duplicate or r.is_qcfail
-                    or not r.cigartuples):
+            if r.is_unmapped or r.is_secondary or r.is_duplicate or r.is_qcfail or not r.cigartuples:
                 continue
             sa = r.get_tag("SA") if r.has_tag("SA") else ""
             if not sa and not any(op == SKIP for op, _ in r.cigartuples):
                 continue
-            for d, a in junctions(chrom, r.reference_start, r.cigartuples, sa, edges):
+            for d, a in junctions(chrom, r.reference_start, r.cigartuples, sa, edges, r.is_reverse):
                 found.setdefault((chrom, d, a), set()).add((r.query_name, r.is_read1))
     return found
 

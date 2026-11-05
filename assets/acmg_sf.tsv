@@ -9,7 +9,10 @@
 #   report_if       when a P/LP variant (ClinVar, or a rare HIGH-impact record) is a secondary finding:
 #                     any             one variant is enough
 #                     biallelic       two variants: a homozygote, or two different variants even when
-#                                     their phase is unknown (Table 1 footnote a)
+#                                     their phase is unknown (Table 1 footnote a); a called deletion
+#                                     of the gene (AnnotSV, step 35's copy number) counts as one of the
+#                                     two unless read-backed phase puts it on the variant's copy
+#                                     (bin/collect_summary.py two_hits); so it does for hemizygous
 #                     hom_variant     only a variant of the variants column, homozygous
 #                     hemizygous      a hemizygous or homozygous variant, or two heterozygous ones; a
 #                                     single heterozygous variant is not reported

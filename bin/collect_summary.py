@@ -676,21 +676,28 @@ def sec_cyrius(d, s):
     return p, {"genotype": r.get("Genotype", "") or "none", "filter": r.get("Filter", "")}
 
 
-# The Paraphase regions the report shows gene by gene, in this order; the
-# others are counted.
-PARALOG_REGIONS = ("smn1", "hba", "rccx", "GBA", "pms2", "strc", "ncf1", "OTOA")
+def paralog_regions():
+    """The Paraphase regions the report shows gene by gene, in the order of
+    assets/paraphase_genes.tsv; the others are counted."""
+    out = []
+    for r in asset_rows("paraphase_genes.tsv"):
+        if r["region"] not in out:
+            out.append(r["region"])
+    return out
 
 
 def sec_paralogs(d, s):
-    """Step 35b (Paraphase, PacBio HiFi): the genes of PARALOG_REGIONS, a
-    count of the other regions, the variant rows per region, and SMN1 beside
-    step 35's Parascopy call when that table is there too."""
+    """Step 35b (Paraphase, PacBio HiFi): the genes of the regions of
+    assets/paraphase_genes.tsv, a count of the other regions, the variant rows
+    per region, and SMN1 beside step 35's Parascopy call when that table is
+    there too."""
     p = first_existing(d, [f"paralogs/{s}_paraphase_copy_number.tsv"])
     if not p:
         return None, {}
     rows = read_tsv(p)
     if rows and not {"region", "gene", "copy_number", "status"} <= set(rows[0]):
         raise Unreadable(f"{os.path.basename(p)} lacks the region, gene, copy_number or status column")
+    PARALOG_REGIONS = paralog_regions()
     genes = [{"region": r["region"], "gene": r["gene"], "copy_number": r["copy_number"],
               "status": r["status"], "detail": r.get("detail") or "."}
              for r in rows if r["region"] in PARALOG_REGIONS]
@@ -769,23 +776,96 @@ def smn_reading(smn1):
     return f"{smn1} SMN1 copies: not a carrier by copy number"
 
 
+# Tables in paralogs/ that other parts of steps 35 and 35b write, not catalog rows.
+NOT_CATALOG_TABLES = ("hba", "paraphase")
+PARASCOPY_COLUMNS = {"chrom", "start", "end", "agCN", "psCN", "psCN_qual", "psCN_filter"}
+
+
+def parascopy_tables(d, s):
+    """{table: path} of step 35's catalog tables (<s>_<table>_copy_number.tsv)."""
+    out = {}
+    for p in sorted(glob.glob(os.path.join(glob.escape(os.path.join(d, "paralogs", s)) + "_*_copy_number.tsv"))):
+        name = os.path.basename(p)[len(s) + 1:-len("_copy_number.tsv")]
+        if name not in NOT_CATALOG_TABLES and os.path.isfile(p):
+            out[name] = p
+    return out
+
+
+def parascopy_locus(name, path, row):
+    """One catalog table that is not SMN1's: the locus's aggregate copy number
+    (agCN) per region of its profile, the catalog's genes, tag and reading.
+    psCN is not read here: the catalog marks it reliable only for SMN1."""
+    out = {"table": name, "genes": (row or {}).get("genes") or name, "tag": (row or {}).get("tag") or ".",
+           "reading": (row or {}).get("reading") or "."}
+    rows = read_tsv(path)
+    if rows and not PARASCOPY_COLUMNS <= set(rows[0]):
+        return dict(out, status="unreadable", cn=None,
+                    text=f"unreadable: {os.path.basename(path)} lacks the copy-number columns")
+    na = next((r["agCN_filter"] for r in rows if (r.get("agCN_filter") or "").startswith("not assessed")), None)
+    if na:
+        return dict(out, status="not assessed", cn=None, text=na)
+    regions = []
+    for r in rows:
+        try:
+            q = float(r.get("agCN_qual") or "")
+        except ValueError:
+            q = None
+        cn = r.get("agCN") or "."
+        ok = cn.isdigit() and r.get("agCN_filter") == "PASS" and q is not None and q >= 20
+        regions.append((r.get("chrom"), r.get("start"), r.get("end"), cn, r.get("agCN_qual") or ".",
+                        r.get("agCN_filter") or ".", ok))
+    if not regions:
+        return dict(out, status="not assessed", cn=None, text="not assessed: the table has no region row")
+    values = {x[3] for x in regions if x[6]}
+    if len(values) == 1 and all(x[6] for x in regions):
+        cn = int(values.pop())
+        quals = [float(x[4]) for x in regions]
+        text = f"{cn} ({len(regions)} region(s), quality {min(quals):g} or more, filter PASS)"
+        return dict(out, status="called", cn=cn, text=text)
+    # every region, so a LowQual or discordant one is never hidden; no single
+    # number, so no catalog reading either (the reading follows a call)
+    text = "; ".join(f"{c}:{int(b) + 1 if str(b).isdigit() else b}-{e} {cn} (quality {q}, filter {f})"
+                     for c, b, e, cn, q, f, _ in regions)
+    called = any(x[6] for x in regions)
+    return dict(out, status="called" if called else "not resolved", cn=None, reading=".",
+                text=text + ("" if called else ": no region with a whole copy number, filter PASS and quality 20 or more"))
+
+
+NO_SMN_TABLE = "no SMN1 table (step 35 wrote no SMN copy-number table)"
+
+
 def sec_parascopy(d, s):
     """Step 35 (Parascopy, short reads): SMN1 and SMN2 copy number at exon 7,
-    the aggregate copy number of the pair there, and the SMA reading."""
-    p = first_existing(d, [f"paralogs/{s}_smn_copy_number.tsv"])
+    the aggregate copy number of the pair there and the SMA reading; the HBA
+    count from depth; and every other catalog table, one locus each. Each part
+    is read on its own, so a catalog without the SMN1 row still shows HBA and
+    the other loci."""
+    tables = parascopy_tables(d, s)
+    hp = os.path.join(d, "paralogs", f"{s}_hba_copy_number.tsv")
+    p = tables.get("smn") or next(iter(tables.values()), None) or (hp if os.path.isfile(hp) else None)
     if not p:
         return None, {}
-    rows = read_tsv(p)
-    if rows and not {"chrom", "start", "end", "agCN", "psCN", "psCN_qual", "psCN_filter"} <= set(rows[0]):
-        raise Unreadable(f"{os.path.basename(p)} lacks the chrom, start, end, agCN, psCN, psCN_qual or "
-                         "psCN_filter column")
-    smn1 = parascopy_cn_at(rows, *paraphase_report.SMN1_EXON7)
-    smn2 = parascopy_cn_at(rows, *SMN2_EXON7)
-    # Step 35 writes one row whose agCN_filter is "not assessed: <reason>"
-    # when the locus was not run (no read over it, no model, Parascopy failed).
-    na = next((r["agCN_filter"] for r in rows if (r.get("agCN_filter") or "").startswith("not assessed")), None)
-    hp = os.path.join(os.path.dirname(p), f"{s}_hba_copy_number.tsv")
-    ip = os.path.join(os.path.dirname(p), f"{s}_cn_intervals.tsv")
+    if "smn" in tables:
+        rows = read_tsv(tables["smn"])
+        if rows and not PARASCOPY_COLUMNS <= set(rows[0]):
+            raise Unreadable(f"{os.path.basename(tables['smn'])} lacks the chrom, start, end, agCN, psCN, psCN_qual or "
+                             "psCN_filter column")
+        smn1 = parascopy_cn_at(rows, *paraphase_report.SMN1_EXON7)
+        smn2 = parascopy_cn_at(rows, *SMN2_EXON7)
+        # Step 35 writes one row whose agCN_filter is "not assessed: <reason>"
+        # when the locus was not run (no read over it, no model, Parascopy failed).
+        na = next((r["agCN_filter"] for r in rows if (r.get("agCN_filter") or "").startswith("not assessed")), None)
+        reading = (f"SMN1 and SMN2 {na}: no carrier reading" if na
+                   else "no row of step 35's table covers SMN1 exon 7: no carrier reading"
+                   if smn1["text"] == "no row covers exon 7" else smn_reading(smn1["cn"]))
+    else:
+        rows = []
+        smn1 = {"cn": None, "text": NO_SMN_TABLE, "agcn": ".", "agcn_qual": ".", "agcn_filter": "."}
+        smn2 = {"cn": None, "text": NO_SMN_TABLE}
+        reading = f"{NO_SMN_TABLE}: no carrier reading"
+    others = {n: t for n, t in tables.items() if n != "smn"}
+    catalog = {r["table"]: r for r in asset_rows("paralog_loci.tsv")} if others else {}
+    ip = os.path.join(d, "paralogs", f"{s}_cn_intervals.tsv")
     return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
                "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
                "rows": len(rows),
@@ -795,9 +875,12 @@ def sec_parascopy(d, s):
                # the interval rows of bin/cn_loci.tsv (recurrent CNV regions,
                # carrier deletions, AZF); None without step 35's table
                "cn_intervals": read_cn_intervals(ip) if os.path.isfile(ip) else None,
-               "reading": (f"SMN1 and SMN2 {na}: no carrier reading" if na
-                           else "no row of step 35's table covers SMN1 exon 7: no carrier reading"
-                           if smn1["text"] == "no row covers exon 7" else smn_reading(smn1["cn"]))}
+               "reading": reading,
+               # every other catalog table, in the catalog's order (a table the
+               # catalog does not name, from a PARALOG_LOCI of the user's, last)
+               "loci": [parascopy_locus(n, others[n], catalog.get(n))
+                        for n in sorted(others, key=lambda n: (list(catalog).index(n) if n in catalog
+                                                               else len(catalog), n))]}
 
 
 def read_cn_intervals(path):
@@ -1839,7 +1922,10 @@ def sec_annotsv(d, s):
         except ValueError:
             af = None
         genes = [g for g in (r.get("Gene_name") or "").split(";") if g]
+        fmt = annotsv_postfilter.sample_format(r)
         out.append({"sv": f"{r['SV_chrom']}:{r['SV_start']}-{r['SV_end']}", "type": r["SV_type"],
+                    # the call's genotype and phase set (PS), for the two-hit rule (two_hits)
+                    "gt": fmt.get("GT") or None, "ps": fmt.get("PS") or None,
                     "length": r.get("SV_length") or "", "acmg_class": r["ACMG_class"], "genes": genes,
                     "caller": r["Caller"], "support": sp["Support"],
                     "support_callers": sp["Support_callers"].split(",") if sp["Support_callers"] else [],
@@ -2619,7 +2705,7 @@ def sec_carrier(d, s):
     p = first_existing(d, [f"clinvar/{s}_clinvar_hits.vcf"])
     if not p:
         return None, {}
-    return p, carrier_list_or_note(p)
+    return p, carrier_list_or_note(p, d, s)
 
 
 def sec_exomiser(d, s):
@@ -3298,7 +3384,7 @@ def csq_high_impact_genes(path):
                     gt = r[9].split(":")[0] if len(r) > 9 else ""
                     weak, why, gq, dp, ad = call_check(r[8], r[9], floor) if len(r) > 9 else (False, [], None, None, None)
                     out[(r[0], int(r[1]), r[3], r[4])] = {
-                        "genotype": gt, "genes": genes, "transcript": cls, "frequency": freq,
+                        "genotype": gt, "ps": gt_field(r, "PS"), "genes": genes, "transcript": cls, "frequency": freq,
                         "weak": weak, "why": why, "gq": gq, "dp": dp, "ad": ad}
     except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as e:
         raise Unreadable(f"{os.path.basename(path)}: {e}") from e
@@ -3389,7 +3475,8 @@ def carrier_genes():
     for n, r in enumerate(asset_rows("carrier_genes.tsv"), 1):
         try:
             out[r["gene"]] = {"inheritance": r["inheritance"], "lists": r["lists"], "condition": r["condition"],
-                              "severity": parse_alleles(r.get("severity"), kinds=True)}
+                              "severity": parse_alleles(r.get("severity"), kinds=True),
+                              "span": (r["chrom"], int(r["start"]), int(r["end"]))}
         except (KeyError, ValueError, TypeError) as e:
             raise Unreadable(f"carrier_genes.tsv row {n}: {e}") from e
     return out
@@ -3409,6 +3496,169 @@ def zygosity_word(copies, ploidy):
     if ploidy == 1:
         return "hemizygous"
     return "hom" if copies >= 2 else "het"
+
+
+# --- two hits in one gene across callers: a deletion plus a small variant --------
+#
+# Small variants alone miss a gene hit twice when one hit is a deletion: an
+# exon deletion of one copy of MUTYH plus a pathogenic variant on the other, an
+# HBA deletion plus an HBA point variant, one SMN1 copy plus an SMN1 variant, a
+# 1q21.1 deletion plus the RBM8A low-expression allele (TAR syndrome: Albers et
+# al., Nat Genet 2012;44(4):435-439, PMID 22366785). The deletions come from the
+# engines that call them: AnnotSV's class 4 and 5 deletions (step 05), step 35's
+# interval table (bin/cn_loci.tsv), its HBA count and Parascopy's SMN1 count.
+# Two hits are in trans (biallelic) only when the reads show it: the variant sits
+# inside the deletion and is called homozygous (only one copy is left, and it
+# carries the variant), or both calls carry a read-backed phase (GT with "|" and
+# the same PS) on different copies. Otherwise they are possibly in trans; on the
+# same copy (cis) they are no second hit.
+TWO_HIT_ORDER = ("biallelic", "possibly biallelic")
+
+
+def gene_deletions(d, s, spans):
+    """The genes a called deletion reaches: ({gene: [deletion]}, engines read,
+    engines not read). spans: {gene: (chrom, start, end)}, 1-based inclusive
+    (assets/carrier_genes.tsv). A deletion: chrom, start, end (1-based,
+    inclusive), text, inside (a variant inside its span is on the one copy left;
+    False for the HBA count, which cannot say which gene of the pair is gone),
+    gt and ps (its phase, AnnotSV only)."""
+    out, read, unread = {}, [], []
+
+    def add(g, x):
+        out.setdefault(g, []).append(x)
+
+    def over(chrom, a, b):
+        return [g for g, (c, gs, ge) in spans.items() if c == chrom and gs <= b and ge >= a]
+    try:
+        p, data = sec_annotsv(d, s)
+    except (Unreadable, OSError, ValueError, KeyError) as e:
+        p, data = None, {}
+        unread.append(f"AnnotSV (step 05): {e}")
+    if p:
+        read.append("AnnotSV class 4 and 5 deletions (step 05)")
+        for x in data["rows"]:
+            chrom, _, span = x["sv"].partition(":")
+            a, _, b = span.partition("-")
+            if x["type"] != "DEL" or x["common"] or not (a.isdigit() and b.isdigit()):
+                continue
+            chrom = chrom if chrom.startswith("chr") else "chr" + chrom
+            # SV_start is the base before the deleted bases (annotsv_postfilter.sv_span):
+            # they are SV_start+1 to SV_end, 1-based. The text keeps AnnotSV's coordinates.
+            first = int(a) + 1
+            hit = set(over(chrom, first, int(b)))
+            # A listed gene AnnotSV names counts only when its span reaches the deleted bases: one
+            # that ends at the padding base loses none. A gene with no span here is taken as named.
+            named = {g for g in x["genes"] if g not in spans}
+            for g in sorted(hit | named):
+                add(g, {"chrom": chrom, "start": first, "end": int(b), "inside": True,
+                        "text": f"DEL {chrom}:{a}-{b} (AnnotSV class {x['acmg_class']}, {x['caller']})",
+                        "gt": x.get("gt"), "ps": x.get("ps")})
+    elif not unread:
+        unread.append("AnnotSV (step 05): no table")
+    try:
+        p, data = sec_parascopy(d, s)
+        why = "none"
+    except (Unreadable, OSError, ValueError, KeyError) as e:
+        p, data, why = None, {}, str(e)
+    if not p:
+        unread.append(f"step 35's copy-number tables: {why}")
+        return out, read, unread
+    iv = data.get("cn_intervals")
+    if iv is not None:
+        read.append("step 35's interval table (read depth)")
+        for r in iv["changes"]:
+            if r["change"] != "deletion" or not (r["start"].isdigit() and r["end"].isdigit()):
+                continue
+            a, b = int(r["start"]) + 1, int(r["end"])  # the table is BED: 0-based start
+            for g in over(r["chrom"], a, b):
+                add(g, {"chrom": r["chrom"], "start": a, "end": b, "inside": True, "gt": None, "ps": None,
+                        "text": f"{r['locus']} deletion, {r['copies']} of {r['expected']} copies "
+                                "(read depth, step 35)"})
+    else:
+        unread.append("step 35's interval table: none")
+    hba = data.get("hba") or {}
+    n = hba.get("alpha_globin_genes", "")
+    if hba.get("status") == "called" and n.isdigit():
+        read.append("step 35's HBA1/HBA2 count")
+        # 0 genes: no alpha-globin gene is left to carry a variant, so a hit there pairs with nothing.
+        if 1 <= int(n) < 4:
+            for g in ("HBA1", "HBA2"):
+                if g in spans:
+                    c, a, b = spans[g]
+                    add(g, {"chrom": c, "start": a, "end": b, "inside": False, "gt": None, "ps": None,
+                            "text": f"{n} of 4 alpha-globin genes (read depth, step 35)"})
+    else:
+        unread.append(f"step 35's HBA1/HBA2 count: {hba.get('message') or 'not called'}")
+    smn1 = (data.get("smn1") or {}).get("cn")
+    if smn1 is not None:
+        read.append("Parascopy's SMN1 count (step 35)")
+        if smn1 == 1 and "SMN1" in spans:
+            c, a, b = spans["SMN1"]
+            add("SMN1", {"chrom": c, "start": a, "end": b, "inside": True, "gt": None, "ps": None,
+                         "text": "one SMN1 copy (Parascopy, step 35)"})
+    else:
+        unread.append("Parascopy's SMN1 count: not resolved")
+    return out, read, unread
+
+
+def phase_haps(gt):
+    """The copies (haplotype indexes) a phased GT puts the alt allele on, or
+    None when the GT is not phased: '0|1' -> {1}, '1|0' -> {0}, '0/1' -> None."""
+    if not gt or "|" not in gt:
+        return None
+    return frozenset(i for i, a in enumerate(gt.split("|")) if a not in ("0", "."))
+
+
+def pair_phase(dl, v):
+    """(verdict, why) of a deletion and a small variant in one gene: verdict
+    biallelic, possibly biallelic, or cis (no second hit)."""
+    inside = dl["inside"] and dl["chrom"] == v["chrom"] and dl["start"] <= v["pos"] <= dl["end"]
+    # Read-backed phase first: on the same copy (cis) is no second hit, wherever the variant sits.
+    hd, hv = phase_haps(dl.get("gt")), phase_haps(v.get("gt"))
+    phased = None
+    if hd and hv and dl.get("ps") and dl.get("ps") == v.get("ps"):
+        if hd == hv:
+            return "cis", f"in cis: read-backed phase puts both on the same copy (phase set {v['ps']})"
+        phased = (f"in trans: read-backed phase puts them on different copies (phase set {v['ps']})" if not hd & hv
+                  else f"read-backed phase puts the variant on both copies (phase set {v['ps']}); check the reads")
+    if inside and v["copies"] >= 2:
+        return "biallelic", ("the variant is called homozygous inside the deletion: it is hemizygous, on the one "
+                             "copy the deletion leaves")
+    if inside and v["ploidy"] == 2:
+        return "possibly biallelic", ("a heterozygous call inside a called deletion: one of the two calls may be "
+                                      "wrong; check the reads")
+    if phased:
+        return ("biallelic" if phased.startswith("in trans") else "possibly biallelic"), phased
+    return "possibly biallelic", "phase unknown, possibly in trans (no read-backed phase links the two calls)"
+
+
+def two_hits(variants, dels):
+    """The genes hit twice: ({gene: entry}, {(gene, key): deletion text} of
+    the variants called homozygous inside a deletion, shown as hemizygous).
+    variants: [{gene, key, chrom, pos, text, genotype, copies, ploidy, gt, ps,
+    allele}] (allele: the severity name of a hypomorph, or None). An entry is
+    the best pair of the gene: verdict, why, deletion, variant, genotype, and
+    the allele name; a gene whose every pair is in cis has none. pairs:
+    {(gene, key): "<verdict> with <deletion>: <why>"}, the best pair of each
+    variant that has one."""
+    entries, hemi, pairs = {}, {}, {}
+    for v in variants:
+        for dl in dels.get(v["gene"], []):
+            verdict, why = pair_phase(dl, v)
+            if verdict == "biallelic" and why.startswith("the variant is called homozygous"):
+                hemi[(v["gene"], v["key"])] = dl["text"]
+            if verdict == "cis":
+                continue
+            e = {"gene": v["gene"], "verdict": verdict, "why": why, "deletion": dl["text"], "variant": v["text"],
+                 "genotype": "hemizygous" if (v["gene"], v["key"]) in hemi else v["genotype"],
+                 "allele": v.get("allele")}
+            old = entries.get(v["gene"])
+            if old is None or TWO_HIT_ORDER.index(verdict) < TWO_HIT_ORDER.index(old["verdict"]):
+                entries[v["gene"]] = e
+            k = (v["gene"], v["key"])
+            if k not in pairs or TWO_HIT_ORDER.index(verdict) < TWO_HIT_ORDER.index(pairs[k][0]):
+                pairs[k] = (verdict, f"{verdict} with {dl['text']}: {why}")
+    return entries, hemi, {k: t for k, (_, t) in pairs.items()}
 
 
 def sf_verdicts(gene, rule, alleles):
@@ -3507,7 +3757,8 @@ def acmg_sf_tier(d, s, clinical_vcf):
                                     "genotype": row["genotype"], "significance": row["significance"],
                                     "stars": row["stars"], "low_confidence": row["low_confidence"],
                                     "key": (row["chrom"], row["pos"], row["ref"], row["alt"]),
-                                    "copies": copies, "ploidy": ploidy})
+                                    "copies": copies, "ploidy": ploidy,
+                                    "gt": r[9].split(":")[0] if len(r) > 9 else "", "ps": gt_field(r, "PS")})
     if clinical_vcf:
         # A common record is in the clinical VCF through the ClinVar tier,
         # not as a rare HIGH impact; one of unknown frequency is listed and
@@ -3525,7 +3776,8 @@ def acmg_sf_tier(d, s, clinical_vcf):
                                  "frequency_unknown": x["frequency"] == "unknown",
                                  "weak_call": x["weak"], "call_note": "; ".join(x["why"]) or None,
                                  "gq": x["gq"], "dp": x["dp"], "ad": x["ad"],
-                                 "key": (c, pos, ref, alt), "copies": copies, "ploidy": ploidy})
+                                 "key": (c, pos, ref, alt), "copies": copies, "ploidy": ploidy,
+                                 "gt": gt, "ps": x.get("ps")})
     svs, sv_checked, sv_note = sf_structural(d, s, rules)
     # One verdict per gene, over its distinct variants: a ClinVar hit that is
     # also a HIGH-impact record is one variant.
@@ -3534,6 +3786,30 @@ def acmg_sf_tier(d, s, clinical_vcf):
         alleles.setdefault(x["gene"], {}).setdefault(x["key"], (max(x["copies"], 1), x["ploidy"] or 2))
     for x in svs:
         alleles.setdefault(x["gene"], {}).setdefault(x["key"], (1, 2))
+    # A called deletion of a gene whose rule needs two variants counts as one
+    # of them (two_hits), unless read-backed phase puts it on the variant's copy.
+    two_hit_note = None
+    try:
+        spans = {g: x["span"] for g, x in carrier_genes().items()}
+    except Unreadable as e:
+        spans = {}
+        two_hit_note = (f"A deletion as the second hit: only AnnotSV's gene names were read; step 35's deletions "
+                        f"need the gene spans of {e}")
+    dels, _, _ = gene_deletions(d, s, spans)
+    seen, variants = set(), []
+    for x in clinvar + high:
+        pseudo = rules[x["gene"]]["severity"].get(x["key"], {}).get("kind") == "pseudodeficiency"
+        if (x["gene"], x["key"]) not in seen and not pseudo:
+            seen.add((x["gene"], x["key"]))
+            variants.append({"gene": x["gene"], "key": x["key"], "chrom": x["key"][0], "pos": x["key"][1],
+                             "text": x["variant"], "genotype": x["genotype"], "copies": x["copies"],
+                             "ploidy": x["ploidy"] or 2, "gt": x["gt"], "ps": x["ps"], "allele": None})
+    entries, hemi, pairs = two_hits(variants, dels)
+    two = {}
+    for g in entries:
+        if rules[g]["report_if"] in ("biallelic", "hemizygous"):
+            alleles[g][("deletion", g)] = (1, 2)
+            two.update({k: t for k, t in pairs.items() if k[0] == g})
     verdict = {g: sf_verdicts(g, rules[g], a) for g, a in alleles.items()}
     reported = {"clinvar": [], "high": [], "sv": []}
     not_reported = []
@@ -3541,10 +3817,15 @@ def acmg_sf_tier(d, s, clinical_vcf):
         for x in rows:
             why, partial = verdict[x["gene"]][0][x["key"]], verdict[x["gene"]][1]
             rule = rules[x["gene"]]
-            for k in ("key", "copies", "ploidy"):
+            key = x["key"]
+            if (x["gene"], key) in hemi:
+                x["genotype"] = "hemizygous"
+            for k in ("key", "copies", "ploidy", "gt", "ps"):
                 x.pop(k, None)
             if why is None:
                 x.update(rule=rule["table_text"], rule_note=rule["note"], severity=partial)
+                if kind != "sv" and (x["gene"], key) in two:
+                    x["two_hit"] = two[(x["gene"], key)]
                 reported[kind].append(x)
             else:
                 not_reported.append({"gene": x["gene"], "variant": x["variant"], "genotype": x.get("genotype"),
@@ -3558,16 +3839,27 @@ def acmg_sf_tier(d, s, clinical_vcf):
             "high_impact_weak": sum(1 for x in high if x["weak_call"]),
             "high_impact_frequency_unknown": sum(1 for x in high if x["frequency_unknown"]),
             "structural": reported["sv"], "structural_checked": sv_checked, "structural_note": sv_note,
-            "not_reported": not_reported}
+            "not_reported": not_reported, "two_hit_note": two_hit_note}
 
 
-def carrier_list(p):
+def gt_field(r, key):
+    """One FORMAT field of a VCF record's first sample, or None."""
+    if len(r) < 10:
+        return None
+    v = dict(zip(r[8].split(":"), r[9].split(":"))).get(key)
+    return None if v in (None, "", ".") else v
+
+
+def carrier_list(p, d=None, s=None):
     """The sample's own carrier list: the ClinVar hits of step 6 (p) in the
     genes of assets/carrier_genes.tsv, one person, no partner needed. An
     allele the list marks hypomorph or pseudodeficiency is set aside, never a
-    carrier finding on its own."""
+    carrier finding on its own. With the sample folder (d, s), the genes of
+    autosomal recessive conditions that a called deletion and a hit both reach
+    (two_hits), and a hit called homozygous inside a deletion is shown as
+    hemizygous."""
     genes = carrier_genes()
-    carriers, aside = [], []
+    carriers, aside, variants = [], [], []
     for r in vcf_records(p):
         if len(r) < 8:
             continue
@@ -3589,8 +3881,27 @@ def carrier_list(p):
                 aside.append(item)
             else:
                 carriers.append(item)
-    return {"genes_on_list": len(genes), "list": "assets/carrier_genes.tsv",
-            "carriers": carriers, "set_aside": aside}
+            if not sev or sev["kind"] == "hypomorph":
+                variants.append({"gene": g, "key": key, "chrom": row["chrom"], "pos": row["pos"],
+                                 "text": item["variant"], "genotype": item["genotype"], "copies": copies,
+                                 "ploidy": ploidy, "gt": gt, "ps": gt_field(r, "PS"),
+                                 "allele": sev["name"] if sev else None, "item": item})
+    out = {"genes_on_list": len(genes), "list": "assets/carrier_genes.tsv",
+           "carriers": carriers, "set_aside": aside}
+    if d is not None:
+        dels, read, unread = gene_deletions(d, s, {g: x["span"] for g, x in genes.items()})
+        entries, hemi, _ = two_hits(variants, dels)
+        for v in variants:
+            if (v["gene"], v["key"]) in hemi:
+                v["item"].update(genotype="hemizygous",
+                                 hemizygous=f"called homozygous inside {hemi[(v['gene'], v['key'])]}")
+        rows = []
+        for g, e in sorted(entries.items()):
+            if genes[g]["inheritance"] == "AR":
+                e.update(condition=genes[g]["condition"], inheritance="AR")
+                rows.append(e)
+        out["two_hits"] = {"genes": rows, "deletions_read": read, "deletions_not_read": unread}
+    return out
 
 
 def acmg_sf_or_note(d, s, clinical_vcf):
@@ -3603,11 +3914,11 @@ def acmg_sf_or_note(d, s, clinical_vcf):
                 "structural": [], "not_reported": []}
 
 
-def carrier_list_or_note(p):
+def carrier_list_or_note(p, d=None, s=None):
     """carrier_list, or the reason it could not run, which both reports print:
     the ClinVar hits stay."""
     try:
-        return carrier_list(p)
+        return carrier_list(p, d, s)
     except Unreadable as e:
         return {"unavailable": str(e)}
 
