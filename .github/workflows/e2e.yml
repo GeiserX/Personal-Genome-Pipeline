@@ -437,20 +437,16 @@ jobs:
           echo "$cpu"
           echo "Runner: ${cpu}" >> "$GITHUB_STEP_SUMMARY"
 
+      # Before anything is pulled or restored: the legs ran out of disk on
+      # 2026-11-04 with only part of the preinstalled software removed.
+      - uses: ./.github/actions/free-disk
+
       # Images go to /var/lib/docker on /; the work area goes to whichever of
       # / and /mnt has more room, so the two do not compete for one disk. The
       # base outputs unpack only under the work area they were packed in, so
       # a shard leg takes the base leg's choice when its artifact arrives.
-      - name: Free disk space and pick the work area
-        # A shard starts its cases with about 15 GB free on /, and shard 1
-        # needs most of it: the toolchains below are not used by any case.
+      - name: Pick the work area
         run: |
-          df -h / /mnt
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
-            /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
-            /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium /opt/microsoft /opt/az \
-            /opt/hostedtoolcache/Python /opt/hostedtoolcache/PyPy /opt/hostedtoolcache/go /opt/hostedtoolcache/Ruby
-          df -h / /mnt
           work="${RUNNER_TEMP}/e2e-work"
           if [ "$(df --output=avail -k /mnt | tail -1)" -gt "$(df --output=avail -k / | tail -1)" ]; then
             work=/mnt/e2e-work
@@ -600,6 +596,8 @@ jobs:
           grep -qx nextflow-hardening-2-nf "$list" && echo "parity_hardening=true" >> "$GITHUB_OUTPUT"
           grep -qx mocha-1 "$list" && echo "data_mocha=true" >> "$GITHUB_OUTPUT"
           grep -qx archaic-ancestry-1 "$list" && echo "data_archaic=true" >> "$GITHUB_OUTPUT"
+          grep -qx bash-step-08-hla "$list" && echo "data_hla=true" >> "$GITHUB_OUTPUT"
+          grep -qx prs-scores-and-run-options-1-strand-sex "$list" && echo "data_pgs=true" >> "$GITHUB_OUTPUT"
           echo "list=${list}" >> "$GITHUB_OUTPUT"
 
       # Before the base outputs: the base leg pulled the same images.
@@ -651,12 +649,18 @@ jobs:
       # runs" there) and downloads what a miss leaves out. Saved like the
       # images: on main, or a run by hand with save_images, on a miss. Only
       # the leg whose cases include the case restores and saves its entry.
+      # Two small ones the same way, keyed by e2e-run.sh --data-key: hla.dat
+      # of two IPD-IMGT/HLA releases and GENCODE's genes and exons
+      # (bash-step-08-hla, which then runs with the network blocked), and the
+      # four real PGS Catalog score files of prs-scores-and-run-options-1.
       - name: Data cache keys
         id: data-keys
         run: |
           . versions.env
           echo "mocha=e2e-data-mocha-${MOCHA_PANEL_MANIFEST_SHA256:0:16}-chr20" | tee -a "$GITHUB_OUTPUT"
           echo "archaic=e2e-data-1kg-sites-${ARCHAIC_1KG_SITES_MD5}" | tee -a "$GITHUB_OUTPUT"
+          echo "hla=$(scripts/ci/e2e-run.sh --data-key hla)" | tee -a "$GITHUB_OUTPUT"
+          echo "pgs=$(scripts/ci/e2e-run.sh --data-key pgs)" | tee -a "$GITHUB_OUTPUT"
 
       - name: Restore cached data, MoChA panel
         id: data-mocha
@@ -674,6 +678,49 @@ jobs:
           path: ${{ env.E2E_DATA_CACHE }}/archaic
           key: ${{ steps.data-keys.outputs.archaic }}
 
+      - name: Restore cached data, IPD-IMGT/HLA and GENCODE
+        id: data-hla
+        if: steps.cases-list.outputs.data_hla == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/hla
+          key: ${{ steps.data-keys.outputs.hla }}
+
+      - name: Restore cached data, PGS Catalog scores
+        id: data-pgs
+        if: steps.cases-list.outputs.data_pgs == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/pgs
+          key: ${{ steps.data-keys.outputs.pgs }}
+
+      # The PGS Catalog's synthetic HAPNEST panel (prs-2-ancestry and
+      # prs-scores-and-run-options-2, 268 MB), from EBI's FTP server, keyed
+      # on the sha256 tests/e2e/lib.sh pins. The cases take it from
+      # E2E_DATA_CACHE/hapnest, check it and then run setup.sh with EBI
+      # unreachable; on a miss the first one downloads it and puts it there
+      # (setup_ancestry_panel in lib.sh). Saved like the entries above: on
+      # main, or a run by hand with save_images, on a miss.
+      - name: Data cache, HAPNEST panel
+        id: hapnest
+        env:
+          LIST: ${{ steps.cases-list.outputs.list }}
+          SAVE: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && 'true' || 'false' }}
+        run: |
+          grep -qxE 'prs-2-ancestry|prs-scores-and-run-options-2-panel-chrx' "$LIST" || exit 0
+          sha=$(sed -n 's/^HAPNEST_SHA256=//p' tests/e2e/lib.sh)
+          [ "${#sha}" -eq 64 ] || { echo "::error::No HAPNEST_SHA256= line in tests/e2e/lib.sh"; exit 1; }
+          { echo "run=true"; echo "key=e2e-data-hapnest-${sha:0:16}"; } | tee -a "$GITHUB_OUTPUT"
+          echo "E2E_HAPNEST_KEEP=${SAVE}" >> "$GITHUB_ENV"
+
+      - name: Restore cached data, HAPNEST panel
+        id: data-hapnest
+        if: steps.hapnest.outputs.run == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/hapnest
+          key: ${{ steps.hapnest.outputs.key }}
+
       - name: Run the e2e cases
         id: cases
         env:
@@ -686,14 +733,15 @@ jobs:
           E2E_BASE_OUT: ${{ matrix.job == 'base' && format('{0}/base.tar.zst', runner.temp) || '' }}
           E2E_BASE_IN: ${{ matrix.job != 'base' && format('{0}/e2e-base/base.tar.zst', runner.temp) || '' }}
           # Keep the downloads to the end of the job only when a save step uses them.
-          E2E_DATA_KEEP: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && ((steps.cases-list.outputs.data_mocha == 'true' && steps.data-mocha.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_archaic == 'true' && steps.data-archaic.outputs.cache-hit != 'true')) && 'true' || 'false' }}
+          E2E_DATA_KEEP: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && ((steps.cases-list.outputs.data_mocha == 'true' && steps.data-mocha.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_archaic == 'true' && steps.data-archaic.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_hla == 'true' && steps.data-hla.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_pgs == 'true' && steps.data-pgs.outputs.cache-hit != 'true')) && 'true' || 'false' }}
           HIT_MOCHA: ${{ steps.data-mocha.outputs.cache-hit || 'false' }}
           HIT_ARCHAIC: ${{ steps.data-archaic.outputs.cache-hit || 'false' }}
-          DATA_MOCHA: ${{ steps.cases-list.outputs.data_mocha || 'false' }}
-          DATA_ARCHAIC: ${{ steps.cases-list.outputs.data_archaic || 'false' }}
+          HIT_HLA: ${{ steps.data-hla.outputs.cache-hit || 'false' }}
+          HIT_PGS: ${{ steps.data-pgs.outputs.cache-hit || 'false' }}
+          DATA_ANY: ${{ steps.cases-list.outputs.data_mocha || steps.cases-list.outputs.data_archaic || steps.cases-list.outputs.data_hla || steps.cases-list.outputs.data_pgs || 'false' }}
         run: |
-          if [ "$DATA_MOCHA" = true ] || [ "$DATA_ARCHAIC" = true ]; then
-            echo "Data cache (${JOB}): exact key hit, MoChA panel ${HIT_MOCHA}, 1000 Genomes sites ${HIT_ARCHAIC}" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$DATA_ANY" = true ]; then
+            echo "Data cache (${JOB}): exact key hit, MoChA panel ${HIT_MOCHA}, 1000 Genomes sites ${HIT_ARCHAIC}, IPD-IMGT/HLA and GENCODE ${HIT_HLA}, PGS scores ${HIT_PGS}" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
           scripts/ci/e2e-run.sh
 
@@ -707,6 +755,8 @@ jobs:
         env:
           HIT_MOCHA: ${{ steps.data-mocha.outputs.cache-hit }}
           HIT_ARCHAIC: ${{ steps.data-archaic.outputs.cache-hit }}
+          HIT_HLA: ${{ steps.data-hla.outputs.cache-hit }}
+          HIT_PGS: ${{ steps.data-pgs.outputs.cache-hit }}
         run: |
           d=$E2E_DATA_CACHE
           if [ "$HIT_MOCHA" != true ] && [ -s "${d}/mocha/manifest.txt" ] \
@@ -716,6 +766,13 @@ jobs:
           if [ "$HIT_ARCHAIC" != true ] && [ -s "${d}/archaic/1kg_sites.vcf.gz" ]; then
             echo "archaic=true" >> "$GITHUB_OUTPUT"
           fi
+          # Whole and checked (data_ok in e2e-run.sh), or not saved.
+          for n in hla pgs; do
+            hit=HIT_${n^^}
+            if [ "${!hit}" != true ] && [ -d "${d}/${n}" ] && scripts/ci/e2e-run.sh --data-check "$n"; then
+              echo "${n}=true" >> "$GITHUB_OUTPUT"
+            fi
+          done
           du -sh "${d}"/* 2> /dev/null || echo "Data cache: nothing downloaded"
 
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -730,6 +787,36 @@ jobs:
           path: ${{ env.E2E_DATA_CACHE }}/archaic
           key: ${{ steps.data-keys.outputs.archaic }}
 
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.data-save.outputs.hla == 'true'
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/hla
+          key: ${{ steps.data-keys.outputs.hla }}
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.data-save.outputs.pgs == 'true'
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/pgs
+          key: ${{ steps.data-keys.outputs.pgs }}
+
+      # The case leaves the panel there only once its sha256 matched.
+      - name: Data cache, HAPNEST panel, what to save
+        id: hapnest-save
+        if: >-
+          always() && steps.hapnest.outputs.run == 'true' && env.E2E_HAPNEST_KEEP == 'true' &&
+          steps.data-hapnest.outputs.cache-hit != 'true'
+        run: |
+          if [ -s "${E2E_DATA_CACHE}/hapnest/GRCh38_HAPNEST_reference.tar.zst" ]; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          fi
+          du -sh "${E2E_DATA_CACHE}/hapnest" 2> /dev/null || echo "Data cache: no HAPNEST panel to save"
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.hapnest-save.outputs.save == 'true'
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/hapnest
+          key: ${{ steps.hapnest.outputs.key }}
+
       - name: Upload the base outputs
         if: matrix.job == 'base'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -739,7 +826,8 @@ jobs:
             ${{ runner.temp }}/base.tar.zst
             ${{ runner.temp }}/base.tar.zst.from
           compression-level: 0
-          retention-days: 1
+          # Three days, so "Re-run failed jobs" the next day still finds it.
+          retention-days: 3
           overwrite: true
 
       # The cases nextflow-from-fastq-1-bash and -2-nextflow ran the bash steps
@@ -803,8 +891,9 @@ jobs:
       # Each group keeps its smallest images up to GROUP_BUDGET_MB of zstd
       # output; the rest are pulled on every run. Four groups of 1500 MB are
       # 5.9 GB, and while main replaces one group the old and the new entry
-      # both count: 7.3 GB. With the two data entries above (2.0 GB) that is
-      # 9.3 GB, under the 10 GB limit. An image pinned by digest
+      # both count: 7.3 GB. With the five data entries above (about 2.3 GB:
+      # MoChA 0.64, 1000 Genomes sites 1.36, HAPNEST 0.27, hla and GENCODE
+      # 0.03, PGS a few KB) that is 9.6 GB, under the 10 GB limit. An image pinned by digest
       # is never saved: docker load gives it back without its digest, so
       # e2e-run.sh would pull it again anyway.
       - name: Image sizes, and save images for the next run

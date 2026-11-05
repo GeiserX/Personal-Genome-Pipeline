@@ -31,9 +31,19 @@ check "that line says it was skipped and how to install the panel" has '^Step 26
 check "step 26 without a panel wrote no ancestry table" test ! -e "${D}/ancestry/${SAMPLE}_ancestry.tsv"
 
 # --- the panel ------------------------------------------------------------------
-echo "+ ANCESTRY_PANEL_NAME=${PANEL_NAME} scripts/setup.sh --ancestry-panel"
-ANCESTRY_PANEL_NAME="$PANEL_NAME" "${REPO}/scripts/setup.sh" --ancestry-panel "$GENOME_DIR" 2>&1 | tee "$STEP_LOG"
-check_eq "setup.sh --ancestry-panel exits 0" "${PIPESTATUS[0]}" 0
+# From the Actions cache when it is there, with EBI unreachable
+# (setup_ancestry_panel in lib.sh, which holds the pin HAPNEST_SHA256).
+# Red control: with the network blocked and no panel, setup.sh must fail, or
+# the cached run would prove nothing about EBI.
+mkdir -p "${CASE_TMP}/blocked"
+"${NET_BLOCKED[@]}" ANCESTRY_PANEL_NAME="$PANEL_NAME" "${REPO}/scripts/setup.sh" --ancestry-panel "${CASE_TMP}/blocked" \
+  > "${CASE_TMP}/blocked.log" 2>&1
+BRC=$?
+tail -n 3 "${CASE_TMP}/blocked.log"
+check "with EBI unreachable and no panel, setup.sh --ancestry-panel fails (exit ${BRC})" \
+  bash -c '[ "$1" -ne 0 ] && grep -q "Could not download the ancestry panel" "$2"' _ "$BRC" "${CASE_TMP}/blocked.log"
+rm -rf "${CASE_TMP}/blocked"
+setup_ancestry_panel "$PANEL_NAME" "$PANEL"
 check "the panel is installed" test -s "$PANEL"
 check_ge "GRCh38 SNVs in the panel's site list" "$(wc -l < "$SITES" 2>/dev/null | tr -d ' ')" 1000
 check "the site list is chrN, position, REF, ALT" \
@@ -58,6 +68,19 @@ done
 
 # --- step 26 with the panel (it runs step 25) -------------------------------------
 ANCESTRY_PANEL="$PANEL" run_step 26-ancestry.sh "$SAMPLE"
+# pgsc_calc's INTERSECT_VARIANTS sorts the panel in chunks under random
+# temporary names, and reads back any file whose name holds "bim" as a plink
+# .bim file (pgscatalog.match intersect_cli.py, read_var_general). A chunk
+# named, say, tmpq7bimx2a then fails with KeyError: 'CHR:POS:A0:A1', under the
+# script line 'No variants in intersection': about 1 run in 600 with this
+# panel's 14 chunks. That one failure is run again once, with new names; any
+# other failure stays a failure.
+if [ "$STEP_RC" -ne 0 ] && grep -q "KeyError: 'CHR:POS:A0:A1'" "$STEP_LOG"; then
+  echo "pgsc_calc INTERSECT_VARIANTS read a temporary chunk as a .bim file (its random name held 'bim'): running step 26 once more"
+  echo "prs-2-ancestry: step 26 ran twice (pgsc_calc's 'bim' temporary name)" >> "$E2E_NOTES"
+  rm -rf "${D}/prs" "${D}/ancestry"
+  ANCESTRY_PANEL="$PANEL" run_step 26-ancestry.sh "$SAMPLE"
+fi
 check_step_exit "26-ancestry.sh (with ${PANEL_NAME})"
 LOG26=$(cat "$STEP_LOG")
 ANC="${D}/ancestry/${SAMPLE}_ancestry.tsv"

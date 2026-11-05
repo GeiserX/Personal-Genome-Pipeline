@@ -60,6 +60,11 @@ jobs:
           echo "run=${run}" >> "$GITHUB_OUTPUT"
           [ "$run" = true ] || echo "Only docs changed: nothing here can affect the pipeline, skipping the Nextflow steps."
 
+      # The stub runs pull every image of the pipeline: the pinned leg ran
+      # out of disk on 2026-11-04.
+      - uses: ./.github/actions/free-disk
+        if: steps.scope.outputs.run == 'true'
+
       - name: Resolve the Nextflow version
         if: steps.scope.outputs.run == 'true'
         id: nf
