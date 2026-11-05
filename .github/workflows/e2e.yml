@@ -418,14 +418,15 @@ jobs:
           version: "26.10.5"
 
       # Docker 29 on the ubuntu-26.04 image keeps images in containerd's
-      # store, which holds each layer twice: the compressed or saved blob in
-      # its content store and the unpacked snapshot. There the 56 images of
-      # the cases and the layout took 91 GB of disk for 33 GB of image size
-      # (run 41938436657, shard 3), more than a 72 GB runner has free.
-      # The classic overlay2 store keeps the unpacked layers only (the 44
-      # cached images took 20 GB on an ubuntu-24.04 runner, run 41947119567).
-      # Runs before any image is restored or pulled; the images already in
-      # the containerd store are pruned first, as overlay2 would not see them.
+      # store, which holds each layer twice: the compressed blob in its
+      # content store and the unpacked snapshot. DeepVariant's, GATK's and
+      # VNtyper's images took 24.8 GB of disk there and 17.6 GB in the
+      # classic overlay2 store, on 26.04 and on 24.04 alike (probe run
+      # 41957796291 on the geiresx fork). With every case image on it, a
+      # 72 GB runner (48 GB free) ran out in the pre-pull (run 41938436657,
+      # shards 2 and 5). Runs before any image is restored or pulled; the
+      # images already in the containerd store are pruned first, as overlay2
+      # would not see them.
       - name: Docker image store
         run: |
           if docker info -f '{{json .DriverStatus}}' | grep -q io.containerd.snapshotter; then

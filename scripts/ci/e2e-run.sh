@@ -120,11 +120,12 @@ case_images() {
 }
 
 # Images pulled at first use, not before the cases: the five largest (1.9 to
-# 6.0 GB each, 15 GB together in run 41938436657), which no image cache entry
-# holds (pinned by digest or over the group budget) and which only some legs
-# run. Pulled up front, every leg carried all five. A `docker run` or
-# `docker create` of one that is missing pulls it first, with the retry above
-# (tests/e2e/bin/docker reads E2E_LAZY_IMAGES).
+# 6.0 GB each compressed; DeepVariant's, GATK's and VNtyper's alone take
+# 17.6 GB unpacked), which no image cache entry holds (pinned by digest or over
+# the group budget) and which only some legs run. Pulled up front, every leg
+# carried all five. A `docker run` or `docker create` of one that is missing
+# pulls it first, with the retry above (tests/e2e/bin/docker reads
+# E2E_LAZY_IMAGES).
 LAZY_IMAGES=" DEEPVARIANT_IMAGE PHARMCAT_IMAGE GATK_IMAGE MEGANE_IMAGE VNTYPER_IMAGE "
 # lazy_images: the references of LAZY_IMAGES, from versions.env.
 lazy_images() {
