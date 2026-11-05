@@ -3,6 +3,7 @@
 #
 # Usage: scripts/ci/e2e-shards.sh base
 #        scripts/ci/e2e-shards.sh plan N
+#        scripts/ci/e2e-shards.sh count MAX
 #        scripts/ci/e2e-shards.sh cover FILE
 #        scripts/ci/e2e-shards.sh merge EXPECTED RESULTS...
 #        scripts/ci/e2e-shards.sh times TRACE...
@@ -15,8 +16,16 @@
 #            it needs (the needs column of e2e-case-times.tsv, followed
 #            through), so a group of cases that read each other's outputs is
 #            never split. Groups go to the least loaded shard, heaviest first.
+#            With E2E_SELECT, only the shard cases listed there.
+#   count MAX  prints how many shard jobs to plan, 1 to MAX: the shard cases'
+#            total seconds over the heaviest group's (the critical path, as
+#            no group is split) or over E2E_SHARD_FLOOR seconds when that is
+#            larger, rounded down, plus one when what is left over is at
+#            least E2E_SHARD_FLOOR seconds; never more than there are groups. With
+#            E2E_SELECT, only the shard cases listed there.
 #   cover FILE  exits 1 unless FILE lists every case exactly once (it names
-#            each duplicate, missing and unknown case).
+#            each duplicate, missing and unknown case): with E2E_SELECT, every
+#            base case and every listed shard case.
 #   merge EXPECTED RESULTS...  prints one markdown table of every case of
 #            EXPECTED (a list of case names) from the result files the jobs
 #            wrote ("CASE<TAB>RESULT<TAB>SECONDS<TAB>JOB" lines), and exits 1
@@ -29,12 +38,20 @@
 #
 # Env: E2E_CASE_DIR  the case directory (default tests/e2e)
 #      E2E_TIMES     the table (default scripts/ci/e2e-case-times.tsv)
+#      E2E_SELECT    a file of shard case names (scripts/ci/e2e-scope.sh
+#                    select): plan and count only those. Every case one of
+#                    them needs must be listed too.
+#      E2E_SHARD_FLOOR  the least seconds of cases worth a shard job of its
+#                    own (default 900: a shard job spends 18 to 20 minutes
+#                    besides its cases, run 41847167444)
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 CASE_DIR=${E2E_CASE_DIR:-${REPO}/tests/e2e}
 TIMES=${E2E_TIMES:-${REPO}/scripts/ci/e2e-case-times.tsv}
 DEFAULT_SECONDS=300
+SELECT=${E2E_SELECT:-}
+SHARD_FLOOR=${E2E_SHARD_FLOOR:-900}
 export LC_ALL=C
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -86,17 +103,46 @@ base() {
   awk -F'\t' 'FILENAME == ARGV[1] { if ($2 == "base") b[$1] = 1; next } ($1 in b)' <(rows) <(cases)
 }
 
-plan() {
-  local n=$1
-  [[ "$n" =~ ^[1-9][0-9]*$ ]] || die "plan: N must be a positive whole number, got '${n}'"
+# selected: the shard cases to split, in name order: every one, or those of
+# E2E_SELECT. A listed name that is no shard case, or a need left out of the
+# list, stops the split.
+selected() {
+  local bad
+  if [ -z "$SELECT" ]; then
+    awk -F'\t' 'FILENAME == ARGV[1] { if ($2 == "base") b[$1] = 1; next } !($1 in b)' <(rows) <(cases)
+    return
+  fi
+  [ -f "$SELECT" ] || die "E2E_SELECT names no file: ${SELECT}"
+  bad=$(awk -F'\t' '
+    FILENAME == ARGV[1] { stage[$1] = $2; needs[$1] = $4; next }
+    FILENAME == ARGV[2] { known[$1] = 1; next }
+    NF { want[$1] = 1; order[++n] = $1 }
+    END {
+      for (i = 1; i <= n; i++) {
+        c = order[i]
+        if (!(c in known)) { print "E2E_SELECT lists " c ", which is not a case"; continue }
+        if (stage[c] == "base") { print "E2E_SELECT lists base case " c; continue }
+        if (!(c in needs) || needs[c] == "-") continue
+        m = split(needs[c], d, ",")
+        for (j = 1; j <= m; j++) if (!(d[j] in want)) print "E2E_SELECT lists " c " but not " d[j] ", which it needs"
+      }
+    }' <(rows) <(cases) "$SELECT")
+  [ -z "$bad" ] || die "$bad"
+  awk 'FILENAME == ARGV[1] { if (NF) w[$1] = 1; next } ($1 in w)' "$SELECT" <(cases)
+}
+
+# groups: union-find over needs, one line per group of the selected cases,
+# "WEIGHT<TAB>FIRST<TAB>MEMBERS", heaviest first.
+groups() {
+  local sel
   check_table
-  # Union-find over needs: one line per group, "WEIGHT<TAB>FIRST<TAB>MEMBERS".
+  sel=$(selected)
+  [ -n "$sel" ] || return 0
   awk -F'\t' -v def="$DEFAULT_SECONDS" '
     function find(x) { while (up[x] != x) x = up[x]; return x }
     FILENAME == ARGV[1] { stage[$1] = $2; secs[$1] = $3; needs[$1] = $4; next }
     {
       c = $1
-      if (stage[c] == "base") next
       order[++n] = c; up[c] = c
       w[c] = (c in secs) ? secs[c] : def
     }
@@ -114,9 +160,14 @@ plan() {
         if (!(r in first)) first[r] = c
       }
       for (r in members) printf "%d\t%s\t%s\n", weight[r], first[r], members[r]
-    }' <(rows) <(cases) \
-  | sort -t "$(printf '\t')" -k1,1nr -k2,2 \
-  | awk -F'\t' -v n="$n" '
+    }' <(rows) <(printf '%s\n' "$sel") \
+  | sort -t "$(printf '\t')" -k1,1nr -k2,2
+}
+
+plan() {
+  local n=$1
+  [[ "$n" =~ ^[1-9][0-9]*$ ]] || die "plan: N must be a positive whole number, got '${n}'"
+  groups | awk -F'\t' -v n="$n" '
     BEGIN { for (s = 1; s <= n; s++) load[s] = 0 }
     {
       best = 1
@@ -128,16 +179,35 @@ plan() {
   | sort -t "$(printf '\t')" -k1,1n -k2,2
 }
 
+count() {
+  local max=$1
+  [[ "$max" =~ ^[1-9][0-9]*$ ]] || die "count: MAX must be a positive whole number, got '${max}'"
+  [[ "$SHARD_FLOOR" =~ ^[1-9][0-9]*$ ]] || die "E2E_SHARD_FLOOR must be a positive whole number, got '${SHARD_FLOOR}'"
+  groups | awk -F'\t' -v max="$max" -v floor="$SHARD_FLOOR" '
+    { total += $1; k++; if ($1 > big) big = $1 }
+    END {
+      if (k == 0) { print 1; exit }
+      t = (big > floor) ? big : floor
+      n = int(total / t)
+      if (total - n * t >= floor) n++
+      if (n > k) n = k
+      if (n > max) n = max
+      if (n < 1) n = 1
+      print n
+    }'
+}
+
 cover() {
-  local file=$1 dup missing extra rc=0
+  local file=$1 dup missing extra rc=0 want
   [ -f "$file" ] || die "cover: no file ${file}"
+  want=$( { base; selected; } | sort)
   dup=$(sort "$file" | uniq -d)
-  missing=$(comm -23 <(cases) <(sort -u "$file"))
-  extra=$(comm -13 <(cases) <(sort -u "$file"))
+  missing=$(comm -23 <(echo "$want") <(sort -u "$file"))
+  extra=$(comm -13 <(echo "$want") <(sort -u "$file"))
   if [ -n "$dup" ]; then echo "Listed more than once: $(paste -sd' ' - <<< "$dup")"; rc=1; fi
   if [ -n "$missing" ]; then echo "Not listed: $(paste -sd' ' - <<< "$missing")"; rc=1; fi
   if [ -n "$extra" ]; then echo "Not a case: $(paste -sd' ' - <<< "$extra")"; rc=1; fi
-  [ "$rc" -eq 0 ] && echo "Every one of the $(cases | wc -l | tr -d ' ') cases is listed once."
+  [ "$rc" -eq 0 ] && echo "Every one of the $(wc -l <<< "$want" | tr -d ' ') ${SELECT:+picked }cases is listed once."
   return "$rc"
 }
 
@@ -216,8 +286,9 @@ cmd=${1:-}
 case "$cmd" in
   base)  base ;;
   plan)  plan "${1:?Usage: $0 plan N}" ;;
+  count) count "${1:?Usage: $0 count MAX}" ;;
   cover) cover "${1:?Usage: $0 cover FILE}" ;;
   merge) [ "$#" -ge 1 ] || die "Usage: $0 merge EXPECTED RESULTS..."; merge "$@" ;;
   times) times "$@" ;;
-  *) sed -n '2,32p' "$0" >&2; exit 2 ;;
+  *) sed -n '2,46p' "$0" >&2; exit 2 ;;
 esac
