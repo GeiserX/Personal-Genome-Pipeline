@@ -1226,6 +1226,9 @@ def text_report(s):
             w(f"  Not graded (no thresholds in the catalog): {len(d['not_graded'])} ("
               + "; ".join(f"{k}: {v}" for k, v in d["not_graded"].items()) + ")")
             w(f"  {NOT_GRADED_NOTE}")
+        for r in d.get("readings") or []:
+            w(f"  {repeat_reading_head(r)}")
+            w(f"    {r['reading']} ({r['source']})")
         if d.get("stranger") and d.get("no_status"):
             w(f"  Loci without a Stranger status (not in its catalog): {d['no_status']}")
         if d.get("unsized"):
@@ -1603,6 +1606,12 @@ def rfc1_text(m):
 def motif_text(locus, m):
     """Step 9b's motif count of a flagged locus (bin/rfc1_motif.py)."""
     return f"{locus} motif count: {m.get('verdict', '.')}: {m.get('note', '')}"
+
+
+def repeat_reading_head(r):
+    """The first line of one reading of the repeats STRchive leaves out (CFTR, UGT1A1, 5-HTTLPR)."""
+    what = r["genotype"] if r["status"] == "read" else r["status"].replace("_", " ")
+    return f"{r['locus']} {r['repeat']}: {what}"
 
 
 NOT_GRADED_NOTE = ("Not graded: the repeat catalog gives these loci no thresholds (for MUC1, CEL, TYMS and PLIN4 "
@@ -2532,6 +2541,11 @@ def html_report(s, index=None):
     if eh.get("not_graded"):
         eh_body.append(stat("Not graded (no thresholds in the catalog)", badge(", ".join(eh["not_graded"]), "gray")))
         eh_body.append(small_note(NOT_GRADED_NOTE))
+    for r in eh.get("readings") or []:
+        colour = "yellow" if r.get("five_t") or r.get("agreement") == "differs" else "gray"
+        eh_body.append(stat(f"{r['locus']} {r['repeat']}",
+                            badge(r["genotype"] if r["status"] == "read" else r["status"].replace("_", " "), colour)))
+        eh_body.append(small_note(f"{r['reading']} ({r['source']})"))
     for l in eh.get("flagged") or []:
         if l.get("rfc1_motif"):
             eh_body.append(small_note(rfc1_text(l["rfc1_motif"])))
