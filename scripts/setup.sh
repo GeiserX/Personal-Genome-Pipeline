@@ -336,8 +336,10 @@ install_kir_data() {
 # v<version>, checked against YLEAF_DATA_SHA256; the other builds (hg19, T2T)
 # are left out. Then the current Y tree beside it, in data/ytree
 # (bin/y_tree_place.py): YFull's YTree YTREE_VERSION and the GRCh38 SNP tables
-# of Yleaf YTREE_POSITIONS_VERSION, each at a pinned commit and sha256. A
-# failed download of the current tree is a warning, not a failure.
+# of Yleaf YTREE_POSITIONS_VERSION, each at a pinned commit and sha256, and
+# the chrY strict accessibility mask of the 1000 Genomes Project
+# (YCALLABLE_MASK_RELEASE) that the private SNP list keeps to. A failed
+# download of the current tree is a warning, not a failure.
 install_yleaf_data() {
   local dest="${GENOME_DIR}/reference/yleaf-${YLEAF_DATA_VERSION}" tgz
   if [ -s "${dest}/data/hg38/new_positions.txt" ] && [ -s "${dest}/data/hg_prediction_tables/tree.json" ]; then
@@ -366,9 +368,10 @@ install_yleaf_data() {
   # version.txt names every pin (releases, commits, sha256), so a re-pin of
   # any of them, at the same tree release too, installs the tables again.
   local yt="${dest}/data/ytree" label="YFull YTree ${YTREE_VERSION} (CC BY 4.0)" want
-  want="$(printf 'tree\t%s\npositions\tYleaf %s GRCh38 SNP tables (GPL-3.0)\npins\t%s %s %s %s %s' \
+  want="$(printf 'tree\t%s\npositions\tYleaf %s GRCh38 SNP tables (GPL-3.0)\npins\t%s %s %s %s %s %s %s' \
     "$label" "$YTREE_POSITIONS_VERSION" "$YTREE_COMMIT" "$YTREE_SHA256" \
-    "$YTREE_POSITIONS_COMMIT" "$YTREE_FTDNA_SHA256" "$YTREE_YFULL_SHA256")"
+    "$YTREE_POSITIONS_COMMIT" "$YTREE_FTDNA_SHA256" "$YTREE_YFULL_SHA256" \
+    "$YCALLABLE_MASK_RELEASE" "$YCALLABLE_MASK_SHA256")"
   if [ -s "${yt}/version.txt" ] && [ "$(cat "${yt}/version.txt")" = "$want" ]; then
     echo "[OK] Current Y tree (${label}, step 37) already present."
     return 0
@@ -380,7 +383,9 @@ install_yleaf_data() {
      || ! fetch "https://raw.githubusercontent.com/genid/Yleaf/${YTREE_POSITIONS_COMMIT}/yleaf/data/hg38/ftdna_positions_hg38.txt" \
          "${yt}.part/positions_ftdna_hg38.txt" sha256 "$YTREE_FTDNA_SHA256" \
      || ! fetch "https://raw.githubusercontent.com/genid/Yleaf/${YTREE_POSITIONS_COMMIT}/yleaf/data/hg38/new_positions.txt" \
-         "${yt}.part/positions_yfull_hg38.txt" sha256 "$YTREE_YFULL_SHA256"; then
+         "${yt}.part/positions_yfull_hg38.txt" sha256 "$YTREE_YFULL_SHA256" \
+     || ! fetch "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/working/${YCALLABLE_MASK_RELEASE}_genome_mask_GRCh38/StrictMask/${YCALLABLE_MASK_RELEASE}.chrY.mask.fasta.gz" \
+         "${yt}.part/callable_mask_chrY.fasta.gz" sha256 "$YCALLABLE_MASK_SHA256"; then
     # Yleaf's own data is in place, so step 37 still runs: it says the
     # current tree is not installed and writes Yleaf's result only. An older
     # tree from an earlier pin goes too, so no step places on tables that

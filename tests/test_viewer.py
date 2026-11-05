@@ -10,7 +10,7 @@ byte by byte (no samtools or htslib needed).
 Checks:
   1. build_config names the sample's files and the locus, and refuses a locus
      that is not chr[:pos[-end]] of the reference, and a BAM with no index;
-  2. owngenome-view.sh downloads the pinned igv.js and checks its sha256, finds the
+  2. owngenome-view.sh downloads the igv.js pinned in versions.env and checks its sha256, finds the
      BAM, VCF and SV VCF in the sample folder, and starts the server, which
      listens on 127.0.0.1 and not on the machine's other address;
   3. the server sends the page with a Content-Security-Policy that keeps it
@@ -20,12 +20,22 @@ Checks:
   4. in a headless Chrome the page starts igv.js on that config (status
      "ready", nothing blocked by the policy) and igv.js reads the BAM and its
      index by range; skipped without Chrome, except in CI;
-  5. the HTML report links each ClinVar hit, each mitochondrial variant and
-     each secondary-findings variant to the viewer at its position; a file
-     name with a space, '#' or '?' is served from its percent-encoded URL.
+  5. every findings table of the HTML report (ClinVar hits, secondary
+     findings, mitochondrial variants, deep intronic sites, the cDNA scan,
+     AnnotSV class 4-5 and the calls moved to class 3, slivar's pairs in
+     trans, mosaic alterations, Exomiser's ranked variants) ends each row
+     with a Viewer cell linking to the row's position, with the note under
+     it; a control with the links removed must fail that check for every
+     table. A file name with a space,
+     '#' or '?' is served from its percent-encoded URL.
+
+The igv.js pin is read from versions.env (IGV_JS_VERSION, IGV_JS_SHA256):
+the downloaded file must have that sha256, and owngenome-view.sh must set no
+pin of its own.
 """
 
 import gzip
+import hashlib
 import json
 import os
 import random
@@ -163,6 +173,15 @@ def make_sample(gd):
 
 
 # --- helpers ------------------------------------------------------------------
+def igv_pin():
+    """IGV_JS_VERSION and IGV_JS_SHA256 as versions.env sets them."""
+    with open(f"{REPO}/versions.env") as f:
+        pin = dict(re.findall(r'^(IGV_JS_VERSION|IGV_JS_SHA256)="([^"]*)"', f.read(), re.M))
+    if len(pin) != 2:
+        raise SystemExit(f"versions.env does not set IGV_JS_VERSION and IGV_JS_SHA256: {pin}")
+    return pin
+
+
 def free_port():
     with socket.socket() as so:
         so.bind(("127.0.0.1", 0))
@@ -195,6 +214,94 @@ def find_chrome():
         if c and (shutil.which(c) or os.path.isfile(c)):
             return shutil.which(c) or c
     return None
+
+
+# --- the report's findings tables ---------------------------------------------
+# Each findings table of the HTML report, by the start of its header row, and
+# the viewer address its one row (made by findings_report) must link to.
+FINDINGS_TABLES = {
+    "ClinVar hits": ("<th>Chr</th><th>Position</th>", "chr1:451"),
+    "secondary findings": ("<th>Gene</th><th>Variant</th><th>Genotype</th><th>Evidence</th>", "chr2:120"),
+    "mitochondrial variants": ("<th>Variant</th><th>AF</th><th>ClinVar</th>", "chrM:3243"),
+    "deep intronic sites": ("<th>Gene</th><th>Variant</th><th>Position</th><th>Call</th>", "chr1:900"),
+    "cDNA scan": ("<th>Locus</th><th>Junctions</th><th>Reads</th>", "chr21:100-900"),
+    "AnnotSV class 4-5": ("<th>SV</th><th>Class</th><th>Genes</th>", "chr1:1000-1500"),
+    "AnnotSV moved to class 3": ("<th>SV</th><th>AnnotSV class</th>", "chr20:2000-2400"),
+    "slivar pairs in trans": ("<th>Gene</th><th>Pair in trans</th>", "chr1:50-90"),
+    "mosaic alterations": ("<th>Type</th><th>Arm</th><th>Region</th>", "chr7:1-5000000"),
+    "Exomiser ranking": ("<th>Rank</th><th>Gene</th><th>Inheritance</th>", "chr3:700"),
+}
+
+
+def findings_report(work):
+    """The HTML report of a summary with one row in every findings table."""
+    import collect_summary
+    import render_report
+    d = f"{work}/findings/S"
+    os.makedirs(d)
+    summ = collect_summary.collect("S", d)
+    S = summ["sections"]
+    for k in ("clinvar", "clinical", "mito", "annotsv", "slivar", "mosaic", "exomiser"):
+        S.setdefault(k, {"title": k, "step": "-", "data": {}})
+        S[k]["state"] = "ok"
+    S["clinvar"]["data"] = {
+        "hits": [{"chrom": "chr1", "pos": 451, "ref": "T", "alt": "G", "genotype": "het", "gene": "GENEB",
+                  "significance": "Pathogenic", "review_status": "reviewed by expert panel", "stars": 3}],
+        "deep_intronic": [{"gene": "GENEE", "hgvs": "NM_000001.1:c.100-500A>G", "chrom": "chr1", "pos": 900,
+                           "ref": "A", "alt": "G", "call": "het", "detail": "GQ 40"}],
+        "cdna_scan": {"note": "", "loci": [{"chrom": "chr21", "start": 100, "end": 900, "junctions": 3, "reads": 24}]}}
+    S["clinical"]["data"] = {"variants": 1, "acmg_sf": {
+        "version": "v3.3", "high_impact": [],
+        "clinvar_hits": [{"gene": "GENEC", "variant": "chr2:120 A>G", "genotype": "0/1", "significance": "Pathogenic"}]}}
+    S["mito"]["data"] = {"pass": 1, "heteroplasmic": 0, "annotation": {
+        "source": "synthetic", "variants": [{"pos": 3243, "ref": "A", "alt": "G"}]}}
+    sv = {"type": "DEL", "genes": ["GENEF"], "caller": "manta", "support": 2, "support_callers": ["manta", "delly"],
+          "exon_edge": "no", "exon_edge_detail": "", "population_af": None, "population_source": "", "common": False,
+          "rule": "", "rule_detail": ""}
+    S["annotsv"]["data"] = {
+        "count": 1, "single_caller": 0, "consensus": True, "exon_edge": 0, "exon_edge_checked": True, "common": 0,
+        "rows": [dict(sv, sv="chr1:1000-1500", acmg_class="5", annotsv_class="5")],
+        "downgraded": [dict(sv, sv="chr20:2000-2400", acmg_class="3", annotsv_class="4", rule="ig_tr_locus",
+                            rule_detail="inside a locus")]}
+    S["slivar"]["data"] = {"prioritized": 1, "compound_het_pairs": 1,
+                           "compound_het_phase": {"trans": 1, "cis": 0, "unknown": 0},
+                           "compound_het_trans": [{"gene": "G2", "variants": "chr1:50 A>G + chr1:90 C>T",
+                                                   "reads": "19 of 20"}]}
+    S["mosaic"]["data"] = {"status": "assessed", "calls_reported": "1", "floor": "0.05", "depth": "30",
+                           "calls": [{"type": "Loss", "arms": "7q", "chrom": "chr7", "start": "1", "end": "5000000",
+                                      "length_mb": "5.0", "cell_fraction": "0.2"}]}
+    S["exomiser"]["data"] = {"terms": [{"id": "HP:0001250", "label": "Seizure"}], "genes": [
+        {"rank": "1", "gene": "GENEG", "moi": "AD", "exomiser_score": "0.9", "phenotype_score": "0.8",
+         "variants": [{"variant": "chr3:700 C>T", "genotype": "0/1", "consequence": "missense_variant",
+                       "hgvs": "p.(Arg1Cys)", "acmg": "LIKELY_PATHOGENIC", "disease": "a disease"}]}]}
+    return render_report.html_report(summ), summ
+
+
+def tables_without_links(html):
+    """[name] of each findings table missing from html, without the Viewer column last, with a row
+    whose last cell does not link to the viewer at the expected address, or without the viewer
+    note in its card."""
+    import render_report
+    bad = []
+    chunks = html.split("<table")
+    for name, (head, where) in FINDINGS_TABLES.items():
+        mine = [c for c in chunks[1:] if head in c.split("</tr>", 1)[0]]
+        if not mine:
+            bad.append(f"{name}: no table")
+            continue
+        table = mine[0].split("</table>", 1)[0]
+        after = html[html.index(table) + len(table):]
+        if not table.split("</tr>", 1)[0].endswith(render_report.VIEWER_TH):
+            bad.append(f"{name}: the header does not end with the Viewer column")
+        rows = [r.rsplit("</tr>", 1)[0] for r in table.split("<tr><td")[1:]]
+        link = (f'<td><a class="locus" href="{render_report.VIEWER_URL}#{where}" target="_blank" '
+                f'rel="noopener noreferrer">{where}</a></td>')
+        if not rows or any(not re.search(r'<td><a class="locus" href="[^"]+"[^>]*>[^<]+</a></td>$', r) for r in rows) \
+                or not any(r.endswith(link) for r in rows):
+            bad.append(f"{name}: a row whose last cell is not a viewer link to {where}")
+        if render_report.VIEWER_NOTE.strip() not in after.split('<div class="card', 1)[0]:
+            bad.append(f"{name}: no viewer note in the card under the table")
+    return bad
 
 
 def main():
@@ -255,8 +362,13 @@ def main():
         check("owngenome-view.sh: the server starts and prints its address", up and f"{base}/#chr1:451" in out, out)
         if not up:
             raise SystemExit(1)
-        igv = f"{gd}/tools/igv.js-{re.search(r'IGV_JS_VERSION=(.+)', open(f'{REPO}/scripts/owngenome-view.sh').read()).group(1)}/igv.min.js"
-        check("owngenome-view.sh: the pinned igv.js is downloaded into GENOME_DIR/tools", os.path.getsize(igv) > 100000, igv)
+        pin = igv_pin()
+        igv = f"{gd}/tools/igv.js-{pin['IGV_JS_VERSION']}/igv.min.js"
+        check("owngenome-view.sh: the igv.js pinned in versions.env is downloaded into GENOME_DIR/tools, with its sha256",
+              os.path.isfile(igv) and os.path.getsize(igv) > 100000
+              and hashlib.sha256(open(igv, "rb").read()).hexdigest() == pin["IGV_JS_SHA256"], (igv, pin))
+        check("owngenome-view.sh: it sets no igv.js pin of its own (versions.env is the one place)",
+              not re.search(r"^\s*IGV_JS_(VERSION|SHA256)=", open(f"{REPO}/scripts/owngenome-view.sh").read(), re.M))
         ip = other_address()
         if ip:
             try:
@@ -336,32 +448,29 @@ def main():
             check("browser: igv.js read the reference and the VCF",
                   "synthetic.fasta" in served and "S.vcf.gz" in served, served[-1500:])
 
-        # 5. the report's links
-        import collect_summary
+        # 5. the report's links: a Viewer cell at the end of every row of every findings table
         import render_report
-        d = f"{work}/report/S"
-        os.makedirs(f"{d}/clinvar")
-        with open(f"{d}/clinvar/S_clinvar_hits.vcf", "w") as f:
-            f.write("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n"
-                    "chr1\t451\t2\tT\tG\t50\tPASS\tGENEINFO=GENEB:22;CLNSIG=Pathogenic;"
-                    "CLNREVSTAT=reviewed_by_expert_panel\tGT\t0/1\n")
-        html = render_report.html_report(collect_summary.collect("S", d))
-        check("report: the ClinVar hit links to the viewer at its position",
-              'href="http://127.0.0.1:8765/#chr1:451"' in html and "scripts/owngenome-view.sh" in html,
-              [l for l in html.splitlines() if "ClinVar" in l][:5])
-        summ = collect_summary.collect("S", d)
-        for k in ("mito", "clinical"):
-            summ["sections"][k]["state"] = "ok"
-        summ["sections"]["mito"]["data"]["annotation"] = {
-            "source": "synthetic", "variants": [{"pos": 3243, "ref": "A", "alt": "G"}]}
-        summ["sections"]["clinical"]["data"]["acmg_sf"] = {
-            "version": "v3.3",
-            "clinvar_hits": [{"gene": "GENEC", "variant": "chr2:120 A>G", "genotype": "0/1", "significance": "Pathogenic"}],
-            "high_impact": [{"gene": "GENED", "variant": "chr1:2000 C>T", "genotype": "0/1", "consequence": "stop_gained"}]}
-        html = render_report.html_report(summ)
-        want = [f'href="http://127.0.0.1:8765/#{x}"' for x in ("chrM:3243", "chr2:120", "chr1:2000")]
-        check("report: the mito and secondary-findings variants link to the viewer at their positions",
-              all(w in html for w in want), [l for l in html.splitlines() if "8765" in l][:5])
+        html, _ = findings_report(work)
+        bad = tables_without_links(html)
+        check("report: every row of every findings table ends with a Viewer cell that links to its locus, with the note in the card",
+              not bad, bad)
+        check("report: the note says how to start the viewer", "scripts/owngenome-view.sh" in render_report.VIEWER_NOTE)
+        # The control: with plain text in place of the link, the same check names every table.
+        real = render_report.viewer_td
+        render_report.viewer_td = lambda chrom, start, end=None: "<td></td>"
+        try:
+            plain, _ = findings_report(f"{work}/control")
+        finally:
+            render_report.viewer_td = real
+        missed = tables_without_links(plain)
+        check("report: control: with the links removed the check names every findings table",
+              len(missed) == len(FINDINGS_TABLES) and all("not a viewer link" in m for m in missed), missed)
+        cell = render_report.viewer_td_of
+        check("report: a row's Viewer cell spans the positions on its first chromosome, and is empty without one",
+              cell("chr1:50 A>G + chr1:90 C>T").endswith('#chr1:50-90" target="_blank" rel="noopener noreferrer">'
+                                                        "chr1:50-90</a></td>")
+              and "#chrM:3243\"" in cell("chrM:3243 A>G") and cell("no locus <x>") == "<td></td>",
+              [cell("chr1:50 A>G + chr1:90 C>T"), cell("chrM:3243 A>G"), cell("no locus <x>")])
     finally:
         if proc and proc.poll() is None:
             proc.terminate()

@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Reads your genotype at a small set of well-replicated variants and prints what each genotype means in plain words: lactase persistence (digesting milk as an adult), caffeine metabolism and coffee intake, alcohol flush, bitter taste, earwax type, the photic sneeze reflex, smelling asparagus in urine, muscle fibre type, eye, hair and skin pigmentation, red hair, hair thickness, folate metabolism, secretor status, vitamin D level, bilirubin (the Gilbert syndrome genotype), nicotine breakdown, two variants linked to a high Lp(a) level, and the APOE ε2/ε3/ε4 alleles. A rule table reads several sites together: the APOE pair, the TAS2R38 bitter-taste haplotypes (PAV, AVI), phased from the reads when that is needed, the APOL1 G1 kidney risk variant, the alpha-1 antitrypsin Pi type (SERPINA1 M, S, Z), the HFE haemochromatosis genotype (C282Y, H63D), the vitamin D-binding protein type (GC), the chromosome 9p21 heart disease haplotype and the 17q21.31 H1/H2 lineage. Each row names the primary paper it comes from. On by default.
+Reads your genotype at a small set of well-replicated variants and prints what each genotype means in plain words: lactase persistence (digesting milk as an adult), caffeine metabolism and coffee intake, alcohol flush, bitter taste, earwax type, the photic sneeze reflex, smelling asparagus in urine, muscle fibre type, eye, hair and skin pigmentation, red hair, hair thickness, folate metabolism, secretor status, vitamin D level, bilirubin (the Gilbert syndrome genotype), nicotine breakdown, two variants linked to a high Lp(a) level, CFTR R117H (read with the CFTR poly-T tract of [step 9](09-str-expansions.md)), and the APOE ε2/ε3/ε4 alleles. A rule table reads several sites together: the APOE pair, the TAS2R38 bitter-taste haplotypes (PAV, AVI), phased from the reads when that is needed, the APOL1 G1 kidney risk variant, the alpha-1 antitrypsin Pi type (SERPINA1 M, S, Z), the HFE haemochromatosis genotype (C282Y, H63D), the vitamin D-binding protein type (GC), the chromosome 9p21 heart disease haplotype and the 17q21.31 H1/H2 lineage. Each row names the primary paper it comes from. On by default.
 
 ## Why
 
@@ -66,6 +66,7 @@ Both reports have a Traits section: every row with its genotype, reading, note a
 | Bilirubin, Gilbert syndrome genotype | rs887829 (UGT1A1) | 19414484, 37456363 |
 | Nicotine breakdown | rs1801272 (CYP2A6*2) | 2322567, 9827545 |
 | Lp(a) level | rs10455872, rs3798220 (LPA); [step 46](46-lpa.md) adds the KIV-2 repeat count, and the report's Lp(a) section reads the three together | 20032323, 36036785, 29973585 |
+| CFTR R117H, read with the poly-T tract of [step 9](09-str-expansions.md) | rs78655421 (CFTR) | 32404922 |
 | APOE ε2/ε3/ε4 | rs429358, rs7412 | 8346443, 9343467 |
 
 Variants whose effect allele the papers we could read did not state were left out, among them SLC24A4 rs12896399 and TYR rs1393350 of the eye-colour panels.
@@ -135,7 +136,7 @@ The APOE line is the APOE rule of `assets/genotype_rules.tsv`, written into the 
 
 ## Runtime
 
-Seconds: bcftools reads the gVCF at the table's positions through its index (35 rows and 17 rule sites), and WhatsHap, when a rule needs it, reads the BAM over three sites within 741 bases.
+Seconds: bcftools reads the gVCF at the table's positions through its index (36 rows and 17 rule sites), and WhatsHap, when a rule needs it, reads the BAM over three sites within 741 bases.
 
 ## Notes
 

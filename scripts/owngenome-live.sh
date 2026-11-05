@@ -16,6 +16,14 @@
 #   OWNGENOME_LIVE_STATE_DIR      where messages and the access log go (default GENOME_DIR/.owngenome-live)
 #   OWNGENOME_LIVE_PASSWORD_FILE  the hash file (default OWNGENOME_LIVE_STATE_DIR/password)
 #   OWNGENOME_LIVE_ALLOWED_HOSTS  space-separated host names the browser may use besides loopback
+#   OWNGENOME_LIVE_VIEWER         "off" leaves the genome viewer out (default on)
+#
+# The genome viewer (bin/owngenome_live_viewer.py) shows each run's reads at
+# /runs/<run>/viewer/, behind the same password: the reference is REF_FASTA, as
+# in every step, and the first start downloads the pinned igv.js
+# (IGV_JS_VERSION in versions.env) into GENOME_DIR/tools/, checked by sha256,
+# as owngenome-view.sh does. Without the reference or igv.js the site starts
+# without the viewer and says why.
 # Then start a run with OWNGENOME_LIVE_URL=http://127.0.0.1:8788 ./scripts/run-all.sh <sample> <sex>.
 # Needs python3 (3.8 or later) on the host; nothing is installed.
 set -euo pipefail
@@ -45,6 +53,19 @@ args=(--root "$GENOME_DIR" --state-dir "$STATE" --bind "${OWNGENOME_LIVE_BIND:-1
   --ingest-port "${OWNGENOME_LIVE_INGEST_PORT:-8788}")
 if [ -s "$PWF" ]; then args+=(--password-file "$PWF"); fi
 for h in ${OWNGENOME_LIVE_ALLOWED_HOSTS:-}; do args+=(--allowed-host "$h"); done
+IGV_JS="${GENOME_DIR}/tools/igv.js-${IGV_JS_VERSION}/igv.min.js"
+if [ "${OWNGENOME_LIVE_VIEWER:-on}" = off ]; then
+  :
+elif [ ! -f "${REF_FASTA}.fai" ]; then
+  echo "Note: no reference index ${REF_FASTA}.fai; the site starts without the genome viewer." >&2
+else
+  if [ ! -f "$IGV_JS" ]; then
+    echo "Downloading igv.js ${IGV_JS_VERSION} for the genome viewer (once)..."
+    fetch "https://cdn.jsdelivr.net/npm/igv@${IGV_JS_VERSION}/dist/igv.min.js" "$IGV_JS" sha256 "$IGV_JS_SHA256" \
+      || echo "Note: igv.js could not be downloaded; the site starts without the genome viewer." >&2
+  fi
+  if [ -f "$IGV_JS" ]; then args+=(--viewer-fasta "$REF_FASTA" --viewer-igv-js "$IGV_JS"); fi
+fi
 scheme=http
 for a in "$@"; do [ "$a" != --tls-cert ] && [[ "$a" != --tls-cert=* ]] || scheme=https; done
 [ -z "$OPEN" ] || echo "The run's page: ${scheme}://${OWNGENOME_LIVE_BIND:-127.0.0.1}:${OWNGENOME_LIVE_PORT:-8787}/runs/${OPEN}/"

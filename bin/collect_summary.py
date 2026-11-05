@@ -1922,7 +1922,10 @@ def sec_annotsv(d, s):
         except ValueError:
             af = None
         genes = [g for g in (r.get("Gene_name") or "").split(";") if g]
+        fmt = annotsv_postfilter.sample_format(r)
         out.append({"sv": f"{r['SV_chrom']}:{r['SV_start']}-{r['SV_end']}", "type": r["SV_type"],
+                    # the call's genotype and phase set (PS), for the two-hit rule (two_hits)
+                    "gt": fmt.get("GT") or None, "ps": fmt.get("PS") or None,
                     "length": r.get("SV_length") or "", "acmg_class": r["ACMG_class"], "genes": genes,
                     "caller": r["Caller"], "support": sp["Support"],
                     "support_callers": sp["Support_callers"].split(",") if sp["Support_callers"] else [],
@@ -2052,6 +2055,162 @@ def str_not_graded(d, s):
             if isinstance(e, dict) and e.get("LocusId") and e.get("NoThresholds")}
 
 
+# The repeats STRchive leaves out (assets/str_extra_loci.json), read from
+# their counts when step 09 sized them (STR_EXTRA_LOCI=yes; docs/09-str-expansions.md).
+# CFTR intron 9 (legacy IVS8): ExpansionHunter writes the TG and the poly-T
+# tract as two records, so which TG count sits on the copy of which T count
+# is known only when one of the two is the same on both copies. R117H
+# (rs78655421, chr7:117530975 G>A) is step 42's traits row, 17.6 kb from the
+# tract, farther than a read pair spans: with both heterozygous its phase is
+# not known. Deignan et al. 2020 (PMID 32404922).
+CFTR_R117H = "rs78655421"
+CFTR_SOURCE = "Deignan et al. 2020, PMID 32404922"
+# UGT1A1 promoter: ExpansionHunter counts the TA units from the first T of
+# A(TA)6TAA, so its count is one more than the allele's TA number.
+UGT1A1_ALLELES = {6: "*36", 7: "*1", 8: "*28", 9: "*37"}
+UGT1A1_DECREASED = ("*28", "*37")
+UGT1A1_SOURCE = "Gammal et al. 2016, PMID 26417955"
+HTTLPR_READING = ("not tested by any step. CPIC's 2023 SSRI guideline (Bousman et al. 2023, PMID 37032427) found "
+                  "that the data on SLC6A4 do not support its use in antidepressant prescribing, so a result would "
+                  "carry no recommendation.")
+
+
+def str_counts(item):
+    """The two repeat counts of a sized record, sorted, or None."""
+    if not item or item["sizing"] not in ("sized", "unknown"):
+        return None
+    c = [str_int(x) for x in item["repeat_count"].split("/")]
+    if len(c) == 1 and c[0] is not None:
+        c = c * 2  # a one-copy call (a haploid contig): not expected on chr7 or chr2
+    return sorted(c) if len(c) == 2 and None not in c else None
+
+
+def trait_genotype(d, s, rsid):
+    """(status, genotype) of a traits table row of step 42 (traits/<id>_traits.tsv), or None."""
+    p = first_existing(d, [f"traits/{s}_traits.tsv"])
+    if not p:
+        return None
+    try:
+        row = next((r for r in read_tsv(p) if r.get("rsid") == rsid), None)
+    except (OSError, csv.Error):
+        return None
+    return (row.get("status") or "", row.get("genotype") or "") if row else None
+
+
+def cftr_reading(by, d, s):
+    tg, t = by.get("CFTR_TG"), by.get("CFTR_T")
+    out = {"locus": "CFTR", "repeat": "intron 9 (legacy IVS8) TG and poly-T tract", "source": CFTR_SOURCE}
+    if not tg or not t:
+        return dict(out, status="not_sized", genotype=".", phase=".",
+                    reading="not in step 09's output: STR_EXTRA_LOCI=yes setup.sh --strchive-data adds the tract "
+                            "to the catalog (docs/09-str-expansions.md).")
+    a, b = str_counts(tg), str_counts(t)
+    if not a or not b:
+        return dict(out, status="not_sized", genotype=".", phase=".",
+                    reading=f"ExpansionHunter did not size both tracts (TG {tg['repeat_count']}, {tg['sizing']}; "
+                            f"poly-T {t['repeat_count']}, {t['sizing']}): not read.")
+    if a[0] == a[1] or b[0] == b[1]:
+        pairs = [f"TG{a[0]}-{b[0]}T/TG{a[1]}-{b[1]}T"]
+    else:
+        pairs = [f"TG{a[0]}-{b[0]}T/TG{a[1]}-{b[1]}T", f"TG{a[1]}-{b[0]}T/TG{a[0]}-{b[1]}T"]
+    genotype = pairs[0] if len(pairs) == 1 else f"TG{a[0]}/TG{a[1]} {b[0]}T/{b[1]}T"
+    out.update(status="read", genotype=genotype, pairings=pairs, tg=a, poly_t=b)
+    five = b.count(5)
+    other = sorted({n for n in b if n not in (5, 7, 9)})
+    odd = (f" A poly-T length of {', '.join(f'{n}T' for n in other)} is none of the usual 5T, 7T and 9T."
+           if other else "")
+    if not five:
+        return dict(out, five_t=False, phase="not_needed",
+                    reading=f"No 5T copy ({b[0]}T/{b[1]}T), so the tract does not change how a CFTR finding is "
+                            f"read.{odd}")
+    if len(pairs) == 1:
+        # One TG count on both copies, or 5T on both copies with their two TG counts.
+        tgs = [a[0]] if a[0] == a[1] else a
+        tg_text = " and ".join(f"TG{x}" for x in tgs) + (" on the 5T copy" if five == 1 else " on the 5T copies")
+    else:
+        tg_text = f"TG{a[0]} or TG{a[1]} on the 5T copy, not told by the counts ({' or '.join(pairs)})"
+    line = (f"5T: {five} copy{'s' if five > 1 else ''} with the 5T poly-T tract, {tg_text}. 5T lowers the splicing "
+            "of exon 10 and is a variable-penetrance allele: with TG12 or TG13 on the same copy it more often "
+            "causes CBAVD or another CFTR-related disorder when the other copy carries a CF-causing variant.")
+    r = trait_genotype(d, s, CFTR_R117H)
+    if not r or r[0] != "called":
+        phase = "not_read"
+        r117 = (" R117H was not read (no step 42 traits row for rs78655421 was called), so whether it sits on the "
+                "5T copy is not known.")
+    else:
+        n = r[1].split("/").count("A")
+        if n == 0:
+            phase = "not_needed"
+            r117 = " No R117H copy: the 5T is read on its own."
+        elif n == 2 or five == 2:
+            phase = "in_cis"
+            r117 = (f" R117H ({r[1]}) and 5T share a copy: R117H with 5T in cis is a CF-causing allele of "
+                    "variable penetrance.")
+        else:
+            phase = "unknown"
+            r117 = (" One R117H copy and one 5T copy: phase unknown. R117H lies 17.6 kb from the tract, farther "
+                    "than a read pair spans, so whether they share a copy (in cis, a CF-causing allele of variable "
+                    "penetrance) or not (in trans) is not read; testing a parent tells them apart.")
+    return dict(out, five_t=True, phase=phase, r117h=r[1] if r and r[0] == "called" else ".",
+                reading=line + r117 + odd)
+
+
+def ugt1a1_reading(by, d, s):
+    item = by.get("UGT1A1")
+    out = {"locus": "UGT1A1", "repeat": "promoter TA repeat", "source": UGT1A1_SOURCE}
+    if not item:
+        return dict(out, status="not_sized", genotype=".", pharmcat=".", agreement="not_compared",
+                    reading="not in step 09's output: STR_EXTRA_LOCI=yes setup.sh --strchive-data adds the repeat "
+                            "to the catalog (docs/09-str-expansions.md). PharmCAT (step 7) still reads UGT1A1 *28.")
+    c = str_counts(item)
+    if not c:
+        return dict(out, status="not_sized", genotype=".", pharmcat=".", agreement="not_compared",
+                    reading=f"ExpansionHunter did not size the repeat ({item['repeat_count']}, {item['sizing']}): "
+                            "not read.")
+    names = [UGT1A1_ALLELES.get(n, f"TA{n - 1}") for n in c]
+    genotype = "/".join(names)
+    dec = sum(n in UGT1A1_DECREASED for n in names)
+    ta = "/".join(f"TA{n - 1}" for n in c)
+    reading = (f"{genotype} ({ta}, {c[0]}/{c[1]} TA units as ExpansionHunter counts them): "
+               + ("no decreased-function TA allele." if not dec else
+                  f"{dec} decreased-function allele{'s' if dec > 1 else ''} (*28 and *37 are decreased function).")
+               + ("" if all(n in UGT1A1_ALLELES for n in c) else " A TA length outside TA5 to TA8 is not a named allele here."))
+    out.update(status="read", genotype=genotype, ta_units=c)
+    # PharmCAT's UGT1A1 call (step 27's table, with the reference-block fill
+    # of bin/pgx_refblock_fill.py): its count of *28 and *37 copies.
+    pc, agreement = ".", "not_compared"
+    p = first_existing(d, [f"cpic/{s}_phenotypes.tsv"])
+    row = None
+    if p:
+        try:
+            row = next((r for r in read_tsv(p) if r.get("Gene") == "UGT1A1"), None)
+        except (OSError, csv.Error):
+            row = None
+    if row:
+        pc = (row.get("Diplotype") or "").strip() or "."
+        alleles = pc.split("/")
+        if len(alleles) == 2 and "possible" not in pc and (row.get("Status") or "") != "not called":
+            # A combination allele reads "*80+*28" or "[*80 + *28]".
+            n = sum(any(x in re.split(r"[+ \[\]]", a) for x in UGT1A1_DECREASED) for a in alleles)
+            agreement = "agrees" if n == dec else "differs"
+    if agreement == "agrees":
+        reading += f" PharmCAT (step 7) called {pc}: the same number of *28 and *37 copies."
+    elif agreement == "differs":
+        reading += (f" PharmCAT (step 7) called {pc}, a different number of *28 and *37 copies: read the reads at "
+                    "chr2:233760234 before using either.")
+    else:
+        reading += " Not compared with PharmCAT (no unambiguous UGT1A1 call from step 27)."
+    return dict(out, pharmcat=pc, agreement=agreement, reading=reading)
+
+
+def str_readings(by, d, s):
+    """What the counts of the extra repeats mean, one entry per locus, and the
+    5-HTTLPR line that no step can test."""
+    return [cftr_reading(by, d, s), ugt1a1_reading(by, d, s),
+            {"locus": "SLC6A4", "repeat": "5-HTTLPR promoter length polymorphism", "status": "not_tested",
+             "genotype": ".", "reading": HTTLPR_READING, "source": "Bousman et al. 2023, PMID 37032427"}]
+
+
 def sec_expansions(d, s):
     eh = first_existing(d, [f"expansion_hunter/{s}_eh.vcf", f"expansion_hunter/{s}.vcf",
                             "expansion_hunter/*_eh.vcf"])
@@ -2075,7 +2234,14 @@ def sec_expansions(d, s):
             continue
         tested += 1
         info = info_map(r[7])
-        rep = info.get("REPID") or info.get("VARID") or f"{r[0]}:{r[1]}"
+        # A locus of several repeats (CFTR: CFTR_TG and CFTR_T) writes one
+        # record per repeat, each with the locus as REPID and its own VARID:
+        # the record is named by its VARID and looked up by that name in the
+        # ranges and motif tables (the pathogenic repeat of a multi-repeat
+        # locus carries the locus name), and in the catalog's NoThresholds by
+        # its locus (REPID). A one-repeat locus has VARID = REPID.
+        lid = info.get("REPID") or info.get("VARID") or f"{r[0]}:{r[1]}"
+        rep = info.get("VARID") or lid
         fmt = r[8].split(":")
         val = r[9].split(":")
         repcn = str_field(fmt, val, "REPCN")
@@ -2104,15 +2270,15 @@ def sec_expansions(d, s):
                                                   "with the sample's BAM): confirm the flag with repeat-primed PCR"}
         if rep != "RFC1" and rep in motifs and any(x != "normal" for x in status):
             item["motif"] = motifs[rep]
-        if st and not status and rep in ungraded:
-            item["not_graded"] = ungraded[rep]
+        if st and not status and lid in ungraded:
+            item["not_graded"] = ungraded[lid]
         loci.append(item)
         if st:
             # One value per record, the most severe of normal, pre_mutation and
             # full_mutation; a locus outside Stranger's catalog has none.
             if not status and "not_graded" in item:
-                if rep not in not_graded:
-                    not_graded.append(rep)
+                if lid not in not_graded:
+                    not_graded.append(lid)
             elif not status:
                 no_status += 1
             elif any(x != "normal" for x in status):
@@ -2130,7 +2296,8 @@ def sec_expansions(d, s):
                                             else "not in output"} for k in EH_LOCI],
            "loci": loci, "stranger": bool(st), "stranger_outdated": outdated,
            "unsized": [l["locus"] for l in loci if l["sizing"] not in ("sized", "unknown")],
-           "intermediate": [l["locus"] for l in loci if l["zone"]]}
+           "intermediate": [l["locus"] for l in loci if l["zone"]],
+           "readings": str_readings(by, d, s)}
     if st:
         # not_graded: {locus: why} of the loci the catalog gives no thresholds,
         # so Stranger gives them no status: not graded, never normal.
@@ -2403,6 +2570,39 @@ def sec_y_haplogroup(d, s):
     return p, {"haplogroup": hg if hg not in ("", "NA") else "insufficient markers",
                "valid_markers": r.get("Valid_markers") or ".", "qc_score": r.get("QC-score") or ".",
                "explore": haplogroup_explore("y", hg)}
+
+
+def sec_y_tree(d, s):
+    """Step 37's placement on the current public tree (y_haplogroup/<id>_y_tree.txt,
+    bin/y_tree_place.py): the terminal branch, how deep it sits, the SNP
+    calls along the path, and the tree release the names come from. The
+    per-level table beside it gives each branch of that path."""
+    p = first_existing(d, [f"y_haplogroup/{s}_y_tree.txt"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    need = ("Hg", "Level", "Tree")
+    if not rows or any(k not in rows[0] for k in need):
+        raise Unreadable(f"{os.path.basename(p)} lacks a column of {', '.join(need)}")
+    r = rows[0]
+    hg = (r.get("Hg") or "").strip()
+    out = {"haplogroup": hg if hg not in ("", "NA") else "no branch has a derived call",
+           "level": r.get("Level") or ".", "tree": r.get("Tree") or ".",
+           "path_derived": r.get("Path_derived") or ".", "path_ancestral": r.get("Path_ancestral") or ".",
+           "path_no_call": r.get("Path_no_call") or ".",
+           "ancestral_in_terminal": r.get("Ancestral_in_terminal") or ".",
+           "outvoted_ancestral": r.get("Outvoted_ancestral") or ".",
+           "snps_called": r.get("SNPs_called") or ".", "min_depth": r.get("Min_depth") or ".",
+           "explore": haplogroup_explore("y", hg)}
+    lvl = first_existing(d, [f"y_haplogroup/{s}_y_tree_path.tsv"])
+    if lvl:
+        prows = read_tsv(lvl)
+        if not prows or "Branch" not in prows[0]:
+            raise Unreadable(f"{os.path.basename(lvl)} has no Branch column or no rows")
+        out["path"] = [{k: (row.get(k) or "") for k in
+                        ("Level", "Branch", "SNPs", "On_tables", "Derived", "Ancestral", "No_call",
+                         "Ancestral_SNPs")} for row in prows]
+    return p, out
 
 
 def sec_y_str(d, s):
@@ -2702,7 +2902,7 @@ def sec_carrier(d, s):
     p = first_existing(d, [f"clinvar/{s}_clinvar_hits.vcf"])
     if not p:
         return None, {}
-    return p, carrier_list_or_note(p)
+    return p, carrier_list_or_note(p, d, s)
 
 
 def sec_exomiser(d, s):
@@ -3381,7 +3581,7 @@ def csq_high_impact_genes(path):
                     gt = r[9].split(":")[0] if len(r) > 9 else ""
                     weak, why, gq, dp, ad = call_check(r[8], r[9], floor) if len(r) > 9 else (False, [], None, None, None)
                     out[(r[0], int(r[1]), r[3], r[4])] = {
-                        "genotype": gt, "genes": genes, "transcript": cls, "frequency": freq,
+                        "genotype": gt, "ps": gt_field(r, "PS"), "genes": genes, "transcript": cls, "frequency": freq,
                         "weak": weak, "why": why, "gq": gq, "dp": dp, "ad": ad}
     except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as e:
         raise Unreadable(f"{os.path.basename(path)}: {e}") from e
@@ -3472,7 +3672,8 @@ def carrier_genes():
     for n, r in enumerate(asset_rows("carrier_genes.tsv"), 1):
         try:
             out[r["gene"]] = {"inheritance": r["inheritance"], "lists": r["lists"], "condition": r["condition"],
-                              "severity": parse_alleles(r.get("severity"), kinds=True)}
+                              "severity": parse_alleles(r.get("severity"), kinds=True),
+                              "span": (r["chrom"], int(r["start"]), int(r["end"]))}
         except (KeyError, ValueError, TypeError) as e:
             raise Unreadable(f"carrier_genes.tsv row {n}: {e}") from e
     return out
@@ -3492,6 +3693,169 @@ def zygosity_word(copies, ploidy):
     if ploidy == 1:
         return "hemizygous"
     return "hom" if copies >= 2 else "het"
+
+
+# --- two hits in one gene across callers: a deletion plus a small variant --------
+#
+# Small variants alone miss a gene hit twice when one hit is a deletion: an
+# exon deletion of one copy of MUTYH plus a pathogenic variant on the other, an
+# HBA deletion plus an HBA point variant, one SMN1 copy plus an SMN1 variant, a
+# 1q21.1 deletion plus the RBM8A low-expression allele (TAR syndrome: Albers et
+# al., Nat Genet 2012;44(4):435-439, PMID 22366785). The deletions come from the
+# engines that call them: AnnotSV's class 4 and 5 deletions (step 05), step 35's
+# interval table (bin/cn_loci.tsv), its HBA count and Parascopy's SMN1 count.
+# Two hits are in trans (biallelic) only when the reads show it: the variant sits
+# inside the deletion and is called homozygous (only one copy is left, and it
+# carries the variant), or both calls carry a read-backed phase (GT with "|" and
+# the same PS) on different copies. Otherwise they are possibly in trans; on the
+# same copy (cis) they are no second hit.
+TWO_HIT_ORDER = ("biallelic", "possibly biallelic")
+
+
+def gene_deletions(d, s, spans):
+    """The genes a called deletion reaches: ({gene: [deletion]}, engines read,
+    engines not read). spans: {gene: (chrom, start, end)}, 1-based inclusive
+    (assets/carrier_genes.tsv). A deletion: chrom, start, end (1-based,
+    inclusive), text, inside (a variant inside its span is on the one copy left;
+    False for the HBA count, which cannot say which gene of the pair is gone),
+    gt and ps (its phase, AnnotSV only)."""
+    out, read, unread = {}, [], []
+
+    def add(g, x):
+        out.setdefault(g, []).append(x)
+
+    def over(chrom, a, b):
+        return [g for g, (c, gs, ge) in spans.items() if c == chrom and gs <= b and ge >= a]
+    try:
+        p, data = sec_annotsv(d, s)
+    except (Unreadable, OSError, ValueError, KeyError) as e:
+        p, data = None, {}
+        unread.append(f"AnnotSV (step 05): {e}")
+    if p:
+        read.append("AnnotSV class 4 and 5 deletions (step 05)")
+        for x in data["rows"]:
+            chrom, _, span = x["sv"].partition(":")
+            a, _, b = span.partition("-")
+            if x["type"] != "DEL" or x["common"] or not (a.isdigit() and b.isdigit()):
+                continue
+            chrom = chrom if chrom.startswith("chr") else "chr" + chrom
+            # SV_start is the base before the deleted bases (annotsv_postfilter.sv_span):
+            # they are SV_start+1 to SV_end, 1-based. The text keeps AnnotSV's coordinates.
+            first = int(a) + 1
+            hit = set(over(chrom, first, int(b)))
+            # A listed gene AnnotSV names counts only when its span reaches the deleted bases: one
+            # that ends at the padding base loses none. A gene with no span here is taken as named.
+            named = {g for g in x["genes"] if g not in spans}
+            for g in sorted(hit | named):
+                add(g, {"chrom": chrom, "start": first, "end": int(b), "inside": True,
+                        "text": f"DEL {chrom}:{a}-{b} (AnnotSV class {x['acmg_class']}, {x['caller']})",
+                        "gt": x.get("gt"), "ps": x.get("ps")})
+    elif not unread:
+        unread.append("AnnotSV (step 05): no table")
+    try:
+        p, data = sec_parascopy(d, s)
+        why = "none"
+    except (Unreadable, OSError, ValueError, KeyError) as e:
+        p, data, why = None, {}, str(e)
+    if not p:
+        unread.append(f"step 35's copy-number tables: {why}")
+        return out, read, unread
+    iv = data.get("cn_intervals")
+    if iv is not None:
+        read.append("step 35's interval table (read depth)")
+        for r in iv["changes"]:
+            if r["change"] != "deletion" or not (r["start"].isdigit() and r["end"].isdigit()):
+                continue
+            a, b = int(r["start"]) + 1, int(r["end"])  # the table is BED: 0-based start
+            for g in over(r["chrom"], a, b):
+                add(g, {"chrom": r["chrom"], "start": a, "end": b, "inside": True, "gt": None, "ps": None,
+                        "text": f"{r['locus']} deletion, {r['copies']} of {r['expected']} copies "
+                                "(read depth, step 35)"})
+    else:
+        unread.append("step 35's interval table: none")
+    hba = data.get("hba") or {}
+    n = hba.get("alpha_globin_genes", "")
+    if hba.get("status") == "called" and n.isdigit():
+        read.append("step 35's HBA1/HBA2 count")
+        # 0 genes: no alpha-globin gene is left to carry a variant, so a hit there pairs with nothing.
+        if 1 <= int(n) < 4:
+            for g in ("HBA1", "HBA2"):
+                if g in spans:
+                    c, a, b = spans[g]
+                    add(g, {"chrom": c, "start": a, "end": b, "inside": False, "gt": None, "ps": None,
+                            "text": f"{n} of 4 alpha-globin genes (read depth, step 35)"})
+    else:
+        unread.append(f"step 35's HBA1/HBA2 count: {hba.get('message') or 'not called'}")
+    smn1 = (data.get("smn1") or {}).get("cn")
+    if smn1 is not None:
+        read.append("Parascopy's SMN1 count (step 35)")
+        if smn1 == 1 and "SMN1" in spans:
+            c, a, b = spans["SMN1"]
+            add("SMN1", {"chrom": c, "start": a, "end": b, "inside": True, "gt": None, "ps": None,
+                         "text": "one SMN1 copy (Parascopy, step 35)"})
+    else:
+        unread.append("Parascopy's SMN1 count: not resolved")
+    return out, read, unread
+
+
+def phase_haps(gt):
+    """The copies (haplotype indexes) a phased GT puts the alt allele on, or
+    None when the GT is not phased: '0|1' -> {1}, '1|0' -> {0}, '0/1' -> None."""
+    if not gt or "|" not in gt:
+        return None
+    return frozenset(i for i, a in enumerate(gt.split("|")) if a not in ("0", "."))
+
+
+def pair_phase(dl, v):
+    """(verdict, why) of a deletion and a small variant in one gene: verdict
+    biallelic, possibly biallelic, or cis (no second hit)."""
+    inside = dl["inside"] and dl["chrom"] == v["chrom"] and dl["start"] <= v["pos"] <= dl["end"]
+    # Read-backed phase first: on the same copy (cis) is no second hit, wherever the variant sits.
+    hd, hv = phase_haps(dl.get("gt")), phase_haps(v.get("gt"))
+    phased = None
+    if hd and hv and dl.get("ps") and dl.get("ps") == v.get("ps"):
+        if hd == hv:
+            return "cis", f"in cis: read-backed phase puts both on the same copy (phase set {v['ps']})"
+        phased = (f"in trans: read-backed phase puts them on different copies (phase set {v['ps']})" if not hd & hv
+                  else f"read-backed phase puts the variant on both copies (phase set {v['ps']}); check the reads")
+    if inside and v["copies"] >= 2:
+        return "biallelic", ("the variant is called homozygous inside the deletion: it is hemizygous, on the one "
+                             "copy the deletion leaves")
+    if inside and v["ploidy"] == 2:
+        return "possibly biallelic", ("a heterozygous call inside a called deletion: one of the two calls may be "
+                                      "wrong; check the reads")
+    if phased:
+        return ("biallelic" if phased.startswith("in trans") else "possibly biallelic"), phased
+    return "possibly biallelic", "phase unknown, possibly in trans (no read-backed phase links the two calls)"
+
+
+def two_hits(variants, dels):
+    """The genes hit twice: ({gene: entry}, {(gene, key): deletion text} of
+    the variants called homozygous inside a deletion, shown as hemizygous).
+    variants: [{gene, key, chrom, pos, text, genotype, copies, ploidy, gt, ps,
+    allele}] (allele: the severity name of a hypomorph, or None). An entry is
+    the best pair of the gene: verdict, why, deletion, variant, genotype, and
+    the allele name; a gene whose every pair is in cis has none. pairs:
+    {(gene, key): "<verdict> with <deletion>: <why>"}, the best pair of each
+    variant that has one."""
+    entries, hemi, pairs = {}, {}, {}
+    for v in variants:
+        for dl in dels.get(v["gene"], []):
+            verdict, why = pair_phase(dl, v)
+            if verdict == "biallelic" and why.startswith("the variant is called homozygous"):
+                hemi[(v["gene"], v["key"])] = dl["text"]
+            if verdict == "cis":
+                continue
+            e = {"gene": v["gene"], "verdict": verdict, "why": why, "deletion": dl["text"], "variant": v["text"],
+                 "genotype": "hemizygous" if (v["gene"], v["key"]) in hemi else v["genotype"],
+                 "allele": v.get("allele")}
+            old = entries.get(v["gene"])
+            if old is None or TWO_HIT_ORDER.index(verdict) < TWO_HIT_ORDER.index(old["verdict"]):
+                entries[v["gene"]] = e
+            k = (v["gene"], v["key"])
+            if k not in pairs or TWO_HIT_ORDER.index(verdict) < TWO_HIT_ORDER.index(pairs[k][0]):
+                pairs[k] = (verdict, f"{verdict} with {dl['text']}: {why}")
+    return entries, hemi, {k: t for k, (_, t) in pairs.items()}
 
 
 def sf_verdicts(gene, rule, alleles):
@@ -3590,7 +3954,8 @@ def acmg_sf_tier(d, s, clinical_vcf):
                                     "genotype": row["genotype"], "significance": row["significance"],
                                     "stars": row["stars"], "low_confidence": row["low_confidence"],
                                     "key": (row["chrom"], row["pos"], row["ref"], row["alt"]),
-                                    "copies": copies, "ploidy": ploidy})
+                                    "copies": copies, "ploidy": ploidy,
+                                    "gt": r[9].split(":")[0] if len(r) > 9 else "", "ps": gt_field(r, "PS")})
     if clinical_vcf:
         # A common record is in the clinical VCF through the ClinVar tier,
         # not as a rare HIGH impact; one of unknown frequency is listed and
@@ -3608,7 +3973,8 @@ def acmg_sf_tier(d, s, clinical_vcf):
                                  "frequency_unknown": x["frequency"] == "unknown",
                                  "weak_call": x["weak"], "call_note": "; ".join(x["why"]) or None,
                                  "gq": x["gq"], "dp": x["dp"], "ad": x["ad"],
-                                 "key": (c, pos, ref, alt), "copies": copies, "ploidy": ploidy})
+                                 "key": (c, pos, ref, alt), "copies": copies, "ploidy": ploidy,
+                                 "gt": gt, "ps": x.get("ps")})
     svs, sv_checked, sv_note = sf_structural(d, s, rules)
     # One verdict per gene, over its distinct variants: a ClinVar hit that is
     # also a HIGH-impact record is one variant.
@@ -3617,6 +3983,30 @@ def acmg_sf_tier(d, s, clinical_vcf):
         alleles.setdefault(x["gene"], {}).setdefault(x["key"], (max(x["copies"], 1), x["ploidy"] or 2))
     for x in svs:
         alleles.setdefault(x["gene"], {}).setdefault(x["key"], (1, 2))
+    # A called deletion of a gene whose rule needs two variants counts as one
+    # of them (two_hits), unless read-backed phase puts it on the variant's copy.
+    two_hit_note = None
+    try:
+        spans = {g: x["span"] for g, x in carrier_genes().items()}
+    except Unreadable as e:
+        spans = {}
+        two_hit_note = (f"A deletion as the second hit: only AnnotSV's gene names were read; step 35's deletions "
+                        f"need the gene spans of {e}")
+    dels, _, _ = gene_deletions(d, s, spans)
+    seen, variants = set(), []
+    for x in clinvar + high:
+        pseudo = rules[x["gene"]]["severity"].get(x["key"], {}).get("kind") == "pseudodeficiency"
+        if (x["gene"], x["key"]) not in seen and not pseudo:
+            seen.add((x["gene"], x["key"]))
+            variants.append({"gene": x["gene"], "key": x["key"], "chrom": x["key"][0], "pos": x["key"][1],
+                             "text": x["variant"], "genotype": x["genotype"], "copies": x["copies"],
+                             "ploidy": x["ploidy"] or 2, "gt": x["gt"], "ps": x["ps"], "allele": None})
+    entries, hemi, pairs = two_hits(variants, dels)
+    two = {}
+    for g in entries:
+        if rules[g]["report_if"] in ("biallelic", "hemizygous"):
+            alleles[g][("deletion", g)] = (1, 2)
+            two.update({k: t for k, t in pairs.items() if k[0] == g})
     verdict = {g: sf_verdicts(g, rules[g], a) for g, a in alleles.items()}
     reported = {"clinvar": [], "high": [], "sv": []}
     not_reported = []
@@ -3624,10 +4014,15 @@ def acmg_sf_tier(d, s, clinical_vcf):
         for x in rows:
             why, partial = verdict[x["gene"]][0][x["key"]], verdict[x["gene"]][1]
             rule = rules[x["gene"]]
-            for k in ("key", "copies", "ploidy"):
+            key = x["key"]
+            if (x["gene"], key) in hemi:
+                x["genotype"] = "hemizygous"
+            for k in ("key", "copies", "ploidy", "gt", "ps"):
                 x.pop(k, None)
             if why is None:
                 x.update(rule=rule["table_text"], rule_note=rule["note"], severity=partial)
+                if kind != "sv" and (x["gene"], key) in two:
+                    x["two_hit"] = two[(x["gene"], key)]
                 reported[kind].append(x)
             else:
                 not_reported.append({"gene": x["gene"], "variant": x["variant"], "genotype": x.get("genotype"),
@@ -3641,16 +4036,27 @@ def acmg_sf_tier(d, s, clinical_vcf):
             "high_impact_weak": sum(1 for x in high if x["weak_call"]),
             "high_impact_frequency_unknown": sum(1 for x in high if x["frequency_unknown"]),
             "structural": reported["sv"], "structural_checked": sv_checked, "structural_note": sv_note,
-            "not_reported": not_reported}
+            "not_reported": not_reported, "two_hit_note": two_hit_note}
 
 
-def carrier_list(p):
+def gt_field(r, key):
+    """One FORMAT field of a VCF record's first sample, or None."""
+    if len(r) < 10:
+        return None
+    v = dict(zip(r[8].split(":"), r[9].split(":"))).get(key)
+    return None if v in (None, "", ".") else v
+
+
+def carrier_list(p, d=None, s=None):
     """The sample's own carrier list: the ClinVar hits of step 6 (p) in the
     genes of assets/carrier_genes.tsv, one person, no partner needed. An
     allele the list marks hypomorph or pseudodeficiency is set aside, never a
-    carrier finding on its own."""
+    carrier finding on its own. With the sample folder (d, s), the genes of
+    autosomal recessive conditions that a called deletion and a hit both reach
+    (two_hits), and a hit called homozygous inside a deletion is shown as
+    hemizygous."""
     genes = carrier_genes()
-    carriers, aside = [], []
+    carriers, aside, variants = [], [], []
     for r in vcf_records(p):
         if len(r) < 8:
             continue
@@ -3672,8 +4078,27 @@ def carrier_list(p):
                 aside.append(item)
             else:
                 carriers.append(item)
-    return {"genes_on_list": len(genes), "list": "assets/carrier_genes.tsv",
-            "carriers": carriers, "set_aside": aside}
+            if not sev or sev["kind"] == "hypomorph":
+                variants.append({"gene": g, "key": key, "chrom": row["chrom"], "pos": row["pos"],
+                                 "text": item["variant"], "genotype": item["genotype"], "copies": copies,
+                                 "ploidy": ploidy, "gt": gt, "ps": gt_field(r, "PS"),
+                                 "allele": sev["name"] if sev else None, "item": item})
+    out = {"genes_on_list": len(genes), "list": "assets/carrier_genes.tsv",
+           "carriers": carriers, "set_aside": aside}
+    if d is not None:
+        dels, read, unread = gene_deletions(d, s, {g: x["span"] for g, x in genes.items()})
+        entries, hemi, _ = two_hits(variants, dels)
+        for v in variants:
+            if (v["gene"], v["key"]) in hemi:
+                v["item"].update(genotype="hemizygous",
+                                 hemizygous=f"called homozygous inside {hemi[(v['gene'], v['key'])]}")
+        rows = []
+        for g, e in sorted(entries.items()):
+            if genes[g]["inheritance"] == "AR":
+                e.update(condition=genes[g]["condition"], inheritance="AR")
+                rows.append(e)
+        out["two_hits"] = {"genes": rows, "deletions_read": read, "deletions_not_read": unread}
+    return out
 
 
 def acmg_sf_or_note(d, s, clinical_vcf):
@@ -3686,11 +4111,11 @@ def acmg_sf_or_note(d, s, clinical_vcf):
                 "structural": [], "not_reported": []}
 
 
-def carrier_list_or_note(p):
+def carrier_list_or_note(p, d=None, s=None):
     """carrier_list, or the reason it could not run, which both reports print:
     the ClinVar hits stay."""
     try:
-        return carrier_list(p)
+        return carrier_list(p, d, s)
     except Unreadable as e:
         return {"unavailable": str(e)}
 
@@ -4100,6 +4525,7 @@ SECTIONS = [
     ("roh", "Runs of homozygosity", "11", sec_roh),
     ("haplogroup", "Mitochondrial haplogroup", "12", sec_haplogroup),
     ("y_haplogroup", "Y-chromosome haplogroup (Yleaf)", "37", sec_y_haplogroup),
+    ("y_tree", "Y placement on the current public tree", "37", sec_y_tree),
     ("y_str", "Y-STR markers (HipSTR)", "45", sec_y_str),
     ("consumer_export", "Raw-data export (23andMe v5 layout)", "40", sec_consumer_export),
     ("bloodtype", "Blood groups (predicted)", "41", sec_bloodtype),
