@@ -621,6 +621,8 @@ jobs:
           E2E_TRACE: ${{ needs.e2e-plan.outputs.trace }}
           # The free disk a leg needs before its first case (e2e-run.sh).
           E2E_MIN_FREE_GB: 10
+          # Copies of the pinned e2e data, tried before EBI (data_fetch in e2e-run.sh).
+          E2E_DATA_MIRROR: https://github.com/GeiserX/OwnGenome/releases/download/e2e-data-1
           E2E_BASE_OUT: ${{ matrix.job == 'base' && format('{0}/base.tar.zst', runner.temp) || '' }}
           E2E_BASE_IN: ${{ matrix.job != 'base' && format('{0}/e2e-base/base.tar.zst', runner.temp) || '' }}
           # Keep the downloads to the end of the job only when a save step uses them.

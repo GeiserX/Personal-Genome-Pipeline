@@ -437,6 +437,21 @@ trap 'kill "$LOW_PID" 2> /dev/null || true' EXIT
 # a run that saves the cache) a case's cached files are deleted after it,
 # to give the disk back.
 DATA_CACHE=${E2E_DATA_CACHE:-}
+# E2E_DATA_MIRROR, when set, is a folder URL (a GitHub release) holding copies
+# of these pinned files under their own names. Each file is tried there once
+# first, then at its source. EBI's 1000 Genomes hosts swing between a few KB/s
+# and MB/s from one request to the next, and a leg with no Actions cache could
+# spend its whole time limit on one download. The pin checks both copies the
+# same way, so the mirror can only save time, never change what a case reads.
+# mfetch URL DEST KIND SUM: fetch from the mirror, then from URL. Called
+# inside data_fetch, after it sources scripts/lib/common.sh for fetch.
+mfetch() {
+  if [ -n "${E2E_DATA_MIRROR:-}" ]; then
+    FETCH_TRIES=1 fetch "${E2E_DATA_MIRROR%/}/${1##*/}" "$2" "$3" "$4" 2> /dev/null && return 0
+    echo "Data cache: ${1##*/} not on the mirror; downloading it from its source"
+  fi
+  fetch "$@"
+}
 # data_fetch NAME: fills E2E_DATA_CACHE/NAME with what is missing, in a
 # subshell that sources scripts/lib/common.sh for fetch and the pins.
 data_fetch() (
@@ -447,21 +462,21 @@ data_fetch() (
     mocha)
       m="${d}/manifest.txt"
       { [ -s "$m" ] && [ "$(_digest sha256 "$m")" = "$MOCHA_PANEL_MANIFEST_SHA256" ]; } \
-        || fetch "${MOCHA_PANEL_URL}/20220804_manifest.txt" "$m" sha256 "$MOCHA_PANEL_MANIFEST_SHA256" || exit 1
+        || mfetch "${MOCHA_PANEL_URL}/20220804_manifest.txt" "$m" sha256 "$MOCHA_PANEL_MANIFEST_SHA256" || exit 1
       # mocha-1 cuts the panel to the fixture's chr20 slice.
       f=1kGP_high_coverage_Illumina.chr20.filtered.SNV_INDEL_SV_phased_panel.vcf.gz
       for e in "" .tbi; do
         md5=$(awk -v n="${f}${e}" '$1 == n {print $2}' "$m")
         [ -n "$md5" ] || { echo "ERROR: ${f}${e} is not in the panel manifest" >&2; exit 1; }
         [ -s "${d}/raw/${f}${e}" ] && [ "$(_digest md5 "${d}/raw/${f}${e}")" = "$md5" ] && continue
-        fetch "${MOCHA_PANEL_URL}/${f}${e}" "${d}/raw/${f}${e}" md5 "$md5" || exit 1
+        mfetch "${MOCHA_PANEL_URL}/${f}${e}" "${d}/raw/${f}${e}" md5 "$md5" || exit 1
       done ;;
     archaic)
       url=$(sed -n 's/^ARCHAIC_1KG_SITES_URL=//p' "${REPO}/scripts/setup.sh")
       [ -n "$url" ] || { echo "ERROR: no ARCHAIC_1KG_SITES_URL line in scripts/setup.sh" >&2; exit 1; }
       s="${d}/1kg_sites.vcf.gz"
       [ -s "$s" ] && [ "$(_digest md5 "$s")" = "$ARCHAIC_1KG_SITES_MD5" ] && exit 0
-      fetch "$url" "$s" md5 "$ARCHAIC_1KG_SITES_MD5" || exit 1 ;;
+      mfetch "$url" "$s" md5 "$ARCHAIC_1KG_SITES_MD5" || exit 1 ;;
     *) echo "ERROR: no data cache entry ${1}" >&2; exit 1 ;;
   esac
 )
