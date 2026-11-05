@@ -170,6 +170,33 @@ export ALLOW_ALT_REFERENCE=true
 
 The depth loss above then applies to everything that sample produces. Unset both variables to go back to the default.
 
+## The masked reference
+
+`setup.sh --masked-reference` builds `reference/GRCh38_no_alt_analysis_set_maskedGRC.fasta`: the default reference with GRCh38's false duplications set to N ([why](00-reference-setup.md#the-masked-reference-optional)). It has the same sequence names and lengths, so every annotation stays, but the reads of KCNE1, CBS, U2AF1, CRYAA and the other genes with a false copy only reach a caller after the sample is aligned to it. Use it for a sample by pointing `REF_FASTA` at it for every step from step 02 on, or `--reference` for the Nextflow run, and follow the steps above:
+
+```bash
+./scripts/setup.sh --masked-reference ${GENOME_DIR}
+export REF_FASTA=reference/GRCh38_no_alt_analysis_set_maskedGRC.fasta
+```
+
+Step 02 builds its own minimap2 index for it the first time, `GRCh38_no_alt_analysis_set_maskedGRC.sr.mmi`. MEGAnE's k-mer set (step 50) is built from the reference, so run `setup.sh --megane-kmers` again with the same `REF_FASTA`.
+
+The `@SQ` names and lengths of the two references are the same, so they cannot tell a BAM aligned to the default reference from one aligned to the masked one. The aligner's `@PG` line can: minimap2's names the index (`..._maskedGRC.sr.mmi`, from step 02 or the Nextflow run) and bwa-mem2's the FASTA (`..._maskedGRC.fasta`, from step 02a). `validate-setup.sh` reads it: with `REF_FASTA` on the masked reference it fails a BAM whose minimap2 or BWA `@PG` line names no `_maskedGRC` file, and with `REF_FASTA` on the default one it fails a BAM whose line names one. Only the reference or index argument counts: options, the read group and the FASTQ, BAM or CRAM names are skipped, so a sample called `x_maskedGRC` changes nothing. A BAM whose aligner lines name both references (reads merged from the two) fails either way. A BAM with no minimap2 or BWA `@PG` line, or only such lines without a command line (`CL:`), as a vendor's BAM or a rewritten header can have, gets a warning on the masked reference and no check on the default one. The check goes by the file name, so keep the `_maskedGRC` in the names `setup.sh` and step 02 give the FASTA and the index. To look by hand, with `sam` and `BAM` defined as in [the checks above](#checks-that-prove-a-bam-is-on-the-new-reference):
+
+```bash
+sam view -H "$BAM" | grep -E '^@PG.*(ID|PN):(minimap2|bwa-mem2|bwa)' | grep -oE 'GRCh38_no_alt_analysis_set[^ ]*\.(sr\.mmi|fasta)'   # ..._maskedGRC.sr.mmi or ..._maskedGRC.fasta on the masked reference
+```
+
+What it changes was measured on chr21 by the CI case `tests/e2e/fixitfelix-chr21-1.sh`: HG002's read pairs over both copies of KCNE1, CBS and CRYAA (GIAB's Element AVITI 2x150 data, 81x), aligned with step 02 to chr21 with and without the mask, called with step 03 and compared with GIAB's CMRG v1.00 benchmark (Wagner et al., Nat Biotechnol 2022, PMID 35132260), alleles and genotype. The case requires a recall of 0.9 or more on the masked chr21 and under 0.5 on the stock one for each gene. The run of 2026-11-04 gave:
+
+| Gene | Benchmark variants | Found, stock chr21 | Found, masked chr21 |
+|---|---|---|---|
+| KCNE1 | 104 | 17 (0.16) | 104 (1.00) |
+| CBS | 52 | 2 (0.04) | 51 (0.98) |
+| CRYAA | 9 | 0 (0.00) | 9 (1.00) |
+
+On the same reads, step 16b reads all four genes (KCNE1, CBS, U2AF1 and CRYAA) on the masked chr21 and none of them on the stock one. Only chr21 is measured: the other false duplications (on chr9, chr13, chr16, chrX and two unlocalized scaffolds) are masked the same way and not measured here.
+
 ## References considered and not chosen
 
-The decoy variant of the same NCBI set and GIAB's GRCh38 file that also masks false duplications were considered. [Reference setup](00-reference-setup.md#why-the-no-alt-analysis-set) says why neither is the default and how to use the decoy variant through `REF_FASTA`; it has no ALT or HLA contigs, so `validate-setup.sh` accepts it as it is.
+The decoy variant of the same NCBI set was considered. [Reference setup](00-reference-setup.md#why-the-no-alt-analysis-set) says why it is not the default and how to use it through `REF_FASTA`; it has no ALT or HLA contigs, so `validate-setup.sh` accepts it as it is. The masked reference above is an option, not the default: it changes nothing for a sample until that sample is aligned again.

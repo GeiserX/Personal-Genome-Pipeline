@@ -240,15 +240,20 @@ def common_match(benign, chrom, s0, e0):
 
 # --- findings ----------------------------------------------------------------
 
-def finding(gene, text, copies):
-    """copies: how many of the person's copies the finding is on (1 or 2)."""
-    return {"gene": gene, "text": text, "copies": copies}
+def finding(gene, text, copies, hypomorph=None):
+    """copies: how many of the person's copies the finding is on (1 or 2).
+    hypomorph: the name of a low-function allele of the list's severity
+    column, which counts only beside a full loss of function in the partner
+    (screen_couple)."""
+    return {"gene": gene, "text": text, "copies": copies, "hypomorph": hypomorph}
 
 
 def zygosity(gt, chrom, sex, par):
     """het, hom, hemizygous, or None (no alt allele)."""
-    a = [x for x in re.split(r"[/|]", gt) if x not in (".", "")]
-    alt = [x for x in a if x != "0"]
+    # A '.' allele still counts in the ploidy: step 06 splits a GT 1/2 record
+    # into ./1 halves, and each half is one copy, never hom.
+    a = [x for x in re.split(r"[/|]", gt) if x != ""]
+    alt = [x for x in a if x not in ("0", ".")]
     if not alt:
         return None
     if chrom in ("chrX", "chrY") and sex == "male" and not par:
@@ -265,7 +270,11 @@ def stars_text(n):
 def clinvar_findings(path, genes, sex, par, aside=None):
     """Step 06's hits in genes of the list, and the count of all hits. A hit
     the list marks as a hypomorph or pseudodeficiency allele (its severity
-    column) is no carrier finding: it goes to aside as a text."""
+    column) is no carrier finding on its own: it goes to aside as a text. A
+    hypomorph is also returned as a finding marked hypomorph: beside a full
+    loss of function in the other partner's same gene it is the second hit of
+    the child (TAR syndrome is a null allele plus an RBM8A low-expression
+    allele); screen_couple drops it otherwise. total counts every hit."""
     out, total = [], 0
     for r in collect_summary.vcf_records(path):
         if len(r) < 8:
@@ -282,10 +291,17 @@ def clinvar_findings(path, genes, sex, par, aside=None):
                 if aside is not None:
                     aside.append("%s:%d %s>%s %s in %s: %s, a %s allele" % (
                         h["chrom"], h["pos"], h["ref"], h["alt"], z, g, sev["name"], sev["kind"]))
+                if sev["kind"] == "hypomorph":
+                    text = "%s:%d %s>%s %s, %s, a hypomorph allele" % (h["chrom"], h["pos"], h["ref"], h["alt"],
+                                                                       z, sev["name"])
+                    out.append(finding(g, text, 1 if z == "het" else 2, sev["name"]))
                 continue
             if g in genes:
                 ident = "" if r[2] in (".", "") else ", ClinVar %s" % r[2]
-                text = "%s:%d %s>%s %s, %s, %s%s" % (h["chrom"], h["pos"], h["ref"], h["alt"], z,
+                # A split half call counts as het (one copy) but reads as the other reports word it.
+                words = ("one copy, other copy not called ref (%s)" % gt
+                         if z == "het" and re.fullmatch(r"[1-9][/|]\.|\.[/|][1-9]", gt) else z)
+                text = "%s:%d %s>%s %s, %s, %s%s" % (h["chrom"], h["pos"], h["ref"], h["alt"], words,
                                                      h["significance"], stars_text(h["stars"]), ident)
                 out.append(finding(g, text, 1 if z == "het" else 2))
     return out, total
@@ -523,6 +539,11 @@ def ar_row(g, a, b, fa, fb):
     more = [n for n, f in ((a, fa), (b, fb)) if len(f) > 1 and all(x["copies"] == 1 for x in f)]
     why = ("Both partners carry a change in %s, linked to %s (autosomal recessive). A child who inherits "
            "the change of each parent can have the condition: %s." % (g["gene"], g["condition"], risk))
+    low = [n for n, f in ((a, fa), (b, fb)) if f and all(x.get("hypomorph") for x in f)]
+    if low:
+        why += (" The change of %s is a low-function (hypomorph) allele, not a full loss of function: with the "
+                "other parent's loss-of-function change a child can have the condition, for some genes in a "
+                "milder form; two such alleles alone are set aside." % " and ".join(low))
     if more:
         why += (" %s %s two changes in the gene; when they sit on different copies, every child gets one, "
                 "and the chance is higher." % (" and ".join(more), "has" if len(more) == 1 else "have"))
@@ -558,10 +579,13 @@ def xl_lines(g, who, sex, f):
 def screen_couple(a, b, sexes, found, genes):
     """Rows of the couple table, shared genes first, then X-linked, then the rest."""
     rows = []
-    for name in sorted(set(x["gene"] for x in found[a] + found[b])):
+    # A hypomorph (finding marked hypomorph) counts only when the other
+    # partner has a full loss of function in the same gene.
+    full = {s: set(x["gene"] for x in found[s] if not x.get("hypomorph")) for s in (a, b)}
+    for name in sorted(full[a] | full[b]):
         g = genes[name]
-        fa = [x for x in found[a] if x["gene"] == name]
-        fb = [x for x in found[b] if x["gene"] == name]
+        fa = [x for x in found[a] if x["gene"] == name and (not x.get("hypomorph") or name in full[b])]
+        fb = [x for x in found[b] if x["gene"] == name and (not x.get("hypomorph") or name in full[a])]
         if g["inheritance"] == "XL":
             parts = [xl_lines(g, w, sexes.get(w), f) for w, f in ((a, fa), (b, fb)) if f]
             result, risk, why = "x_linked", "; ".join(p[0] for p in parts), " ".join(p[1] for p in parts)
@@ -727,7 +751,7 @@ def cmd_screen(a):
                 gaps.append("Carrier deletion alleles of %s: no interval table (step 35)." % s)
             aside = []
             f, total = clinvar_findings(clinvar[s], genes, sexes[s], par, aside)
-            info = {"clinvar": "%d / %d" % (len(f), total)}
+            info = {"clinvar": "%d / %d" % (sum(1 for x in f if not x["hypomorph"]), total)}
             for note in aside:
                 gaps.append("Set aside for %s, not a carrier finding on its own: %s." % (s, note))
             if s not in delly:
@@ -765,7 +789,8 @@ def cmd_screen(a):
                 if txt.startswith("CYP21A2 not assessed"):
                     gaps.append("CYP21A2 deletion and conversions of %s: %s." % (s, txt))
             else:
-                gaps.append("CYP21A2 deletion and conversions of %s: no CYP21A2 table (step 35)." % s)
+                gaps.append("CYP21A2 deletion and conversions of %s: step 35's CYP21A2 table was not passed "
+                            "to the couple screen (--cyp21a2)." % s)
             if s in eh:
                 r = eh_findings(eh[s], genes)
                 info["eh"] = "%d expanded" % len(r)
@@ -908,7 +933,9 @@ def cmd_genes(a):
         "# severity: alleles of the gene that are not a full loss of function, separated by \";\": each is",
         "#   hypomorph or pseudodeficiency, then chrom:pos:ref:alt (GRCh38), then a name; \".\" for none. Such",
         "#   an allele never makes a carrier finding on its own (the couple screen, step 39, and the",
-        "#   carrier list of the sample report).",
+        "#   carrier list of the sample report). With a called deletion of the gene it is a second hit (the",
+        "#   two-hit lines of the sample report, bin/collect_summary.py two_hits). In the couple screen a",
+        "#   hypomorph beside a full loss of function in the other partner's same gene is a shared gene.",
         "# Rebuilt with: couple_report.py genes (docs/39-couple.md says how).",
     ]
     with open(a.out, "w", encoding="utf-8") as f:

@@ -80,7 +80,7 @@ process PARASCOPY {
     path(depth_bed)       // background windows, or [] for Parascopy's GRCh38 windows
 
     output:
-    tuple val(meta), path("${meta.id}_smn_copy_number.tsv"), emit: copy_number
+    tuple val(meta), path("${meta.id}_smn_copy_number.tsv"), emit: copy_number, optional: true  // the SMN1 row's
     tuple val(meta), path("${meta.id}_parascopy"),           emit: results
     tuple val(meta), path("${meta.id}_hba_copy_number.tsv"), emit: hba
     tuple val(meta), path("${meta.id}_*_copy_number.tsv"),   emit: tables  // every catalog row's table, and HBA's

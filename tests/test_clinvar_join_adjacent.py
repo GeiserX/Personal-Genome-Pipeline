@@ -9,8 +9,10 @@ awk, mawk):
      0/1 and 1/0 are the same het call;
   2. phased records are joined only in the same phase set (FORMAT/PS) with
      the same GT: other phase sets and the other haplotype are not joined;
-  3. a het next to a hom, a half call (./1), overlapping records and records
-     11 bp apart are not joined; 10 bp apart are;
+  3. a het next to a hom, an unphased half call (./1), overlapping records
+     and records 11 bp apart are not joined; 10 bp apart are; a phased half
+     call (1|.) joins a record with its ALT on the same haplotype and keeps
+     "." on the other;
   4. a single SNV gives no combined record;
   5. finish drops a combined record whose part disagrees with the reference;
   6. the combined records come out in POS order;
@@ -21,6 +23,16 @@ awk, mawk):
      scripts/06-clinvar-screen.sh on the fixture records in
      tests/fixtures/vcf/combined_allele_*.vcf: the 2-star ClinVar record of the combined allele is a hit, its two 1-star
      parts are hits marked as its parts, and the single SNV hit is unchanged.
+     The delins written as two records is matched once, as the one combined
+     record (four hits in all), so this check is the proof that a delins split
+     differently from ClinVar's record is matched exactly once;
+  9. with docker, the same step on a second sample: a 1/2 record at a poly-A
+     tract (CAAAA to C or CAA) whose first alt is a ClinVar allele is a hit
+     with GT 1/., worded "one copy, other copy not called ref", never het (on
+     the step before --multi-overlaps . it was 1/0, het); a plain 0/1 SNV hit
+     beside it stays het; and the always-report list (CLINVAR_ALWAYS_REPORT,
+     four sites) gives every site a call: het with its GQ, "ref, GQ 50" from a
+     gVCF block, the 1/. call, and "no call" with the reason.
 
 The window is 10 bp; set it to 0 in the awk file and checks 1, 2, 3, 6, 7 and
 8 fail.
@@ -144,7 +156,18 @@ def awk_checks(name, awk, work):
     out, raw = join(awk, [rec(30000203, "T", "A", "0/1"), rec(30000208, "T", "C", "1/1")])
     check(f"{name}: a het next to a hom: not joined", out == [], raw)
     out, raw = join(awk, [rec(30000203, "T", "A", "./1"), rec(30000208, "T", "C", "./1")])
-    check(f"{name}: half calls (./1): not joined", out == [], raw)
+    check(f"{name}: unphased half calls (./1): not joined", out == [], raw)
+    out, raw = join(awk, [rec(30000203, "T", "A", "1|.", 100), rec(30000208, "T", "C", "1|0", 100)])
+    check(f"{name}: a phased half call (1|.) and 1|0 in one phase set: joined, '.' kept on the other haplotype",
+          out is not None and [core(r) for r in out] == [("30000203", "TGTAAT", "AGTAAC", "GT:PS", "1|.:100")], raw)
+    out, raw = join(awk, [rec(30000203, "T", "A", "1|0", 100), rec(30000208, "T", "C", "1|.", 100)])
+    check(f"{name}: 1|0 then a phased half call (1|.): joined, '.' kept on the other haplotype",
+          out is not None and [core(r) for r in out] == [("30000203", "TGTAAT", "AGTAAC", "GT:PS", "1|.:100")], raw)
+    out, raw = join(awk, [rec(30000203, "T", "A", ".|1", 100), rec(30000208, "T", "C", ".|1", 100)])
+    check(f"{name}: two phased half calls on one haplotype: joined",
+          out is not None and [core(r) for r in out] == [("30000203", "TGTAAT", "AGTAAC", "GT:PS", ".|1:100")], raw)
+    out, raw = join(awk, [rec(30000203, "T", "A", "1|.", 100), rec(30000208, "T", "C", "0|1", 100)])
+    check(f"{name}: a phased half call and an ALT on the other haplotype: not joined", out == [], raw)
     out, raw = join(awk, [rec(30000203, "TGT", "T", "0/1"), rec(30000204, "G", "A", "0/1")])
     check(f"{name}: overlapping records: not joined", out == [], raw)
     out, raw = join(awk, [rec(30000203, "T", "A", "0/1"), rec(30000213, "G", "T", "0/1")])
@@ -187,6 +210,8 @@ def awk_checks(name, awk, work):
         "chr22\t30000404\t9900008\tC\tT\t50\tPASS\t" + cv.format(g="SYNTH5:5")[1:] + "\tGT\t0/1",
         "chr22\t30000500\t9900009\tA\tG\t50\tPASS\t" + cv.format(g="SYNTH6:6")[1:] + "\tGT:PS\t0|1:7",
         "chr22\t30000504\t9900010\tC\tT\t50\tPASS\t" + cv.format(g="SYNTH6:6")[1:] + "\tGT:PS\t1|0:7",
+        "chr22\t30000600\t9900011\tA\tG\t50\tPASS\t" + cv.format(g="SYNTH7:7")[1:] + "\tGT:PS\t1|.:8",
+        "chr22\t30000605\t9900012\tC\tT\t50\tPASS\t" + cv.format(g="SYNTH7:7")[1:] + "\tGT:PS\t1|0:8",
     ]
     with open(hits, "w") as f:
         f.write(HEAD + "\n".join(lines) + "\n")
@@ -206,7 +231,92 @@ def awk_checks(name, awk, work):
           info.get(("30000300",), "").endswith("PGP_ONE_ALLELE=chr22:30000305:C:T")
           and info.get(("30000305",), "").endswith("PGP_ONE_ALLELE=chr22:30000300:A:G"), info)
     check(f"{name}: tag: hits in two genes, or on the two haplotypes of a phase set, are unchanged",
-          all(x in got for x in lines[6:]), info)
+          all(x in got for x in lines[6:10]), info)
+    check(f"{name}: tag: a phased half call (1|.) and 1|0 in one gene and phase set: flagged both ways",
+          info.get(("30000600",), "").endswith("PGP_ONE_ALLELE=chr22:30000605:C:T")
+          and info.get(("30000605",), "").endswith("PGP_ONE_ALLELE=chr22:30000600:A:G"), info)
+
+
+POLY_HEAD = ("##fileformat=VCFv4.2\n##contig=<ID=chr22,length=50818468>\n"
+             '##INFO=<ID=END,Number=1,Type=Integer,Description="End of the block">\n'
+             '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+             '##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">\n'
+             '##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Depth">\n'
+             "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS2\n")
+
+
+def polyt_checks(gd, image, env):
+    """Check 9: a split multiallelic poly-A call, and the always-report list."""
+    vcf = os.path.join(gd, "S2", "vcf")
+    os.makedirs(vcf, exist_ok=True)
+    tract = ref_at(30000011, 5)
+    check("poly-A: the reference holds C and a run of A at chr22:30000011", tract == "CAAAA", tract)
+    with open(os.path.join(vcf, "S2.vcf"), "w") as f:
+        f.write(POLY_HEAD + f"chr22\t30000011\t.\t{tract}\tC,CAA\t50\tPASS\t.\tGT:GQ:DP\t1/2:45:30\n"
+                "chr22\t30000210\t.\tC\tT\t50\tPASS\t.\tGT:GQ:DP\t0/1:40:30\n")
+    with open(os.path.join(vcf, "S2.g.vcf"), "w") as f:
+        f.write(POLY_HEAD + "chr22\t30000001\t.\tA\t<*>\t0\t.\tEND=30000010\tGT:GQ:DP\t0/0:50:30\n"
+                f"chr22\t30000011\t.\t{tract}\tC,CAA,<*>\t50\tPASS\t.\tGT:GQ:DP\t1/2:45:30\n"
+                "chr22\t30000016\t.\tA\t<*>\t0\t.\tEND=30000209\tGT:GQ:DP\t0/0:50:30\n"
+                "chr22\t30000210\t.\tC\tT,<*>\t50\tPASS\t.\tGT:GQ:DP\t0/1:40:30\n")
+    # ClinVar's allele: the 4-base deletion of the tract, first among the records.
+    cv = os.path.join(gd, "clinvar", "clinvar_pathogenic_chr.vcf")
+    lines = open(cv).readlines()
+    first = next(i for i, l in enumerate(lines) if not l.startswith("#"))
+    lines.insert(first, f"chr22\t30000011\t9900005\t{tract}\tC\t.\t.\tGENEINFO=SYNTH4:990004;CLNSIG=Pathogenic;"
+                        "CLNREVSTAT=criteria_provided,_single_submitter\n")
+    with open(cv, "w") as f:
+        f.writelines(lines)
+    sites = os.path.join(gd, "sites.tsv")
+    with open(sites, "w") as f:
+        f.write("# four sites of the test\nchrom\tpos\tref\talt\tgene\thgvs\tclinvar_id\n"
+                "chr1\t100\tA\tG\tSYNTHA\tc.1A>G\t1\n"
+                f"chr22\t30000011\t{tract}\tC\tSYNTH4\tc.2del\t9900005\n"
+                "chr22\t30000030\tA\tG\tSYNTHB\tc.3A>G\t2\n"
+                "chr22\t30000210\tC\tT\tSYNTH2\tc.4C>T\t9900004\n")
+    uid = f"{os.getuid()}:{os.getgid()}"
+    p = subprocess.run(["docker", "run", "--rm", "--user", uid, "-v", f"{gd}:/g", image, "sh", "-c",
+                        "set -e; for v in S2.vcf S2.g.vcf; do bcftools view -Oz -o /g/S2/vcf/$v.gz /g/S2/vcf/$v;"
+                        " bcftools index -f -t /g/S2/vcf/$v.gz; done;"
+                        " bcftools view -Oz -o /g/clinvar/clinvar_pathogenic_chr.vcf.gz /g/clinvar/clinvar_pathogenic_chr.vcf;"
+                        " bcftools index -f -t /g/clinvar/clinvar_pathogenic_chr.vcf.gz"],
+                       capture_output=True, text=True)
+    check("poly-A: the files compress and index", p.returncode == 0, p.stderr)
+    e = dict(env, CLINVAR_ALWAYS_REPORT=sites)
+    p = subprocess.run(["bash", os.path.join(REPO, "scripts", "06-clinvar-screen.sh"), "S2"],
+                       capture_output=True, text=True, env=e)
+    log = p.stdout + p.stderr
+    print("    | " + log.rstrip("\n").replace("\n", "\n    | "))
+    check("poly-A: step 06 exits 0", p.returncode == 0, f"exit {p.returncode}")
+    hits_path = os.path.join(gd, "S2", "clinvar", "S2_clinvar_hits.vcf")
+    rows = []
+    if os.path.isfile(hits_path):
+        rows = [l.rstrip("\n").split("\t") for l in open(hits_path) if not l.startswith("#")]
+    by = {(r[1], r[3], r[4]): r for r in rows}
+    poly = by.get(("30000011", tract, "C"))
+    check("poly-A: the ClinVar allele of the 1/2 record is one hit, with GT 1/. (the other copy holds CAA)",
+          poly is not None and poly[9].split(":")[0] == "1/." and len(rows) == 2, rows)
+    words = subprocess.run(["awk", "-f", os.path.join(REPO, "bin", "clinvar_hits.awk"), hits_path],
+                           capture_output=True, text=True).stdout if os.path.isfile(hits_path) else ""
+    zyg = {r.split("\t")[2]: r.split("\t")[5] for r in words.splitlines()}
+    check("poly-A: the hit is not worded het", zyg.get("30000011") == "one copy, other copy not called ref (1/.)", zyg)
+    check("poly-A: the plain 0/1 SNV hit beside it is still het", zyg.get("30000210") == "het", zyg)
+    check("poly-A: the step's log does not call the tract hit het",
+          not any("30000011" in l and " het " in l for l in log.splitlines()), "")
+    deep = os.path.join(gd, "S2", "clinvar", "S2_clinvar_deep_intronic.tsv")
+    got = {}
+    if os.path.isfile(deep):
+        got = {l.split("\t")[1]: tuple(l.rstrip("\n").split("\t")[7:9]) for l in list(open(deep))[1:]}
+    check("always-report: one row per site, all four",
+          sorted(got) == ["100", "30000011", "30000030", "30000210"], got)
+    check("always-report: the carried SNV gives het with its GQ and DP", got.get("30000210") == ("het", "GQ 40, DP 30"), got)
+    check("always-report: a site inside a gVCF reference block gives ref with the block's GQ",
+          got.get("30000030") == ("ref", "GQ 50 (gVCF block)"), got)
+    check("always-report: the poly-A site gives the 1/. call, not het",
+          got.get("30000011") == ("one copy, other copy not called ref (1/.)", "GQ 45, DP 30"), got)
+    check("always-report: a site no record covers gives no call, and why",
+          got.get("100") == ("no call", "no record in the VCF or the gVCF covers the site"), got)
+    check("always-report: the log lists the sites", "SYNTHB c.3A>G chr22:30000030 A>G: ref, GQ 50 (gVCF block)" in log, "")
 
 
 def docker_checks(work):
@@ -274,6 +384,7 @@ def docker_checks(work):
     check("step 06: the log says which hits are parts of the combined allele",
           "part of a combined allele: chr22:30000038 GCCAT>CATGGG" in log
           and "combined allele of chr22:30000037 AGC>A + chr22:30000042 T>TGGG" in log, "")
+    polyt_checks(gd, image, env)
     # Files written by the containers belong to the caller (run_in --user).
     subprocess.run(["docker", "run", "--rm", "-v", f"{work}:/w", image, "sh", "-c", "rm -rf /w/genome"],
                    capture_output=True)

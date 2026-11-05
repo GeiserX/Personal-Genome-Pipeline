@@ -1085,14 +1085,18 @@ workflow {
     // did not run for, or whose task failed and was ignored; that step's slot
     // is null and drops out of the list. The join also makes the report wait
     // for every selected step it shows, the SV consensus merge included.
-    // The ACMG SF rules, the carrier list, the gene callability table and the
-    // confirmed mtDNA variants the report applies (bin/ is the only repository
+    // The ACMG SF rules, the carrier list, the gene callability table, the
+    // confirmed mtDNA variants and the two paralog catalogs (step 35's loci,
+    // step 35b's regions) the report applies (bin/ is the only repository
     // folder a task sees).
-    def report_assets = ["acmg_sf.tsv", "carrier_genes.tsv", "callability_genes.tsv", "mito_confirmed.tsv"].collect { n -> file("${projectDir}/assets/${n}", checkIfExists: true) }
+    def report_assets = ["acmg_sf.tsv", "carrier_genes.tsv", "callability_genes.tsv", "mito_confirmed.tsv",
+                         "paralog_loci.tsv", "paraphase_genes.tsv"].collect { n -> file("${projectDir}/assets/${n}", checkIfExists: true) }
     ch_report_inputs = ch_vcf
         .map { meta, vcf, idx -> [meta.id, meta, vcf] }
         .join(PGX.out.clinvar_dir.map             { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.clinvar_cdna.map            { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.clinvar_cdna_scan.map       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(PGX.out.clinvar_deep_intronic.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.pharmcat_json.map           { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.pharmcat_html.map           { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.cpic_phenotypes.map         { meta, f -> [meta.id, f] }, remainder: true)
@@ -1105,11 +1109,15 @@ workflow {
         .join(CLINICAL.out.haplogroup.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.haplocheck.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.y_haplogroup.map   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.y_tree.map         { meta, tree, _path -> [meta.id, tree] }, remainder: true)
+        .join(BAM_ANALYSIS.out.y_tree.map         { meta, _tree, path -> [meta.id, path] }, remainder: true)
         .join(BAM_ANALYSIS.out.y_str.map          { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.paraphase_cn.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.paraphase_vars.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.smn_copy_number.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.hba_copy_number.map { meta, f -> [meta.id, f] }, remainder: true)
+        // step 35's other catalog tables, a list per sample (flattened below)
+        .join(BAM_ANALYSIS.out.parascopy_tables.map { meta, fs -> [meta.id, fs] }, remainder: true)
         .join(CLINICAL.out.prs_scores.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.ancestry_results.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.ancestry_fine.map      { meta, f -> [meta.id, f] }, remainder: true)
@@ -1163,7 +1171,7 @@ workflow {
         .join(ch_mocha_summary.map                { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
-        .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null } + report_assets] }
+        .map { items -> [items[1], items[2], items[3..-1].collectMany { f -> (f instanceof List ? f : [f]) }.findAll { f -> f != null } + report_assets] }
 
     // QC files for MultiQC (mosdepth summaries)
     ch_multiqc_files = BAM_ANALYSIS.out.coverage.map { meta, f -> f }

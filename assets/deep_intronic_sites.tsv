@@ -1,0 +1,18 @@
+# Known pathogenic deep intronic alleles, reported on every run of step 06
+# and CLINVAR_SCREEN with the sample's call at each one, carrier or not:
+# clinvar/<sample>_clinvar_deep_intronic.tsv. These sit far from any exon, so
+# exome-style filters and splice-site windows miss them, and a site with no
+# call reads the same as a site with a reference call unless the gVCF says
+# which (Vaz-Drago 2017, Hum Genet, PMID 28497172). Each row is a ClinVar
+# Pathogenic record with an expert-panel or multi-submitter review.
+# Positions are GRCh38 VCF positions; REF and ALT are ClinVar's alleles on
+# the plus strand, from its canonical SPDI (E-utilities esummary, queried
+# 2026-11-04; REF checked against UCSC hg38 the same day). clinvar_id is
+# ClinVar's variation id.
+chrom	pos	ref	alt	gene	hgvs	clinvar_id
+chr1	215891198	T	C	USH2A	NM_206933.4:c.7595-2144A>G	30722
+chr7	117589467	A	G	CFTR	NM_000492.4:c.1680-886A>G	53338
+chr7	117639961	C	T	CFTR	NM_000492.4:c.3718-2477C>T	7166
+chr11	108309110	A	G	ATM	NM_000051.4:c.5763-1050A>G	3021
+chr12	88101183	T	C	CEP290	NM_025114.4:c.2991+1655A>G	1337
+chrX	101399747	C	T	GLA	NM_000169.3:c.640-801G>A	10768

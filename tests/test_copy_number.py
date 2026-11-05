@@ -1055,7 +1055,8 @@ def psv(cat, read):
                                   "--clinvar", f"A={vcf}", "--clinvar", f"B={vcf}", "--out-dir", od] + extra,
                                  capture_output=True, text=True)
             md = open(os.path.join(od, "couple_A_B.md")).read() if out.returncode == 0 else out.stderr
-            got = {s for s in "AB" if f"CYP21A2 deletion and conversions of {s}: no CYP21A2 table (step 35)." in md}
+            got = {s for s in "AB" if (f"CYP21A2 deletion and conversions of {s}: step 35's CYP21A2 table was not passed "
+                                         "to the couple screen (--cyp21a2).") in md}
             check(f"couple screen, {desc}: a gap line for each partner without a CYP21A2 table", got == want, (got, md[-600:]))
 
         # collect_summary: step 35's section carries the CYP21A2 table
