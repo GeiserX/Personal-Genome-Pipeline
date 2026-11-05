@@ -22,6 +22,9 @@
 # What this cannot show: whether a private SNP is real. That needs another
 # man who carries it, so the list is a starting point, never a result.
 . "$(dirname "$0")/lib.sh"
+# A real tab for the patterns: has and lacks run grep -E, and GNU grep reads \t
+# there as a plain t, so a \t pattern never matches a TSV line on Linux.
+T=$'\t'
 
 YDATA="${GENOME_DIR}/reference/yleaf-${YLEAF_DATA_VERSION}/data"
 YT="${YDATA}/ytree"
@@ -50,9 +53,9 @@ head -4 "$PRIV" 2>/dev/null
 check "the step wrote the private-SNP list" test -s "$PRIV"
 check "the step line names the file" has "^Private SNPs: ${OUT}/${M}_y_private_snps\\.tsv\$" "$(cat "$STEP_LOG")"
 check "its header records the gates and the sample's median chrY depth" \
-  has '^# gates\tmin_depth=10 min_gq=20 min_fraction=0\.9 max_depth_factor=2\.0 median_chrY_depth=[0-9.]+ callable_mask=callable_mask_chrY\.fasta\.gz$' \
+  has "^# gates${T}min_depth=10 min_gq=20 min_fraction=0\.9 max_depth_factor=2\.0 median_chrY_depth=[0-9.]+ callable_mask=callable_mask_chrY\.fasta\.gz\$" \
   "$(cat "$PRIV")"
-check "its header has the columns of a row" has '^Pos\tRef\tAlt\tDepth\tAlt_fraction\tGQ\tGenotype$' "$(cat "$PRIV")"
+check "its header has the columns of a row" has "^Pos${T}Ref${T}Alt${T}Depth${T}Alt_fraction${T}GQ${T}Genotype\$" "$(cat "$PRIV")"
 
 # dropped FIELD: the count of one gate from the header's dropped line
 dropped() { sed -n 's/^# dropped\t//p' "$PRIV" | tr ' ' '\n' | sed -n "s/^${1}=//p"; }
@@ -106,9 +109,9 @@ echo "seeded: ${P_IN:-none} (callable), ${P_OUT:-none} (outside the mask)"
 python3 "${REPO}/bin/y_private_snps.py" --vcf "$SEED" --tree-dir "$YT" --sample "$M" \
   --out-prefix "${CASE_TMP}/seeded" > "${CASE_TMP}/seeded.log" 2>&1
 SEEDED="${CASE_TMP}/seeded_y_private_snps.tsv"
-check "the seeded call inside the callable mask is listed" has "^${P_IN:-none}\t" "$(cat "$SEEDED" 2>/dev/null)"
+check "the seeded call inside the callable mask is listed" has "^${P_IN:-none}${T}" "$(cat "$SEEDED" 2>/dev/null)"
 check "red control: the seeded call outside the callable mask is not listed" \
-  lacks "^${P_OUT:-none}\t" "$(cat "$SEEDED" 2>/dev/null)"
+  lacks "^${P_OUT:-none}${T}" "$(cat "$SEEDED" 2>/dev/null)"
 OUTSIDE_BASE=$(dropped outside_callable)
 OUTSIDE_SEED=$(sed -n 's/^# dropped\t//p' "$SEEDED" 2>/dev/null | tr ' ' '\n' | sed -n 's/^outside_callable=//p')
 check_eq "red control: and it is counted as outside_callable" "${OUTSIDE_SEED:-unknown}" "$(( ${OUTSIDE_BASE:-0} + 1 ))"
@@ -122,7 +125,7 @@ python3 "${REPO}/bin/y_private_snps.py" --vcf "$SEED" --tree-dir "$CT" --callabl
   --sample "$M" --out-prefix "${CASE_TMP}/control" > "${CASE_TMP}/control.log" 2>&1
 cat "${CASE_TMP}/control.log"
 check "red control: the seeded position added to a table leaves the list" \
-  lacks "^${P_IN:-none}\t" "$(cat "${CASE_TMP}/control_y_private_snps.tsv" 2>/dev/null)"
+  lacks "^${P_IN:-none}${T}" "$(cat "${CASE_TMP}/control_y_private_snps.tsv" 2>/dev/null)"
 check "red control: and the rest of the seeded list is unchanged" \
   test "$(awk -F'\t' -v p="${P_IN:-0}" '$0 !~ /^(#|Pos\t)/ && $1 != p' "$SEEDED" | md5sum | cut -d' ' -f1)" = \
        "$(awk -F'\t' '$0 !~ /^(#|Pos\t)/' "${CASE_TMP}/control_y_private_snps.tsv" 2>/dev/null | md5sum | cut -d' ' -f1)"
@@ -177,7 +180,7 @@ if [ -s "$NF_TREE" ] && [ -s "${R}/${SAMPLE}_report.html" ]; then
     test "$(awk -F'\t' '$0 !~ /^(#|Pos\t)/' "$NF_PRIV" 2>/dev/null | md5sum | cut -d' ' -f1)" = \
          "$(awk -F'\t' '$0 !~ /^(#|Pos\t)/' "${CASE_TMP}/nf-same_y_private_snps.tsv" 2>/dev/null | md5sum | cut -d' ' -f1)"
   check "and that list has its header, so an empty file is not taken for a match" \
-    has '^Pos\tRef\tAlt' "$(cat "$NF_PRIV" 2>/dev/null)"
+    has "^Pos${T}Ref${T}Alt" "$(cat "$NF_PRIV" 2>/dev/null)"
   check_eq "the Nextflow summary.json section y_tree is filled" "$(section "$R" y_tree)" ok
   check "the Nextflow HTML report has the current-tree card" \
     has "Y Placement on the Current Public Tree" "$(cat "${R}/${SAMPLE}_report.html")"
