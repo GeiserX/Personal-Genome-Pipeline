@@ -23,7 +23,13 @@ Subcommands:
              genotypes of the Altai Neanderthal, the Vindija 33.19 Neanderthal
              and the Altai Denisovan at those sites and wherever one of the
              three carries a non-reference allele, as a sites-only VCF that
-             Picard lifts to GRCh38.
+             Picard lifts to GRCh38. Each archaic genome is read only inside
+             its own mask (--mask NAME=BED, the MPI-EVA FilterBed of that
+             genome): a site outside it is unknown (9) for that genome. A
+             site inside an excluded region (--exclude BED: segmental
+             duplications, the 5 bp around a modern indel) is left out
+             altogether. Both are the filtering Chen et al. apply before
+             IBDmix.
   genotypes  (step 43) IBDmix's genotype file of each chromosome: the three
              archaic columns, SAMPLE (yours, from the VCF) and the stand-ins;
              and spans.tsv, the span and site count of each chromosome.
@@ -106,6 +112,51 @@ def read_archaic(path, idx):
             yield int(c[0]), 1 + idx, (c[1], c[2], c[3])
 
 
+def read_mask(path, chrom):
+    """The intervals of one chromosome of a mask BED, sorted and merged.
+    A BED is 0-based and half-open, so [start, end) holds the 1-based
+    positions start + 1 to end. The chromosome is matched with and without
+    the chr prefix, because the archaic masks name it 22 and others chr22."""
+    num = str(chrom)[3:] if str(chrom).startswith("chr") else str(chrom)
+    want = {num, f"chr{num}"}
+    iv = []
+    with opener(path) as f:
+        for line in f:
+            if line.startswith(("#", "track", "browser")):
+                continue
+            c = line.split()
+            if len(c) < 3 or c[0] not in want:
+                continue
+            s, e = int(c[1]), int(c[2])
+            if e <= s:
+                continue          # an empty or reversed interval holds no position
+            iv.append((s, e))
+    iv.sort()
+    out = []
+    for s, e in iv:
+        if out and s <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return out
+
+
+class Mask:
+    """Whether a 1-based position is inside a mask. Positions must come in
+    ascending order, as they do in the table build: the walk over the
+    intervals never goes back."""
+
+    def __init__(self, intervals):
+        self.iv = intervals
+        self.i = 0
+
+    def holds(self, pos):
+        p = pos - 1
+        while self.i < len(self.iv) and self.iv[self.i][1] <= p:
+            self.i += 1
+        return self.i < len(self.iv) and self.iv[self.i][0] <= p
+
+
 def archaic_code(rec, ref, alt):
     """The ALT count of one archaic record at a row with this REF and ALT, or 9."""
     if rec is None:
@@ -160,6 +211,25 @@ def cmd_table(a):
         streams.append(read_archaic(path, i))
     if names != list(ARCHAICS):
         die(f"--archaic must name {', '.join(ARCHAICS)} in that order, got {', '.join(names)}", 2)
+    masks = {}
+    for spec in a.mask:
+        name, _, path = spec.partition("=")
+        if name not in ARCHAICS or not path:
+            die(f"--mask takes NAME=FILE with NAME one of {', '.join(ARCHAICS)}, got {spec!r}", 2)
+        if name in masks:
+            die(f"--mask names {name} twice", 2)
+        iv = read_mask(path, a.chrom)
+        if not iv:
+            die(f"{path} holds no interval on chromosome {a.chrom}: a mask that matches nothing "
+                "would make every site unknown")
+        masks[name] = Mask(iv)
+    excluded = []
+    for path in a.exclude:
+        iv = read_mask(path, a.chrom)
+        if not iv:
+            die(f"{path} holds no interval on chromosome {a.chrom}: an empty exclusion list is a "
+                "download that went wrong, not a chromosome without segmental duplications")
+        excluded.append(Mask(iv))
     chrom = a.chrom if a.chrom.startswith("chr") else f"chr{a.chrom}"
     out = open(a.out, "w")
     out.write("##fileformat=VCFv4.2\n")
@@ -176,7 +246,17 @@ def cmd_table(a):
         nonlocal rows
         if cur is None:
             return
-        r = table_row(cur, modern, arch)
+        # Every Mask is walked for every position, before any early return,
+        # because the walk only goes forward.
+        drop = [m.holds(cur) for m in excluded]
+        if any(drop):
+            return
+        # A genome is read only inside its own mask: outside it the record is
+        # dropped, so the row gets code 9 for that genome and the site cannot
+        # give it the row's ALT either.
+        inside = [None if (n in masks and not masks[n].holds(cur)) else r
+                  for n, r in zip(ARCHAICS, arch)]
+        r = table_row(cur, modern, inside)
         if r is None:
             return
         ref, alt, codes, afs = r
@@ -554,6 +634,10 @@ def main(argv=None):
     t.add_argument("--chrom", required=True)
     t.add_argument("--modern", required=True)
     t.add_argument("--archaic", action="append", default=[], help="NAME=FILE, once each for Altai, Vindija, Denisova")
+    t.add_argument("--mask", action="append", default=[],
+                   help="NAME=BED: read that archaic genome only inside this mask (its MPI-EVA FilterBed)")
+    t.add_argument("--exclude", action="append", default=[],
+                   help="BED: leave out every site inside these regions (segmental duplications, indel neighbourhoods)")
     t.add_argument("--out", required=True)
     g = sub.add_parser("genotypes", help="IBDmix's genotype files for one sample (step 43)")
     g.add_argument("--table-dir", required=True)
