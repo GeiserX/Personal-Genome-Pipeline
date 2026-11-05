@@ -2572,6 +2572,39 @@ def sec_y_haplogroup(d, s):
                "explore": haplogroup_explore("y", hg)}
 
 
+def sec_y_tree(d, s):
+    """Step 37's placement on the current public tree (y_haplogroup/<id>_y_tree.txt,
+    bin/y_tree_place.py): the terminal branch, how deep it sits, the SNP
+    calls along the path, and the tree release the names come from. The
+    per-level table beside it gives each branch of that path."""
+    p = first_existing(d, [f"y_haplogroup/{s}_y_tree.txt"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    need = ("Hg", "Level", "Tree")
+    if not rows or any(k not in rows[0] for k in need):
+        raise Unreadable(f"{os.path.basename(p)} lacks a column of {', '.join(need)}")
+    r = rows[0]
+    hg = (r.get("Hg") or "").strip()
+    out = {"haplogroup": hg if hg not in ("", "NA") else "no branch has a derived call",
+           "level": r.get("Level") or ".", "tree": r.get("Tree") or ".",
+           "path_derived": r.get("Path_derived") or ".", "path_ancestral": r.get("Path_ancestral") or ".",
+           "path_no_call": r.get("Path_no_call") or ".",
+           "ancestral_in_terminal": r.get("Ancestral_in_terminal") or ".",
+           "outvoted_ancestral": r.get("Outvoted_ancestral") or ".",
+           "snps_called": r.get("SNPs_called") or ".", "min_depth": r.get("Min_depth") or ".",
+           "explore": haplogroup_explore("y", hg)}
+    lvl = first_existing(d, [f"y_haplogroup/{s}_y_tree_path.tsv"])
+    if lvl:
+        prows = read_tsv(lvl)
+        if not prows or "Branch" not in prows[0]:
+            raise Unreadable(f"{os.path.basename(lvl)} has no Branch column or no rows")
+        out["path"] = [{k: (row.get(k) or "") for k in
+                        ("Level", "Branch", "SNPs", "On_tables", "Derived", "Ancestral", "No_call",
+                         "Ancestral_SNPs")} for row in prows]
+    return p, out
+
+
 def sec_y_str(d, s):
     """Step 45's table (y_str/<id>_y_str.tsv, bin/ystr_report.py): one row per
     FamilyTreeDNA marker with its count and confidence, and the counts per
@@ -4492,6 +4525,7 @@ SECTIONS = [
     ("roh", "Runs of homozygosity", "11", sec_roh),
     ("haplogroup", "Mitochondrial haplogroup", "12", sec_haplogroup),
     ("y_haplogroup", "Y-chromosome haplogroup (Yleaf)", "37", sec_y_haplogroup),
+    ("y_tree", "Y placement on the current public tree", "37", sec_y_tree),
     ("y_str", "Y-STR markers (HipSTR)", "45", sec_y_str),
     ("consumer_export", "Raw-data export (23andMe v5 layout)", "40", sec_consumer_export),
     ("bloodtype", "Blood groups (predicted)", "41", sec_bloodtype),

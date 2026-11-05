@@ -21,6 +21,13 @@
     pileup at them, and the placement, published as <id>_y_tree.txt and
     <id>_y_tree_path.tsv. Without that folder (an install older than this
     step's current tree) the three say so and Yleaf's result stands alone.
+      Y_PRIVATE     the chrY SNVs of the sample's VCF that no public SNP
+                    table names, the ones that would place this line below
+                    its branch (bin/y_private_snps.py), published as
+                    <id>_y_private_snps.tsv. It runs only with the tree
+                    folder in place, because its tables are the public lists
+                    the scan subtracts and its chrY callable mask is where
+                    the scan looks.
 
     Equivalent to: scripts/37-y-haplogroup.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -161,6 +168,51 @@ process Y_HAPLOGROUP {
     """
     printf 'Sample_name\\tHg\\tHg_marker\\tTotal_reads\\tValid_markers\\tQC-score\\tQC-1\\tQC-2\\tQC-3\\n${meta.id}\\tNA\\t\\t0\\t0\\t0\\t0\\t0\\t0\\n' > ${meta.id}_y_haplogroup.txt
     touch ${meta.id}_y_tree.txt ${meta.id}_y_tree_path.tsv
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        yleaf: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+}
+
+process Y_PRIVATE {
+    tag "$meta.id"
+    label 'process_single'
+
+    publishDir { "${params.outdir}/${meta.id}/y_haplogroup" }, mode: params.publish_dir_mode
+
+    input:
+    tuple val(meta), path(vcf)
+    path(yleaf_data)
+
+    output:
+    tuple val(meta), path("${meta.id}_y_private_snps.tsv"), emit: private_snps, optional: true
+    path "versions.yml",                                   emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    """
+    if [ -s ${yleaf_data}/ytree/version.txt ] && [ ! -s ${yleaf_data}/ytree/callable_mask_chrY.fasta.gz ]; then
+        echo "Private SNPs: skipped (${yleaf_data}/ytree has no chrY callable mask; run scripts/setup.sh --yleaf-data again)"
+    elif [ -s ${yleaf_data}/ytree/version.txt ]; then
+        y_private_snps.py --vcf ${vcf} --tree-dir ${yleaf_data}/ytree \\
+            --sample ${meta.id} --out-prefix ${meta.id}
+    else
+        echo "Private SNPs: skipped (${yleaf_data}/ytree is not installed; run scripts/setup.sh --yleaf-data)"
+    fi
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        yleaf: ${task.container.replaceFirst(/^[^:@]+[:@]/, '')}
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    printf '# sample\\t${meta.id}\\nPos\\tRef\\tAlt\\tDepth\\tAlt_fraction\\tGQ\\tGenotype\\n' > ${meta.id}_y_private_snps.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

@@ -145,5 +145,6 @@ vendor-vcf-intake-4-nf-header-clinvar	shard	34	vendor-vcf-intake-1-bash
 vendor-vcf-intake-5-docs	shard	40	vendor-vcf-intake-3-nf-stops
 viral-reads-1	shard	58	-
 vntyper-1	shard	95	-
+y-private-report-1-private-and-tree	shard	150	nextflow-hardening-2-nf
 y-str-1	shard	46	-
 y-tree-current-1-placement	shard	20	nextflow-hardening-2-nf
