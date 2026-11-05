@@ -22,7 +22,8 @@
     and go to assets/, which --assets names, as do assets/mito_confirmed.tsv
     (the confirmed mtDNA variants step 20's section names) and the paralog
     catalogs assets/paralog_loci.tsv and assets/paraphase_genes.tsv. Every
-    <id>_<table>_copy_number.tsv of step 35 goes to paralogs/. Every gene and rsID the
+    <id>_<table>_copy_number.tsv of step 35 goes to paralogs/, and so
+    does step 35's <id>_cn_intervals.tsv. Every gene and rsID the
     results mention also goes to ${id}_search_index.json beside it
     (bin/results_index.py), for the live site's search, and the report's
     charts to ${id}_charts.json, for the live page (docs/24-html-report.md).
