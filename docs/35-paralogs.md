@@ -301,7 +301,7 @@ All output is written to `${GENOME_DIR}/${SAMPLE}/paralogs/`.
 ### What Is and Is Not Assessed
 
 - **Assessed (PacBio HiFi only):** copy number and phased variants in Paraphase's 165 GRCh38 regions; the HBA 3.7 kb and 4.2 kb deletions and duplications by name.
-- **Not assessed:** short-read and Oxford Nanopore BAMs (refused); which large HBA deletion removes both genes.
+- **Not assessed:** short-read and Oxford Nanopore BAMs (refused); which large HBA deletion removes both genes; the F8 intron 1 inversion, whose homology region is short (Paraphase leaves it to a standard HiFi SV caller, its docs/F8.md).
 
 ### Runtime
 

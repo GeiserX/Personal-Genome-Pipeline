@@ -48,7 +48,7 @@ ancient-similarity-1	shard	100	-
 annotsv-delly-depth-1-chain	shard	24	-
 annotsv-report-section-1-chain	shard	4	-
 annotsv-sv-inputs-1-manta	shard	1	-
-archaic-ancestry-1	shard	1021	-
+archaic-ancestry-1	shard	1900	-
 bash-step-08-hla	base	224	-
 bash-step-09-str	shard	1	-
 bash-step-10-telomere	shard	10	-
@@ -145,5 +145,6 @@ vendor-vcf-intake-4-nf-header-clinvar	shard	34	vendor-vcf-intake-1-bash
 vendor-vcf-intake-5-docs	shard	40	vendor-vcf-intake-3-nf-stops
 viral-reads-1	shard	58	-
 vntyper-1	shard	95	-
+y-private-report-1-private-and-tree	shard	150	nextflow-hardening-2-nf
 y-str-1	shard	46	-
 y-tree-current-1-placement	shard	20	nextflow-hardening-2-nf

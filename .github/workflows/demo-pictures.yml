@@ -8,6 +8,11 @@ name: Demo pictures
 # `demo-pictures`; look at them and commit them into docs/images/ by hand.
 # Nothing here writes to the repository.
 #
+# The job live-picture takes docs/images/demo-live-site.png (docs/live-site.md):
+# the live-site demo as the docs workflow publishes it, built by
+# tests/demo/build_live_demo.py on a DEMO-001 of its own, with no container.
+# It comes back as the artifact `demo-live-picture`.
+#
 # The OCR half of tests/demo/check_pictures.py needs macOS, so this run checks
 # the PNG chunks only; run `check_pictures.py --ocr` on a Mac before you
 # commit the pictures.
@@ -23,6 +28,8 @@ on:
     branches: [main]
     paths:
       - 'tests/demo/**'
+      - 'tests/fixtures/live/demo-001.weblog.jsonl'
+      - 'tests/fixtures/live/demo/**'
       - '.github/workflows/demo-pictures.yml'
   workflow_dispatch:
 
@@ -56,10 +63,48 @@ jobs:
           PLAYWRIGHT_WITH_DEPS: '1'
         run: tests/demo/retake-screenshots.sh "$RUNNER_TEMP/demo" "$RUNNER_TEMP/pictures"
 
+
       - name: Upload the pictures
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: demo-pictures
           path: ${{ runner.temp }}/pictures/demo-*.png
+          if-no-files-found: error
+          retention-days: 7
+
+  live-picture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Font
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q fonts-dejavu-core
+
+      # The playwright and pillow pins are read from retake-screenshots.sh, so
+      # they live in that script alone.
+      - name: Take the live-site picture
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/venv/browsers
+        run: |
+          mapfile -t pins < <(grep -oE '(playwright|pillow)==[0-9.]+' tests/demo/retake-screenshots.sh | sort -u)
+          test "${#pins[@]}" -eq 2
+          python3 -m venv "$RUNNER_TEMP/venv"
+          py="$RUNNER_TEMP/venv/bin/python"
+          "$py" -m pip install -q "${pins[@]}"
+          "$py" -m playwright install --with-deps chromium
+          "$py" tests/demo/render_pictures.py --only live --out "$RUNNER_TEMP/pictures"
+          "$py" tests/demo/check_pictures.py --self-test
+          "$py" tests/demo/check_pictures.py "$RUNNER_TEMP/pictures/demo-live-site.png"
+
+      - name: Upload the picture
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: demo-live-picture
+          path: ${{ runner.temp }}/pictures/demo-live-site.png
           if-no-files-found: error
           retention-days: 7

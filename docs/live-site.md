@@ -4,6 +4,20 @@ A full run takes a day or more. The live site shows it while it goes, in a brows
 
 `bin/owngenome_live.py` is the server. It uses Python's standard library only, so the `python3` on the host is enough, and it has its own password, access log and limits, so it needs no web server in front of it.
 
+## Try the demo
+
+https://geiserx.github.io/OwnGenome/demo/ is the live site on DEMO-001, the invented sample of the docs pictures. It replays a made-up run from the first task to the database re-check after it: press Play, or drag the slider. Every number, result and family member in it is made up.
+
+![The live page of DEMO-001 at the end of the demo run: the run marked finished above a Play button and a time slider, the step map with every step done and a dot on the steps a newer ClinVar would change, and the Found so far list with one line per finished section, starting with the read and variant calling steps and the ClinVar screen's hits with its caveat](images/demo-live-site.png){ loading=lazy }
+
+The page and its plugins are the files of `assets/live/`, unchanged. Each moment of the replay is the server's own `state.json` at that moment: `tests/demo/build_live_demo.py` loads every plugin, stores the made-up messages of `tests/fixtures/live/demo-001.weblog.jsonl` one by one as the ingest port would, and reads the state after each. The charts, the search box, the run-health card, the database re-check and the family page work as they do on your own site. The genome viewer does not: it opens your own reads on your own computer, so its links lead to a page that says it is not in the demo.
+
+What differs from your own site:
+
+- It is a static folder published with these docs, so it has no password and no access log. Nothing in it is private.
+- The run-health card measures an invented machine (64 GiB of RAM, a 2 TiB disk 55% used), not the one that built the page.
+- The CPIC recommendations and the gene callability table have no file in the demo sample, so the demo shows those two sections as missing.
+
 ## Start it
 
 ```bash
@@ -35,15 +49,24 @@ weblog {
 - **A step's detail.** Click a box: its state and reason, start and end, the usual hours, each process with its tasks waiting, running, done, from the cache or failed, and the headline of its sections with a link into the report.
 - **Found so far.** One line per finished section, worded by the same code that writes the report, caveat included. A line marked for attention means the report has something to read there; no line ever says a section is fine. The ClinVar line, with no hit, is information, never an all-clear.
 - **The report.** Once written, `report.html` opens the run's `<sample>_report.html`, and the files it links to beside it.
+- **The genome viewer.** `/runs/<run>/viewer/` shows the run's reads and variants in igv.js, as [`scripts/owngenome-view.sh`](viewer.md) does on one computer. The report's Viewer links and the charts' "See the reads" links open it at their position.
+
+## The genome viewer
+
+`bin/owngenome_live_viewer.py` serves it, behind the same password as every page. `owngenome-live.sh` passes it the reference (`REF_FASTA`, as in every step) and igv.js, which the first start downloads into `GENOME_DIR/tools/` and checks against `IGV_JS_SHA256` in `versions.env`. Without the reference's `.fai` or igv.js the site starts without the viewer and says why; `OWNGENOME_LIVE_VIEWER=off` leaves it out on purpose. Running `owngenome_live.py` yourself (in Docker, say), pass `--viewer-fasta` and `--viewer-igv-js`.
+
+Per run it serves the folder's BAM or CRAM, its VCF and its SV VCF, each with its index, and the reference: the files `owngenome-view.sh` picks by default. A track whose file or index is a symlink out of `GENOME_DIR` is left out. The page and the files carry the viewer's Content-Security-Policy, so the page talks to this site only, and igv.js's calls to outside services are blocked.
+
+The reads cross the network to the browser that logged in: only the byte ranges igv.js asks for, but they are the sample's reads. Off loopback, use TLS (`--tls-cert` and `--tls-key`, or a proxy that ends TLS); without it the password and the reads cross the network in clear. Opening the viewer writes one access-log row; the byte ranges igv.js reads write none.
 
 `GET /` lists the runs: each folder under `GENOME_DIR` holding `logs/run_status.tsv`, `nextflow/` or `run_manifest.tsv`, and each run the site has messages for.
 
 ## Privacy and what is stored
 
-- The site serves only its own pages, the run's state, the report and the files the report links to by a relative link. Any other file is 404, and so is a link that leaves the run folder or a symlink out of `GENOME_DIR`. It never lists a folder.
+- The site serves only its own pages, the run's state, the report, the files the report links to by a relative link, and the genome viewer's files of the run (see above). Any other file is 404, and so is a link that leaves the run folder or a symlink out of `GENOME_DIR`. It never lists a folder.
 - Each message is cut to what a progress view needs before it is stored: the task, its process and status, times, CPU and memory figures. Nextflow's parameters, command line and task scripts are dropped. Three paths stay on the server for later views (the output folder, the CPU and memory caps, the work directory); none of them reaches a page.
 - Messages go to `<state dir>/runs/<run>/events.jsonl` (state dir: `GENOME_DIR/.owngenome-live`, or `OWNGENOME_LIVE_STATE_DIR`). The site writes nowhere else, so `GENOME_DIR` can be mounted read-only.
-- The access log, `<state dir>/access.log`, has one tab-separated row per page or file read and per login: time, client, the first 8 characters of a hash of the session, action, run, file, status. It never holds a query string, a request body, a result or the password. It moves to `access.log.1` past `--access-log-max-mb` (10).
+- The access log, `<state dir>/access.log`, has one tab-separated row per page or file read and per login (the genome viewer's files excepted: one row per page open, see above): time, client, the first 8 characters of a hash of the session, action, run, file, status. It never holds a query string, a request body, a result or the password. It moves to `access.log.1` past `--access-log-max-mb` (10).
 - Every page carries a Content-Security-Policy that lets it talk to this server only, and the page loads no script from anywhere else. The run's own HTML (the report, CPSR, PharmCAT, MultiQC) is sent sandboxed: no script runs and nothing outside is fetched.
 
 ## The password and the limits
@@ -62,6 +85,7 @@ weblog {
 | `--trust-proxy CIDR` | none | Read `X-Forwarded-For` only from this proxy (repeatable) |
 | `--tls-cert`, `--tls-key` | none | Serve HTTPS; the cookie is then `Secure` |
 | `--cookie-secure` | off | Mark the cookie `Secure` when TLS ends at a proxy |
+| `--viewer-fasta`, `--viewer-igv-js` | none | The genome viewer's reference and igv.js; `owngenome-live.sh` passes both |
 | `--config FILE` | none | `key=value` lines setting any flag above (`session_hours=8`), read before the flags |
 
 The session cookie is random (32 bytes), `HttpOnly` and `SameSite=Strict`. A POST from another site is refused.
