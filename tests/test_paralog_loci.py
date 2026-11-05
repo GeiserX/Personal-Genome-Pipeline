@@ -246,12 +246,15 @@ def main():
     check("every catalog gene assets/callability_genes.tsv lists has the owner parascopy", not found, "; ".join(found))
     check("the callability catalog lists catalog genes (GBA1, C4A, AMY1C, SMN1 among them)",
           {"GBA1", "C4A", "AMY1C", "SMN1"} <= {r["gene"] for r in cal if r["gene"] in catalog_genes})
-    absent = catalog_genes - {r["gene"] for r in cal}
+    def unlisted(cal_rows):
+        return catalog_genes - {r["gene"] for r in cal_rows}
+    absent = unlisted(cal)
     check("the catalog genes the callability catalog does not list are the 17 known ones",
           absent == NOT_IN_CALLABILITY, sorted(absent ^ NOT_IN_CALLABILITY))
-    check("control: a new catalog gene, or one of the 17 now listed, changes the set",
-          (catalog_genes | {"NEWGENE"}) - {r["gene"] for r in cal} != NOT_IN_CALLABILITY
-          and catalog_genes - {r["gene"] for r in cal} - {"NEB"} != NOT_IN_CALLABILITY)
+    planted_neb = cal + [dict(cal[0], gene="NEB", owner="parascopy")]
+    check("control: a callability row for NEB, one of the 17, makes the set differ",
+          "NEB" in NOT_IN_CALLABILITY and unlisted(planted_neb) != NOT_IN_CALLABILITY,
+          sorted(unlisted(planted_neb) ^ NOT_IN_CALLABILITY))
     planted_cal = [dict(r, owner=".") if r["gene"] == "C4A" else r for r in cal]
     check("control: a catalog gene without the owner parascopy is refused",
           bool(callability_problems(catalog_genes, planted_cal)))
