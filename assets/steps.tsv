@@ -75,3 +75,4 @@ step	label	tool	recorded	processes	sections	upstream	hours	hours_from	hours_low	
 50	Mobile element insertions	mei	yes	MEI_DEPTH,MEI,MEI_REPORT	mei	02				
 51	Mosaic alterations (MoChA)	mocha	yes	MOCHA_PREP,MOCHA_PHASE,MOCHA_CALL,MOCHA_REPORT	mosaic	03				
 52	MUC1 VNTR (VNtyper)	vntyper	yes	VNTYPER	vntyper	02				
+53	Hard loci (Locityper)	locityper	yes	LOCITYPER	locityper	02				
