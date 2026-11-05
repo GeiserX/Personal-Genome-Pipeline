@@ -2,8 +2,9 @@
 # 53-locityper.sh — A second opinion at hard polymorphic genes with Locityper
 # Usage: ./scripts/53-locityper.sh <sample_name>
 #
-# Opt-in. HLA class II, KIR, CYP2D6 and FCGR each have one caller here or
-# none, so a wrong call there cannot be seen. Locityper (Prodanov et al. 2025,
+# Opt-in. HLA class II, KIR and FCGR each have one caller here or none, so a
+# wrong call there cannot be seen; CYP2D6 has pypgx and Cyrius, which can
+# disagree with no way to tell which is right. Locityper (Prodanov et al. 2025,
 # Nat Genet, PMID 41107551; MIT licence) genotypes a whole locus at once: it
 # picks the two haplotypes of a pangenome panel (here the HPRC v2.1 panel of
 # 232 people) that best explain the reads there and their depth. Its call is

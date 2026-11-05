@@ -8,7 +8,7 @@ It is a second opinion. The report shows it beside the call of the step that own
 
 ## Why
 
-At these genes a wrong call from short reads is likely, and the pipeline has one caller or none at each: T1K (step 08) for HLA-DRB1, HLA-DQB1 and KIR, pypgx (step 32) and Cyrius (step 21) for CYP2D6, nothing for FCGR. With one caller a wrong call cannot be seen.
+At these genes a wrong call from short reads is likely, and the pipeline has one caller or none at most of them: T1K (step 08) for HLA-DRB1, HLA-DQB1 and KIR, nothing for FCGR. CYP2D6 has two, pypgx (step 32) and Cyrius (step 21), which can disagree with no way to tell which is right. With one caller a wrong call cannot be seen.
 
 Locityper (Prodanov et al., Nat Genet 2025, PMID 41107551, doi 10.1038/s41588-025-02362-4) works another way. It does not call variants or alleles from alignments. It takes the haplotypes of many assembled genomes at a locus and finds the pair whose k-mers, read depth and read alignments fit the sample's reads best. A caller with a different method gives an independent check where the primary caller is weakest.
 
