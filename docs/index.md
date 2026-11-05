@@ -65,6 +65,8 @@ OwnGenome was called Personal-Genome-Pipeline until November 2026.
   <figcaption markdown>The HTML report from [step 24](24-html-report.md), run on DEMO-001, an invented sample. Every number in it is made up.</figcaption>
 </figure>
 
+To see the [live site](live-site.md) without installing anything, open the demo at https://geiserx.github.io/OwnGenome/demo/: it replays an invented run of the same sample.
+
 ## Pipeline steps
 
 One page per step, grouped by stage. The step number is the script name and the output directory.

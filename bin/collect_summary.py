@@ -2055,6 +2055,162 @@ def str_not_graded(d, s):
             if isinstance(e, dict) and e.get("LocusId") and e.get("NoThresholds")}
 
 
+# The repeats STRchive leaves out (assets/str_extra_loci.json), read from
+# their counts when step 09 sized them (STR_EXTRA_LOCI=yes; docs/09-str-expansions.md).
+# CFTR intron 9 (legacy IVS8): ExpansionHunter writes the TG and the poly-T
+# tract as two records, so which TG count sits on the copy of which T count
+# is known only when one of the two is the same on both copies. R117H
+# (rs78655421, chr7:117530975 G>A) is step 42's traits row, 17.6 kb from the
+# tract, farther than a read pair spans: with both heterozygous its phase is
+# not known. Deignan et al. 2020 (PMID 32404922).
+CFTR_R117H = "rs78655421"
+CFTR_SOURCE = "Deignan et al. 2020, PMID 32404922"
+# UGT1A1 promoter: ExpansionHunter counts the TA units from the first T of
+# A(TA)6TAA, so its count is one more than the allele's TA number.
+UGT1A1_ALLELES = {6: "*36", 7: "*1", 8: "*28", 9: "*37"}
+UGT1A1_DECREASED = ("*28", "*37")
+UGT1A1_SOURCE = "Gammal et al. 2016, PMID 26417955"
+HTTLPR_READING = ("not tested by any step. CPIC's 2023 SSRI guideline (Bousman et al. 2023, PMID 37032427) found "
+                  "that the data on SLC6A4 do not support its use in antidepressant prescribing, so a result would "
+                  "carry no recommendation.")
+
+
+def str_counts(item):
+    """The two repeat counts of a sized record, sorted, or None."""
+    if not item or item["sizing"] not in ("sized", "unknown"):
+        return None
+    c = [str_int(x) for x in item["repeat_count"].split("/")]
+    if len(c) == 1 and c[0] is not None:
+        c = c * 2  # a one-copy call (a haploid contig): not expected on chr7 or chr2
+    return sorted(c) if len(c) == 2 and None not in c else None
+
+
+def trait_genotype(d, s, rsid):
+    """(status, genotype) of a traits table row of step 42 (traits/<id>_traits.tsv), or None."""
+    p = first_existing(d, [f"traits/{s}_traits.tsv"])
+    if not p:
+        return None
+    try:
+        row = next((r for r in read_tsv(p) if r.get("rsid") == rsid), None)
+    except (OSError, csv.Error):
+        return None
+    return (row.get("status") or "", row.get("genotype") or "") if row else None
+
+
+def cftr_reading(by, d, s):
+    tg, t = by.get("CFTR_TG"), by.get("CFTR_T")
+    out = {"locus": "CFTR", "repeat": "intron 9 (legacy IVS8) TG and poly-T tract", "source": CFTR_SOURCE}
+    if not tg or not t:
+        return dict(out, status="not_sized", genotype=".", phase=".",
+                    reading="not in step 09's output: STR_EXTRA_LOCI=yes setup.sh --strchive-data adds the tract "
+                            "to the catalog (docs/09-str-expansions.md).")
+    a, b = str_counts(tg), str_counts(t)
+    if not a or not b:
+        return dict(out, status="not_sized", genotype=".", phase=".",
+                    reading=f"ExpansionHunter did not size both tracts (TG {tg['repeat_count']}, {tg['sizing']}; "
+                            f"poly-T {t['repeat_count']}, {t['sizing']}): not read.")
+    if a[0] == a[1] or b[0] == b[1]:
+        pairs = [f"TG{a[0]}-{b[0]}T/TG{a[1]}-{b[1]}T"]
+    else:
+        pairs = [f"TG{a[0]}-{b[0]}T/TG{a[1]}-{b[1]}T", f"TG{a[1]}-{b[0]}T/TG{a[0]}-{b[1]}T"]
+    genotype = pairs[0] if len(pairs) == 1 else f"TG{a[0]}/TG{a[1]} {b[0]}T/{b[1]}T"
+    out.update(status="read", genotype=genotype, pairings=pairs, tg=a, poly_t=b)
+    five = b.count(5)
+    other = sorted({n for n in b if n not in (5, 7, 9)})
+    odd = (f" A poly-T length of {', '.join(f'{n}T' for n in other)} is none of the usual 5T, 7T and 9T."
+           if other else "")
+    if not five:
+        return dict(out, five_t=False, phase="not_needed",
+                    reading=f"No 5T copy ({b[0]}T/{b[1]}T), so the tract does not change how a CFTR finding is "
+                            f"read.{odd}")
+    if len(pairs) == 1:
+        # One TG count on both copies, or 5T on both copies with their two TG counts.
+        tgs = [a[0]] if a[0] == a[1] else a
+        tg_text = " and ".join(f"TG{x}" for x in tgs) + (" on the 5T copy" if five == 1 else " on the 5T copies")
+    else:
+        tg_text = f"TG{a[0]} or TG{a[1]} on the 5T copy, not told by the counts ({' or '.join(pairs)})"
+    line = (f"5T: {five} copy{'s' if five > 1 else ''} with the 5T poly-T tract, {tg_text}. 5T lowers the splicing "
+            "of exon 10 and is a variable-penetrance allele: with TG12 or TG13 on the same copy it more often "
+            "causes CBAVD or another CFTR-related disorder when the other copy carries a CF-causing variant.")
+    r = trait_genotype(d, s, CFTR_R117H)
+    if not r or r[0] != "called":
+        phase = "not_read"
+        r117 = (" R117H was not read (no step 42 traits row for rs78655421 was called), so whether it sits on the "
+                "5T copy is not known.")
+    else:
+        n = r[1].split("/").count("A")
+        if n == 0:
+            phase = "not_needed"
+            r117 = " No R117H copy: the 5T is read on its own."
+        elif n == 2 or five == 2:
+            phase = "in_cis"
+            r117 = (f" R117H ({r[1]}) and 5T share a copy: R117H with 5T in cis is a CF-causing allele of "
+                    "variable penetrance.")
+        else:
+            phase = "unknown"
+            r117 = (" One R117H copy and one 5T copy: phase unknown. R117H lies 17.6 kb from the tract, farther "
+                    "than a read pair spans, so whether they share a copy (in cis, a CF-causing allele of variable "
+                    "penetrance) or not (in trans) is not read; testing a parent tells them apart.")
+    return dict(out, five_t=True, phase=phase, r117h=r[1] if r and r[0] == "called" else ".",
+                reading=line + r117 + odd)
+
+
+def ugt1a1_reading(by, d, s):
+    item = by.get("UGT1A1")
+    out = {"locus": "UGT1A1", "repeat": "promoter TA repeat", "source": UGT1A1_SOURCE}
+    if not item:
+        return dict(out, status="not_sized", genotype=".", pharmcat=".", agreement="not_compared",
+                    reading="not in step 09's output: STR_EXTRA_LOCI=yes setup.sh --strchive-data adds the repeat "
+                            "to the catalog (docs/09-str-expansions.md). PharmCAT (step 7) still reads UGT1A1 *28.")
+    c = str_counts(item)
+    if not c:
+        return dict(out, status="not_sized", genotype=".", pharmcat=".", agreement="not_compared",
+                    reading=f"ExpansionHunter did not size the repeat ({item['repeat_count']}, {item['sizing']}): "
+                            "not read.")
+    names = [UGT1A1_ALLELES.get(n, f"TA{n - 1}") for n in c]
+    genotype = "/".join(names)
+    dec = sum(n in UGT1A1_DECREASED for n in names)
+    ta = "/".join(f"TA{n - 1}" for n in c)
+    reading = (f"{genotype} ({ta}, {c[0]}/{c[1]} TA units as ExpansionHunter counts them): "
+               + ("no decreased-function TA allele." if not dec else
+                  f"{dec} decreased-function allele{'s' if dec > 1 else ''} (*28 and *37 are decreased function).")
+               + ("" if all(n in UGT1A1_ALLELES for n in c) else " A TA length outside TA5 to TA8 is not a named allele here."))
+    out.update(status="read", genotype=genotype, ta_units=c)
+    # PharmCAT's UGT1A1 call (step 27's table, with the reference-block fill
+    # of bin/pgx_refblock_fill.py): its count of *28 and *37 copies.
+    pc, agreement = ".", "not_compared"
+    p = first_existing(d, [f"cpic/{s}_phenotypes.tsv"])
+    row = None
+    if p:
+        try:
+            row = next((r for r in read_tsv(p) if r.get("Gene") == "UGT1A1"), None)
+        except (OSError, csv.Error):
+            row = None
+    if row:
+        pc = (row.get("Diplotype") or "").strip() or "."
+        alleles = pc.split("/")
+        if len(alleles) == 2 and "possible" not in pc and (row.get("Status") or "") != "not called":
+            # A combination allele reads "*80+*28" or "[*80 + *28]".
+            n = sum(any(x in re.split(r"[+ \[\]]", a) for x in UGT1A1_DECREASED) for a in alleles)
+            agreement = "agrees" if n == dec else "differs"
+    if agreement == "agrees":
+        reading += f" PharmCAT (step 7) called {pc}: the same number of *28 and *37 copies."
+    elif agreement == "differs":
+        reading += (f" PharmCAT (step 7) called {pc}, a different number of *28 and *37 copies: read the reads at "
+                    "chr2:233760234 before using either.")
+    else:
+        reading += " Not compared with PharmCAT (no unambiguous UGT1A1 call from step 27)."
+    return dict(out, pharmcat=pc, agreement=agreement, reading=reading)
+
+
+def str_readings(by, d, s):
+    """What the counts of the extra repeats mean, one entry per locus, and the
+    5-HTTLPR line that no step can test."""
+    return [cftr_reading(by, d, s), ugt1a1_reading(by, d, s),
+            {"locus": "SLC6A4", "repeat": "5-HTTLPR promoter length polymorphism", "status": "not_tested",
+             "genotype": ".", "reading": HTTLPR_READING, "source": "Bousman et al. 2023, PMID 37032427"}]
+
+
 def sec_expansions(d, s):
     eh = first_existing(d, [f"expansion_hunter/{s}_eh.vcf", f"expansion_hunter/{s}.vcf",
                             "expansion_hunter/*_eh.vcf"])
@@ -2078,7 +2234,14 @@ def sec_expansions(d, s):
             continue
         tested += 1
         info = info_map(r[7])
-        rep = info.get("REPID") or info.get("VARID") or f"{r[0]}:{r[1]}"
+        # A locus of several repeats (CFTR: CFTR_TG and CFTR_T) writes one
+        # record per repeat, each with the locus as REPID and its own VARID:
+        # the record is named by its VARID and looked up by that name in the
+        # ranges and motif tables (the pathogenic repeat of a multi-repeat
+        # locus carries the locus name), and in the catalog's NoThresholds by
+        # its locus (REPID). A one-repeat locus has VARID = REPID.
+        lid = info.get("REPID") or info.get("VARID") or f"{r[0]}:{r[1]}"
+        rep = info.get("VARID") or lid
         fmt = r[8].split(":")
         val = r[9].split(":")
         repcn = str_field(fmt, val, "REPCN")
@@ -2107,15 +2270,15 @@ def sec_expansions(d, s):
                                                   "with the sample's BAM): confirm the flag with repeat-primed PCR"}
         if rep != "RFC1" and rep in motifs and any(x != "normal" for x in status):
             item["motif"] = motifs[rep]
-        if st and not status and rep in ungraded:
-            item["not_graded"] = ungraded[rep]
+        if st and not status and lid in ungraded:
+            item["not_graded"] = ungraded[lid]
         loci.append(item)
         if st:
             # One value per record, the most severe of normal, pre_mutation and
             # full_mutation; a locus outside Stranger's catalog has none.
             if not status and "not_graded" in item:
-                if rep not in not_graded:
-                    not_graded.append(rep)
+                if lid not in not_graded:
+                    not_graded.append(lid)
             elif not status:
                 no_status += 1
             elif any(x != "normal" for x in status):
@@ -2133,7 +2296,8 @@ def sec_expansions(d, s):
                                             else "not in output"} for k in EH_LOCI],
            "loci": loci, "stranger": bool(st), "stranger_outdated": outdated,
            "unsized": [l["locus"] for l in loci if l["sizing"] not in ("sized", "unknown")],
-           "intermediate": [l["locus"] for l in loci if l["zone"]]}
+           "intermediate": [l["locus"] for l in loci if l["zone"]],
+           "readings": str_readings(by, d, s)}
     if st:
         # not_graded: {locus: why} of the loci the catalog gives no thresholds,
         # so Stranger gives them no status: not graded, never normal.
@@ -2406,6 +2570,39 @@ def sec_y_haplogroup(d, s):
     return p, {"haplogroup": hg if hg not in ("", "NA") else "insufficient markers",
                "valid_markers": r.get("Valid_markers") or ".", "qc_score": r.get("QC-score") or ".",
                "explore": haplogroup_explore("y", hg)}
+
+
+def sec_y_tree(d, s):
+    """Step 37's placement on the current public tree (y_haplogroup/<id>_y_tree.txt,
+    bin/y_tree_place.py): the terminal branch, how deep it sits, the SNP
+    calls along the path, and the tree release the names come from. The
+    per-level table beside it gives each branch of that path."""
+    p = first_existing(d, [f"y_haplogroup/{s}_y_tree.txt"])
+    if not p:
+        return None, {}
+    rows = read_tsv(p)
+    need = ("Hg", "Level", "Tree")
+    if not rows or any(k not in rows[0] for k in need):
+        raise Unreadable(f"{os.path.basename(p)} lacks a column of {', '.join(need)}")
+    r = rows[0]
+    hg = (r.get("Hg") or "").strip()
+    out = {"haplogroup": hg if hg not in ("", "NA") else "no branch has a derived call",
+           "level": r.get("Level") or ".", "tree": r.get("Tree") or ".",
+           "path_derived": r.get("Path_derived") or ".", "path_ancestral": r.get("Path_ancestral") or ".",
+           "path_no_call": r.get("Path_no_call") or ".",
+           "ancestral_in_terminal": r.get("Ancestral_in_terminal") or ".",
+           "outvoted_ancestral": r.get("Outvoted_ancestral") or ".",
+           "snps_called": r.get("SNPs_called") or ".", "min_depth": r.get("Min_depth") or ".",
+           "explore": haplogroup_explore("y", hg)}
+    lvl = first_existing(d, [f"y_haplogroup/{s}_y_tree_path.tsv"])
+    if lvl:
+        prows = read_tsv(lvl)
+        if not prows or "Branch" not in prows[0]:
+            raise Unreadable(f"{os.path.basename(lvl)} has no Branch column or no rows")
+        out["path"] = [{k: (row.get(k) or "") for k in
+                        ("Level", "Branch", "SNPs", "On_tables", "Derived", "Ancestral", "No_call",
+                         "Ancestral_SNPs")} for row in prows]
+    return p, out
 
 
 def sec_y_str(d, s):
@@ -4328,6 +4525,7 @@ SECTIONS = [
     ("roh", "Runs of homozygosity", "11", sec_roh),
     ("haplogroup", "Mitochondrial haplogroup", "12", sec_haplogroup),
     ("y_haplogroup", "Y-chromosome haplogroup (Yleaf)", "37", sec_y_haplogroup),
+    ("y_tree", "Y placement on the current public tree", "37", sec_y_tree),
     ("y_str", "Y-STR markers (HipSTR)", "45", sec_y_str),
     ("consumer_export", "Raw-data export (23andMe v5 layout)", "40", sec_consumer_export),
     ("bloodtype", "Blood groups (predicted)", "41", sec_bloodtype),

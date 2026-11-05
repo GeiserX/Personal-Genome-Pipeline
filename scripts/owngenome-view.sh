@@ -11,7 +11,7 @@
 # 127.0.0.1 only and its pages may not call any other server, so the data never
 # leaves this machine; docs/viewer.md says how to reach it from a remote box
 # over ssh. Needs python3 on the host. The first run downloads the pinned
-# igv.js release (IGV_JS_VERSION below) into GENOME_DIR/tools/ and checks its
+# igv.js release (IGV_JS_VERSION in versions.env) into GENOME_DIR/tools/ and checks its
 # sha256; later runs need no network.
 #
 # Files, each overridable from the environment:
@@ -30,10 +30,8 @@ GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 . "$(dirname "$0")/lib/common.sh"
 validate_sample "$SAMPLE"
 
-# igv.js, MIT licence, https://github.com/igvteam/igv.js. Bump both lines
-# together: the sha256 is of dist/igv.min.js of that npm release.
-IGV_JS_VERSION=3.8.10
-IGV_JS_SHA256=87b991ae2a720978172e269dd5127c495e56df5af31144dff19c83124e2f5744
+# igv.js: IGV_JS_VERSION and IGV_JS_SHA256 come from versions.env (through
+# lib/common.sh), shared with scripts/owngenome-live.sh.
 IGV_JS_URL="https://cdn.jsdelivr.net/npm/igv@${IGV_JS_VERSION}/dist/igv.min.js"
 
 PORT=${OWNGENOME_VIEW_PORT:-8765}

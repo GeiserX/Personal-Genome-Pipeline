@@ -69,7 +69,7 @@ process HTML_REPORT {
             ${id}_prioritized.vcf.gz|${id}_compound_het_pairs.tsv) place slivar "\$f" ;;
             ${id}_roh.txt)                                place roh "\$f" ;;
             ${id}_haplogroup.txt|${id}_haplocheck.txt)    place mito "\$f" ;;
-            ${id}_y_haplogroup.txt)                       place y_haplogroup "\$f" ;;
+            ${id}_y_haplogroup.txt|${id}_y_tree.txt|${id}_y_tree_path.tsv) place y_haplogroup "\$f" ;;
             ${id}_y_str.tsv)                              place y_str "\$f" ;;
             ${id}_paraphase_copy_number.tsv|${id}_paraphase_variants.tsv|${id}_*_copy_number.tsv) place paralogs "\$f" ;;
             ${id}.mosdepth.summary.txt|${id}_callability.bed.gz) place coverage "\$f" ;;
