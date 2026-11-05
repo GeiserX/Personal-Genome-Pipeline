@@ -3,6 +3,7 @@
 #
 # Usage: scripts/ci/e2e-run.sh [pattern]
 #        scripts/ci/e2e-run.sh --self-test-pull | --image-groups | --pull-images
+#        scripts/ci/e2e-run.sh --pull-image REF
 #   pattern  optional shell glob; runs only the cases whose file name matches
 #            (e.g. '2*' or '*cyrius*'). Later cases read earlier cases' outputs,
 #            so a partial run is for debugging only.
@@ -11,6 +12,8 @@
 #   --image-groups  prints "GROUP IMAGE" for every image the cases use (the
 #            e2e workflow's image cache entries) and exits.
 #   --pull-images  pulls those images, as step 3 below does, and exits.
+#   --pull-image REF  pulls one image with the same retry (the docker shim's
+#            pulls of the lazy images at their first use), and exits.
 #
 # Env: E2E_WORK  work area (default ${RUNNER_TEMP:-/tmp}/e2e-work), about 25 GB
 #      GH_TOKEN  token for `gh release download` (the job's GITHUB_TOKEN)
@@ -18,6 +21,8 @@
 #                full run (pre-pull, all-cases-ran marker). The e2e workflow
 #                gives each of its parallel jobs its list from e2e-shards.sh.
 #      E2E_JOB   the job name written beside each result (default local)
+#      E2E_MIN_FREE_GB  fail before the first case when less is free under
+#                E2E_WORK (default 0)
 #      E2E_BASE_OUT  after the cases, pack every file they wrote or changed
 #                (under E2E_WORK and the checkout) into this .tar.zst, and
 #                write "E2E_WORK CHECKOUT" to E2E_BASE_OUT.from
@@ -41,7 +46,9 @@
 #      for the build-fixture job to publish it;
 #   2. lays out GENOME_DIR the way setup.sh and step 13 would leave it;
 #   3. pulls every image the cases use that is not on the machine yet,
-#      trying a pull again only when the registry answered with a 5xx;
+#      trying a pull again only when the registry answered with a 5xx (the
+#      five largest wait for the first case that runs them), and checks the
+#      free disk against E2E_MIN_FREE_GB;
 #   4. runs tests/e2e/*.sh in name order (C locale: numbered cases first, then
 #      the <package-key>-*.sh cases later packages add), or those of E2E_CASES,
 #      and keeps going after a failure, so one run lists every broken step;
@@ -112,6 +119,22 @@ case_images() {
       done | awk '!seen[$0]++'
 }
 
+# Images pulled at first use, not before the cases: the five largest (1.9 to
+# 6.0 GB each, 15 GB together in run 41938436657), which no image cache entry
+# holds (pinned by digest or over the group budget) and which only some legs
+# run. Pulled up front, every leg carried all five. A `docker run` or
+# `docker create` of one that is missing pulls it first, with the retry above
+# (tests/e2e/bin/docker reads E2E_LAZY_IMAGES).
+LAZY_IMAGES=" DEEPVARIANT_IMAGE PHARMCAT_IMAGE GATK_IMAGE MEGANE_IMAGE VNTYPER_IMAGE "
+# lazy_images: the references of LAZY_IMAGES, from versions.env.
+lazy_images() {
+  grep -hoE '^[A-Z0-9_]+_IMAGE="[^"]+"' "${REPO}/versions.env" \
+    | while IFS='=' read -r name ref; do
+        [[ "$LAZY_IMAGES" == *" ${name} "* ]] && echo "${ref//\"/}"
+      done
+  return 0
+}
+
 # --- Image cache groups -------------------------------------------------------
 # The e2e workflow caches the images of case_images in IMAGE_GROUPS cache
 # entries, so no single entry, and not their sum, reaches the repository's
@@ -136,17 +159,20 @@ if [ "${1:-}" = --image-groups ]; then
   exit 0
 fi
 
-# pull_all: pull every image of case_images that is not here yet.
+# pull_all: pull every image of case_images that is not here yet, but the
+# lazy ones.
 pull_all() {
-  local image pulled=0
+  local image pulled=0 lazy
   mapfile -t IMAGES < <(case_images)
   [ "${#IMAGES[@]}" -gt 0 ] || { echo "ERROR: no NAME_IMAGE line found in versions.env" >&2; return 1; }
+  lazy=$(lazy_images)
   for image in "${IMAGES[@]}"; do
+    grep -qxF "$image" <<< "$lazy" && continue
     docker image inspect "$image" > /dev/null 2>&1 && continue
     pull_image "$image" || return 1
     pulled=$((pulled + 1))
   done
-  echo "${#IMAGES[@]} images: $(( ${#IMAGES[@]} - pulled )) already here, ${pulled} pulled"
+  echo "${#IMAGES[@]} images: $(( ${#IMAGES[@]} - pulled - $(wc -l <<< "$lazy") )) already here, ${pulled} pulled, $(wc -l <<< "$lazy") left to their first use"
 }
 
 # The e2e workflow's shard legs pull while the base leg runs.
@@ -154,6 +180,26 @@ if [ "${1:-}" = --pull-images ]; then
   pull_all
   exit
 fi
+# --pull-image REF: one pull with the retry (the docker shim's lazy pulls).
+if [ "${1:-}" = --pull-image ]; then
+  pull_image "${2:?--pull-image needs an image}"
+  exit
+fi
+
+# --- Free disk ------------------------------------------------------------------
+# The legs ran out of disk pulling images on 2026-11-05 (run 41938436657). Before
+# the cases a leg needs E2E_MIN_FREE_GB free under E2E_WORK: room for what its
+# cases write and for the lazy images they pull.
+# disk_check NEED_GB: prints the free space; fails when it is under NEED_GB.
+disk_check() {
+  local free
+  free=$(( $(df --output=avail -k "$E2E_WORK" | tail -1) / 1048576 ))
+  echo "Free disk before the cases: ${free} GB under ${E2E_WORK} (the leg needs ${1} GB)"
+  if [ "$free" -lt "$1" ]; then
+    echo "ERROR: ${free} GB free under ${E2E_WORK}, under the ${1} GB the cases need." >&2
+    return 1
+  fi
+}
 
 if [ "${1:-}" = --self-test-pull ]; then
   T=$(mktemp -d)
@@ -222,6 +268,48 @@ FAKE
     echo "ok: each of the $(wc -l <<< "$LIST" | tr -d ' ') listed images is in one cache group of ${IMAGE_GROUPS}"
   else
     echo "FAIL: the cache groups do not hold the pull list once each"; st_failed=1
+  fi
+  # Lazy images: each one a case image, five in all.
+  LAZY=$(lazy_images)
+  if [ "$(wc -l <<< "$LAZY")" -eq 5 ] && ! grep -qvxF -f <(echo "$LIST") <<< "$LAZY"; then
+    echo "ok: the 5 lazy images are case images"
+  else
+    echo "FAIL: the lazy images are not 5 case images: ${LAZY//$'\n'/ }"; st_failed=1
+  fi
+  # disk_check against a fake df: 10 GB free fails a need of 11 and passes 10.
+  # shellcheck disable=SC2016  # the fake df expands FAKE_AVAIL_K when it runs
+  printf '#!/usr/bin/env bash\nprintf "Avail\\n%%s\\n" "$FAKE_AVAIL_K"\n' > "${T}/df"
+  chmod +x "${T}/df"
+  E2E_WORK=$T
+  if FAKE_AVAIL_K=$((10 * 1048576)) disk_check 11 > /dev/null 2>&1; then
+    echo "FAIL: 10 GB free passed a need of 11 GB"; st_failed=1
+  else echo "ok: 10 GB free fails a need of 11 GB"; fi
+  if FAKE_AVAIL_K=$((10 * 1048576)) disk_check 10 > /dev/null 2>&1; then echo "ok: 10 GB free passes a need of 10 GB"
+  else echo "FAIL: 10 GB free failed a need of 10 GB"; st_failed=1; fi
+  # The docker shim: a run of a missing lazy image pulls it once, then runs;
+  # a run of any other image only runs.
+  mkdir -p "${T}/real"
+  cat > "${T}/real/docker" <<'FAKE'
+#!/usr/bin/env bash
+echo "$*" >> "${FAKE_DIR}/calls"
+case "$1 ${2:-}" in
+  "image inspect") awk -v i="${*: -1}" '$1 == "pull" && $NF == i {f = 1} END {exit !f}' "${FAKE_DIR}/calls" ;;
+  *) exit 0 ;;
+esac
+FAKE
+  chmod +x "${T}/real/docker"
+  : > "${T}/calls"
+  PATH="${REPO}/tests/e2e/bin:${T}/real:${PATH}" E2E_LAZY_IMAGES="big/one:1 big/two:2" \
+    docker run --rm -v /a:/a big/two:2 tool --x > /dev/null 2>&1
+  PATH="${REPO}/tests/e2e/bin:${T}/real:${PATH}" E2E_LAZY_IMAGES="big/one:1 big/two:2" \
+    docker run --rm big/two:2 tool > /dev/null 2>&1
+  PATH="${REPO}/tests/e2e/bin:${T}/real:${PATH}" E2E_LAZY_IMAGES="big/one:1 big/two:2" \
+    docker run --rm small/x:1 tool > /dev/null 2>&1
+  if [ "$(grep -c '^pull ' "${T}/calls")" = 1 ] && grep -qx 'pull -q big/two:2' "${T}/calls" \
+     && [ "$(grep -c '^run ' "${T}/calls")" = 3 ]; then
+    echo "ok: the docker shim pulls a missing lazy image once, before its run"
+  else
+    echo "FAIL: the docker shim's lazy pulls:"; sed 's/^/  /' "${T}/calls"; st_failed=1
   fi
   exit "$st_failed"
 fi
@@ -317,9 +405,22 @@ fi
 if [ "$PATTERN" = "*" ]; then
   echo "=== Pulling the images the cases use ==="
   pull_all
+  E2E_LAZY_IMAGES=$(lazy_images | paste -sd' ' -)
+  export E2E_LAZY_IMAGES
 else
   echo "=== Partial run ('${PATTERN}'): no pre-pull, each case pulls what it uses ==="
 fi
+docker system df
+disk_check "${E2E_MIN_FREE_GB:-0}"
+# The least free space while the cases run, sampled every 10 s, for the report.
+LOW_FILE="${REPORT_DIR}/disk-low"
+df --output=avail -k "$E2E_WORK" | tail -1 > "$LOW_FILE"
+( while sleep 10; do
+    a=$(df --output=avail -k "$E2E_WORK" | tail -1)
+    [ "$a" -lt "$(cat "$LOW_FILE")" ] && echo "$a" > "$LOW_FILE"
+  done ) &
+LOW_PID=$!
+trap 'kill "$LOW_PID" 2> /dev/null || true' EXIT
 
 # --- Downloads kept between runs ----------------------------------------------
 # The two largest downloads of the cases come from EBI's 1000 Genomes server,
@@ -494,6 +595,9 @@ if [ "${#names[@]}" -eq 0 ]; then
 fi
 # Tells the workflow every case ran, so the pulled images are complete enough to cache.
 [ "$PATTERN" = "*" ] && touch "${E2E_WORK}/all-cases-ran"
+kill "$LOW_PID" 2> /dev/null || true
+echo "Disk (${JOB}): $(( $(cat "$LOW_FILE") / 1048576 )) GB free at the lowest during the cases, $(( $(df --output=avail -k "$E2E_WORK" | tail -1) / 1048576 )) GB after them" | tee -a "$SUMMARY"
+docker system df
 
 # --- 5. Report ----------------------------------------------------------------
 {

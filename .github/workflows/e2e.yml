@@ -417,6 +417,30 @@ jobs:
         with:
           version: "26.10.5"
 
+      # Docker 29 on the ubuntu-26.04 image keeps images in containerd's
+      # store, which holds each layer twice: the compressed or saved blob in
+      # its content store and the unpacked snapshot. There the 56 images of
+      # the cases and the layout took 91 GB of disk for 33 GB of image size
+      # (run 41938436657, shard 3), more than a 72 GB runner has free.
+      # The classic overlay2 store keeps the unpacked layers only (the 44
+      # cached images took 20 GB on an ubuntu-24.04 runner, run 41947119567).
+      # Runs before any image is restored or pulled; the images already in
+      # the containerd store are pruned first, as overlay2 would not see them.
+      - name: Docker image store
+        run: |
+          if docker info -f '{{json .DriverStatus}}' | grep -q io.containerd.snapshotter; then
+            docker image prune -a -f > /dev/null
+            f=/etc/docker/daemon.json
+            { [ -s "$f" ] && sudo cat "$f" || echo '{}'; } \
+              | jq '.features["containerd-snapshotter"] = false' | sudo tee "${f}.new" > /dev/null
+            sudo mv "${f}.new" "$f"
+            sudo systemctl restart docker
+          fi
+          driver=$(docker info -f '{{.Driver}}')
+          echo "Docker $(docker version -f '{{.Server.Version}}'), storage driver ${driver}" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$driver" = overlay2 ] || { echo "::error::Docker's storage driver is ${driver}, not overlay2."; exit 1; }
+          df -h /
+
       # Images are cached in four entries, one per group of
       # `scripts/ci/e2e-run.sh --image-groups`, each keyed on its own image
       # list: a version bump misses one group's key, and that group restores
@@ -483,6 +507,8 @@ jobs:
                 [ -f "$f" ] || continue
                 if zstd -dc "$f" | docker load -q > /dev/null; then echo "${f##*/}" >> "$loaded"
                 else echo "::warning::${f##*/} did not load; e2e-run.sh pulls it"; fi
+                # Loaded, the archive only takes disk.
+                rm -f "$f"
               done
             ) &
           done
@@ -588,6 +614,8 @@ jobs:
           E2E_CASES: ${{ steps.cases-list.outputs.list }}
           E2E_JOB: ${{ matrix.job == 'base' && 'base' || format('shard {0}', matrix.job) }}
           E2E_TRACE: ${{ needs.e2e-plan.outputs.trace }}
+          # The free disk a leg needs before its first case (e2e-run.sh).
+          E2E_MIN_FREE_GB: 10
           E2E_BASE_OUT: ${{ matrix.job == 'base' && format('{0}/base.tar.zst', runner.temp) || '' }}
           E2E_BASE_IN: ${{ matrix.job != 'base' && format('{0}/e2e-base/base.tar.zst', runner.temp) || '' }}
           # Keep the downloads to the end of the job only when a save step uses them.

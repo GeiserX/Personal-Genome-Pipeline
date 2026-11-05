@@ -610,6 +610,11 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Fix:** `tests/e2e/mei-1.sh` removes its whole sample directory and the image by its id when it ends, and logs the free disk before and after. With the image gone every case passed. The image is pinned by digest, so the e2e image cache never saves it anyway.
 - **Image sizes step:** the job's "Image sizes" step then stopped with `numfmt: invalid number: ''`. For an image that is gone, `docker image inspect -f` prints an empty line before the `|| echo 0` fallback, so the step's own "not here" branch never ran. The fix in `.github/workflows/e2e.yml` reads the size into a variable first (`size=$(docker image inspect ...) || size=0`) and prints `${size:-0}`.
 
+### Docker's containerd image store on ubuntu-26.04 doubles the e2e images on disk
+- **Failed:** shards 2 and 5 of main's run 41938436657 stopped in the pre-pull with "no space left on device" under `/var/lib/containerd`, while pulling MEGAnE's image. The same commit passed on other legs.
+- **Why:** `ubuntu-latest` hands out runners of two sizes, 145 GB and 72 GB (48 GB free after the clean-up step), and on the ubuntu-26.04 image Docker 29 keeps images in containerd's store, which holds each layer as a blob and as an unpacked copy. The 56 case images (33 GB of image size) and the layout took 91 GB there. Every leg also pre-pulled all of them, the five largest included, whatever its cases ran.
+- **Fix:** each e2e leg turns `containerd-snapshotter` off in `/etc/docker/daemon.json` and restarts Docker before it restores an image, so images go to overlay2; the five largest images are pulled at a case's first `docker run` of them (`tests/e2e/bin/docker`); and `e2e-run.sh` fails a leg with less than `E2E_MIN_FREE_GB` free before its first case, so a short disk shows as one clear error instead of a failure in a pull or a case.
+
 ## Downloads (2026-11)
 
 ### One bad transfer of a large file failed the whole setup
