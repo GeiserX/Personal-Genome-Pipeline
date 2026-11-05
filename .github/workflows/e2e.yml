@@ -469,6 +469,31 @@ jobs:
         with:
           version: "26.10.5"
 
+      # Docker 29 on the ubuntu-26.04 image keeps images in containerd's
+      # store, which holds each layer twice: the compressed blob in its
+      # content store and the unpacked snapshot. DeepVariant's, GATK's and
+      # VNtyper's images took 24.8 GB of disk there and 17.6 GB in the
+      # classic overlay2 store, on 26.04 and on 24.04 alike (probe run
+      # 41957796291 on the geiresx fork). With every case image on it, a
+      # 72 GB runner (48 GB free) ran out in the pre-pull (run 41938436657,
+      # shards 2 and 5). Runs before any image is restored or pulled; the
+      # images already in the containerd store are pruned first, as overlay2
+      # would not see them.
+      - name: Docker image store
+        run: |
+          if docker info -f '{{json .DriverStatus}}' | grep -q io.containerd.snapshotter; then
+            docker image prune -a -f > /dev/null
+            f=/etc/docker/daemon.json
+            { [ -s "$f" ] && sudo cat "$f" || echo '{}'; } \
+              | jq '.features["containerd-snapshotter"] = false' | sudo tee "${f}.new" > /dev/null
+            sudo mv "${f}.new" "$f"
+            sudo systemctl restart docker
+          fi
+          driver=$(docker info -f '{{.Driver}}')
+          echo "Docker $(docker version -f '{{.Server.Version}}'), storage driver ${driver}" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$driver" = overlay2 ] || { echo "::error::Docker's storage driver is ${driver}, not overlay2."; exit 1; }
+          df -h /
+
       # Images are cached in four entries, one per group of
       # `scripts/ci/e2e-run.sh --image-groups`, each keyed on its own image
       # list: a version bump misses one group's key, and that group restores
@@ -484,7 +509,11 @@ jobs:
           for g in 0 1 2 3; do
             # Only refs that can be saved: a digest bump never changes an entry.
             h=$(awk -v g="$g" '$1 == g && $2 !~ /@/ {print $2}' "${RUNNER_TEMP}/image-groups.txt" | sort | sha256sum | cut -c1-16)
-            echo "g${g}=e2e-images-g${g}-${h}" | tee -a "$GITHUB_OUTPUT"
+            # "ovl": saved from the overlay2 store (step "Docker image store").
+            # 7 of the 46 archives saved from containerd's store did not load
+            # into overlay2 (run 41960912641), and an exact key hit never
+            # saves again, so the old entries are left behind.
+            echo "g${g}=e2e-images-ovl-g${g}-${h}" | tee -a "$GITHUB_OUTPUT"
           done
 
       - name: Restore cached images, group 0
@@ -493,7 +522,7 @@ jobs:
         with:
           path: ${{ runner.temp }}/images/g0
           key: ${{ steps.keys.outputs.g0 }}
-          restore-keys: e2e-images-g0-
+          restore-keys: e2e-images-ovl-g0-
 
       - name: Restore cached images, group 1
         id: images1
@@ -501,7 +530,7 @@ jobs:
         with:
           path: ${{ runner.temp }}/images/g1
           key: ${{ steps.keys.outputs.g1 }}
-          restore-keys: e2e-images-g1-
+          restore-keys: e2e-images-ovl-g1-
 
       - name: Restore cached images, group 2
         id: images2
@@ -509,7 +538,7 @@ jobs:
         with:
           path: ${{ runner.temp }}/images/g2
           key: ${{ steps.keys.outputs.g2 }}
-          restore-keys: e2e-images-g2-
+          restore-keys: e2e-images-ovl-g2-
 
       - name: Restore cached images, group 3
         id: images3
@@ -517,7 +546,7 @@ jobs:
         with:
           path: ${{ runner.temp }}/images/g3
           key: ${{ steps.keys.outputs.g3 }}
-          restore-keys: e2e-images-g3-
+          restore-keys: e2e-images-ovl-g3-
 
       # One image per file; the four groups load side by side. An image that
       # does not load is pulled by e2e-run.sh like any missing image.
@@ -535,6 +564,8 @@ jobs:
                 [ -f "$f" ] || continue
                 if zstd -dc "$f" | docker load -q > /dev/null; then echo "${f##*/}" >> "$loaded"
                 else echo "::warning::${f##*/} did not load; e2e-run.sh pulls it"; fi
+                # Loaded, the archive only takes disk.
+                rm -f "$f"
               done
             ) &
           done
@@ -645,6 +676,8 @@ jobs:
           E2E_CASES: ${{ steps.cases-list.outputs.list }}
           E2E_JOB: ${{ matrix.job == 'base' && 'base' || format('shard {0}', matrix.job) }}
           E2E_TRACE: ${{ needs.e2e-plan.outputs.trace }}
+          # The free disk a leg needs before its first case (e2e-run.sh).
+          E2E_MIN_FREE_GB: 10
           E2E_BASE_OUT: ${{ matrix.job == 'base' && format('{0}/base.tar.zst', runner.temp) || '' }}
           E2E_BASE_IN: ${{ matrix.job != 'base' && format('{0}/e2e-base/base.tar.zst', runner.temp) || '' }}
           # Keep the downloads to the end of the job only when a save step uses them.
