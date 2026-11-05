@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""render_pictures.py: the three docs pictures from DEMO-001's reports.
+"""render_pictures.py: the docs pictures from DEMO-001's reports and its live-site demo.
 
-  render_pictures.py --genome-dir DIR --out OUTDIR [--font FILE]
+  render_pictures.py --genome-dir DIR --out OUTDIR [--font FILE] [--only html|cpic|live]
                      [--html-stop-before TITLES] [--cpic-head N | --cpic-full]
 
 reads DIR/DEMO-001 after steps 24, 27 and 28 ran on it and writes
@@ -18,6 +18,11 @@ reads DIR/DEMO-001 after steps 24, 27 and 28 ran on it and writes
                            picture); --cpic-head N sets N, --cpic-full draws
                            the whole file as `cat` prints it
   demo-multiqc-report.png  the top 1600 x 1118 pixels of the step 28 report
+  demo-live-site.png       (--only live, never by default) the live-site demo
+                           as the docs workflow publishes it: built by
+                           tests/demo/build_live_demo.py on a DEMO-001 it
+                           writes itself (--genome-dir is not read), at the
+                           last moment of its replay, in a 1280 x 1000 window
 
 Every PNG is written again from its pixels alone, so it holds no text, time
 or EXIF chunk. Needs playwright (with its Chromium) and pillow;
@@ -90,6 +95,52 @@ def html_pictures(sample_dir, out, stop_titles):
         browser.close()
 
 
+def live_picture(out):
+    """demo-live-site.png: the live-site demo as the docs publish it, served as a static host serves it."""
+    import functools
+    import shutil
+    import tempfile
+    import threading
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+    from playwright.sync_api import sync_playwright
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import build_live_demo
+
+    tmp = tempfile.mkdtemp(prefix="owngenome-live-picture.")
+    try:
+        site = os.path.join(tmp, "demo")
+        build_live_demo.build(site)
+        handler = functools.partial(type("Quiet", (SimpleHTTPRequestHandler,), {"log_message": lambda *a: None}),
+                                    directory=site)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch()
+                # bypass_csp: the page's CSP (script-src 'self') blocks the eval that
+                # wait_for_function needs once it has to poll; the page's own scripts are
+                # all 'self', so the picture is the same.
+                page = browser.new_page(viewport={"width": 1280, "height": 1000}, device_scale_factor=1,
+                                        color_scheme="dark", bypass_csp=True)
+                page.goto(f"http://127.0.0.1:{srv.server_address[1]}/runs/{SAMPLE}/")
+                page.wait_for_function("document.documentElement.dataset.pgpStatus === 'ready'")
+                # The last moment: the run ended, the charts are drawn, the re-check is in.
+                page.evaluate("() => { const s = document.getElementById('replay-slider'); s.value = s.max; "
+                              "s.dispatchEvent(new Event('input')); }")
+                page.wait_for_function("Number(document.documentElement.dataset.pgpCharts) > 0")
+                page.wait_for_timeout(1000)
+                path = os.path.join(out, "demo-live-site.png")
+                page.screenshot(path=path)
+                clean_png(path)
+                print(f"  {path}")
+                browser.close()
+        finally:
+            srv.shutdown()
+            srv.server_close()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def gene_table_end(lines):
     """The number of lines up to the last row of the Gene Results table."""
     start = next((i for i, l in enumerate(lines) if l.startswith("Gene Results:")), None)
@@ -139,7 +190,7 @@ def cpic_picture(sample_dir, out, font_path, head, full):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--genome-dir", required=True)
+    ap.add_argument("--genome-dir", help="the folder holding DEMO-001 (required, except with --only live)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--font", help="monospace TrueType font for the CPIC picture (default: Menlo, else DejaVu Sans Mono)")
     ap.add_argument("--html-stop-before", default=",".join(STOP_BEFORE),
@@ -147,13 +198,20 @@ def main(argv=None):
     ap.add_argument("--cpic-head", type=int, default=0,
                     help="draw the first N lines (default: up to the last row of the Gene Results table)")
     ap.add_argument("--cpic-full", action="store_true", help="draw the whole report, as cat prints it")
-    ap.add_argument("--only", choices=["html", "cpic"], help="draw only these pictures (html: the step 24 and MultiQC ones)")
+    ap.add_argument("--only", choices=["html", "cpic", "live"],
+                    help="draw only these pictures (html: the step 24 and MultiQC ones; live: the live-site demo, "
+                         "drawn only when asked)")
     a = ap.parse_args(argv)
+    os.makedirs(a.out, exist_ok=True)
+    if a.only == "live":
+        live_picture(a.out)
+        return 0
+    if not a.genome_dir:
+        ap.error("--genome-dir is required")
     font = a.font or next((f for f in FONTS if os.path.isfile(f)), None)
     if not font:
         ap.error("no monospace font found: give --font")
     sample_dir = os.path.join(a.genome_dir, SAMPLE)
-    os.makedirs(a.out, exist_ok=True)
     if a.only != "html":
         cpic_picture(sample_dir, a.out, font, a.cpic_head, a.cpic_full)
     if a.only != "cpic":
