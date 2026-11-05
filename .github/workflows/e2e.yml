@@ -105,8 +105,8 @@ permissions:
   contents: read
 
 env:
-  # The most shard legs besides the base leg. e2e-plan runs fewer when the
-  # picked cases fit (scripts/ci/e2e-shards.sh count). The cases took 230
+  # The shard legs besides the base leg. A full run uses all of them; a run
+  # of picked cases runs fewer when they fit (scripts/ci/e2e-shards.sh count). The cases took 230
   # minutes in one job on 2026-11-02 (run 41390434697).
   E2E_SHARDS: 6
 
@@ -346,8 +346,8 @@ jobs:
       - name: Pull retry self-test
         run: scripts/ci/e2e-run.sh --self-test-pull
 
-      # The base job plus up to E2E_SHARDS shard jobs, as many as the picked
-      # cases need (e2e-shards.sh count); a traced run puts every other case
+      # The base job plus E2E_SHARDS shard jobs, or for picked cases as many
+      # as they need (e2e-shards.sh count); a traced run puts every other case
       # in one shard, in name order, as one serial run would. The two parity
       # checks below read the outputs of two cases each, so each pair that
       # runs must share a shard.
@@ -358,11 +358,16 @@ jobs:
           SELECT: ${{ needs.e2e-scope.outputs.select }}
         run: |
           set -o pipefail
+          # A full run keeps all E2E_SHARDS legs: the runner's disk, not time,
+          # is what a leg runs out of. Five legs put 30 to 37 cases in one and
+          # filled a runner's disk until the runner itself died (run
+          # 41995851301, shard 3); six legs pass (run 41995719742).
+          n=$E2E_SHARDS
           if [ "$SELECT" != all ]; then
             tr ' ' '\n' <<< "$SELECT" > "${RUNNER_TEMP}/select.txt"
             export E2E_SELECT="${RUNNER_TEMP}/select.txt"
+            n=$(scripts/ci/e2e-shards.sh count "$E2E_SHARDS")
           fi
-          n=$(scripts/ci/e2e-shards.sh count "$E2E_SHARDS")
           [ "$TRACE" = true ] && n=1
           scripts/ci/e2e-shards.sh plan "$n" > "${RUNNER_TEMP}/plan.tsv"
           { scripts/ci/e2e-shards.sh base; cut -f2 "${RUNNER_TEMP}/plan.tsv"; } > "${RUNNER_TEMP}/all.txt"
