@@ -191,13 +191,38 @@ fi
 # The legs ran out of disk pulling images on 2026-11-05 (run 41938436657). Before
 # the cases a leg needs E2E_MIN_FREE_GB free under E2E_WORK: room for what its
 # cases write and for the lazy images they pull.
+# avail_k: the free KB under E2E_WORK plus, when Docker keeps its images on
+# another file system (a spare disk at /mnt), the free KB there.
+avail_k() {
+  { df --output=source,avail -k "$E2E_WORK" | tail -1
+    [ -z "${DOCKER_ROOT:-}" ] || df --output=source,avail -k "$DOCKER_ROOT" | tail -1
+  } | awk '!seen[$1]++ {s += $2} END {print s}'
+}
+# leg_need_gb TABLE CASE...: the disk the cases need, in GB, from the measured
+# peaks of TABLE (scripts/ci/e2e-case-disk.tsv: case, peak_mb, net_mb). A case
+# holds what the cases before it kept (net) plus its own peak; the leg needs
+# the largest such sum, plus 20% and 2 GB. A case without a row counts as the
+# largest peak of the table. Prints "NEED_GB MISSING_COUNT".
+leg_need_gb() {
+  local table=$1; shift
+  printf '%s\n' "$@" | awk -F'\t' -v OFS='\t' '
+    FILENAME == ARGV[1] { if ($0 !~ /^#/ && NF >= 3) { peak[$1] = $2; net[$1] = $3; if ($2 > top) top = $2 }; next }
+    {
+      p = ($1 in peak) ? peak[$1] : top; n = ($1 in net) ? net[$1] : 0
+      if (!($1 in peak)) miss++
+      if (kept + p > need) need = kept + p
+      kept += n; if (kept < 0) kept = 0
+    }
+    END { printf "%d %d\n", int((need * 1.2 + 2048 + 1023) / 1024), miss }' "$table" -
+}
 # disk_check NEED_GB: prints the free space; fails when it is under NEED_GB.
 disk_check() {
   local free
-  free=$(( $(df --output=avail -k "$E2E_WORK" | tail -1) / 1048576 ))
-  echo "Free disk before the cases: ${free} GB under ${E2E_WORK} (the leg needs ${1} GB)"
+  free=$(( $(avail_k) / 1048576 ))
+  echo "Free disk before the cases: ${free} GB under ${E2E_WORK}${DOCKER_ROOT:+ and ${DOCKER_ROOT}} (the leg needs ${1} GB)"
   if [ "$free" -lt "$1" ]; then
-    echo "ERROR: ${free} GB free under ${E2E_WORK}, under the ${1} GB the cases need." >&2
+    echo "ERROR: ${free} GB free under ${E2E_WORK}${DOCKER_ROOT:+ and ${DOCKER_ROOT}}, under the ${1} GB this leg's cases need (${2:-E2E_MIN_FREE_GB}). Runner: ${ImageOS:-unknown image} ${ImageVersion:-}, root disk $(df -h --output=source,size / | tail -1 | tr -s ' ')." >&2
+    lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT >&2 2> /dev/null || true
     return 1
   fi
 }
@@ -279,7 +304,7 @@ FAKE
   fi
   # disk_check against a fake df: 10 GB free fails a need of 11 and passes 10.
   # shellcheck disable=SC2016  # the fake df expands FAKE_AVAIL_K when it runs
-  printf '#!/usr/bin/env bash\nprintf "Avail\\n%%s\\n" "$FAKE_AVAIL_K"\n' > "${T}/df"
+  printf '#!/usr/bin/env bash\nprintf "Filesystem Avail\\nfake %%s\\n" "$FAKE_AVAIL_K"\n' > "${T}/df"
   chmod +x "${T}/df"
   E2E_WORK=$T
   if FAKE_AVAIL_K=$((10 * 1048576)) disk_check 11 > /dev/null 2>&1; then
@@ -287,6 +312,18 @@ FAKE
   else echo "ok: 10 GB free fails a need of 11 GB"; fi
   if FAKE_AVAIL_K=$((10 * 1048576)) disk_check 10 > /dev/null 2>&1; then echo "ok: 10 GB free passes a need of 10 GB"
   else echo "FAIL: 10 GB free failed a need of 10 GB"; st_failed=1; fi
+  # leg_need_gb: a keeps 500 MB, b peaks at 3000 MB after it: 3500 MB, plus 20%
+  # and 2 GB, is 7 GB; c has no row and counts as the largest peak.
+  printf '# case\tpeak_mb\tnet_mb\na\t1000\t500\nb\t3000\t0\n' > "${T}/disk.tsv"
+  got=$(leg_need_gb "${T}/disk.tsv" a b)
+  if [ "$got" = "7 0" ]; then echo "ok: a leg of a and b needs 7 GB"; else echo "FAIL: a leg of a and b: '${got}', want '7 0'"; st_failed=1; fi
+  got=$(leg_need_gb "${T}/disk.tsv" a c)
+  if [ "$got" = "7 1" ]; then echo "ok: a case without a row counts as the largest peak"; else echo "FAIL: a leg of a and c: '${got}', want '7 1'"; st_failed=1; fi
+  # The refusal names the free space, the need and the runner.
+  msg=$(FAKE_AVAIL_K=$((5 * 1048576)) ImageOS=ubuntu26 disk_check 7 "measured peaks" 2>&1 > /dev/null || true)
+  if [[ "$msg" == *"5 GB free"*"7 GB this leg's cases need (measured peaks)"*"Runner: ubuntu26"* ]]; then
+    echo "ok: the refusal names the free space, the need and the runner"
+  else echo "FAIL: the refusal says: ${msg}"; st_failed=1; fi
   # The docker shim: a run of a missing lazy image pulls it once, then runs;
   # a run of any other image only runs.
   mkdir -p "${T}/real"
@@ -412,13 +449,43 @@ else
   echo "=== Partial run ('${PATTERN}'): no pre-pull, each case pulls what it uses ==="
 fi
 docker system df
-disk_check "${E2E_MIN_FREE_GB:-0}"
-# The least free space while the cases run, sampled every 10 s, for the report.
+DOCKER_ROOT=$(docker info -f '{{.DockerRootDir}}' 2> /dev/null || true)
+# The leg's need: its cases' measured peaks (CASE_DISK), never under
+# E2E_MIN_FREE_GB. The runner's disks go to the log either way, so a runner
+# type that falls short can be told apart the next time it appears.
+CASE_DISK="${REPO}/scripts/ci/e2e-case-disk.tsv"
+mapfile -t LEG_CASES < <(cd "${REPO}/tests/e2e" && find . -maxdepth 1 -type f -name '*.sh' ! -name lib.sh -printf '%f\n' | LC_ALL=C sort \
+  | while IFS= read -r c; do
+      # shellcheck disable=SC2053  # PATTERN is a glob on purpose
+      if [ -n "$CASE_LIST" ]; then grep -qxF "${c%.sh}" "$CASE_LIST" && echo "${c%.sh}"
+      else [[ "$c" == $PATTERN ]] && echo "${c%.sh}"; fi
+    done)
+need=${E2E_MIN_FREE_GB:-0} why=E2E_MIN_FREE_GB
+if [ -f "$CASE_DISK" ] && [ "${#LEG_CASES[@]}" -gt 0 ]; then
+  read -r measured missing <<< "$(leg_need_gb "$CASE_DISK" "${LEG_CASES[@]}")"
+  if [ "$measured" -gt "$need" ]; then
+    why="measured peaks of ${#LEG_CASES[@]} cases in scripts/ci/e2e-case-disk.tsv"
+    [ "$missing" -eq 0 ] || why+=", ${missing} of them without a row, counted at the largest peak"
+    need=$measured
+  fi
+fi
+echo "Runner: ${ImageOS:-unknown image} ${ImageVersion:-}; disks:"
+lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT 2> /dev/null || true
+df -h "$E2E_WORK" ${DOCKER_ROOT:+"$DOCKER_ROOT"}
+disk_check "$need" "$why"
+# The least free space while the cases run, sampled every 10 s: for the leg
+# (LOW_FILE) and for the case that runs (CASE_LOW), for the report and for
+# report/disk.tsv, the rows of scripts/ci/e2e-case-disk.tsv.
 LOW_FILE="${REPORT_DIR}/disk-low"
-df --output=avail -k "$E2E_WORK" | tail -1 > "$LOW_FILE"
+CASE_LOW="${REPORT_DIR}/disk-case-low"
+avail_k > "$LOW_FILE"
+avail_k > "$CASE_LOW"
+: > "${REPORT_DIR}/disk.tsv"
 ( while sleep 10; do
-    a=$(df --output=avail -k "$E2E_WORK" | tail -1)
-    [ "$a" -lt "$(cat "$LOW_FILE")" ] && echo "$a" > "$LOW_FILE"
+    a=$(avail_k)
+    for f in "$LOW_FILE" "$CASE_LOW"; do
+      [ "$a" -lt "$(cat "$f")" ] && { echo "$a" > "${f}.new"; mv "${f}.new" "$f"; }
+    done
   done ) &
 LOW_PID=$!
 trap 'kill "$LOW_PID" 2> /dev/null || true' EXIT
@@ -572,6 +639,8 @@ for c in "${CASES[@]}"; do
   start=$(date +%s)
   tstart=$(date +%s.%N)
   echo "::group::${name}"
+  disk_start=$(avail_k)
+  echo "$disk_start" > "${CASE_LOW}.new"; mv "${CASE_LOW}.new" "$CASE_LOW"
   data_seed "$c"
   set +e
   timeout -k 30 "$CASE_TIMEOUT" bash "${REPO}/tests/e2e/${c}" 2>&1 | tee "$log"
@@ -584,6 +653,10 @@ for c in "${CASES[@]}"; do
   for i in ${E2E_LAZY_IMAGES:-}; do
     docker image inspect "$i" > /dev/null 2>&1 && { docker image rm -f "$i" > /dev/null || true; }
   done
+  disk_end=$(avail_k)
+  disk_low=$(cat "$CASE_LOW"); [ "$disk_end" -lt "$disk_low" ] && disk_low=$disk_end
+  # case, peak MB (start - lowest), net MB (start - end)
+  printf '%s\t%d\t%d\n' "$name" $(( (disk_start - disk_low) / 1024 )) $(( (disk_start - disk_end) / 1024 )) >> "${REPORT_DIR}/disk.tsv"
   echo "::endgroup::"
   case "$rc" in
     0)   result=pass ;;
@@ -603,7 +676,7 @@ fi
 # Tells the workflow every case ran, so the pulled images are complete enough to cache.
 [ "$PATTERN" = "*" ] && touch "${E2E_WORK}/all-cases-ran"
 kill "$LOW_PID" 2> /dev/null || true
-echo "Disk (${JOB}): $(( $(cat "$LOW_FILE") / 1048576 )) GB free at the lowest during the cases, $(( $(df --output=avail -k "$E2E_WORK" | tail -1) / 1048576 )) GB after them" | tee -a "$SUMMARY"
+echo "Disk (${JOB}): $(( $(cat "$LOW_FILE") / 1048576 )) GB free at the lowest during the cases, $(( $(avail_k) / 1048576 )) GB after them" | tee -a "$SUMMARY"
 docker system df
 
 # --- 5. Report ----------------------------------------------------------------
