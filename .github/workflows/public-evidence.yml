@@ -288,6 +288,19 @@ jobs:
         with:
           pattern: archaic-part-*
           path: parts
+      - name: Give a lone part its own folder
+        env:
+          PARTS: ${{ needs.archaic-sites.outputs.parts }}
+        run: |
+          set -euo pipefail
+          # download-artifact puts a single matching artifact straight into
+          # parts/, without the archaic-part-<chromosome> folder the steps
+          # below read.
+          if ! compgen -G 'parts/archaic-part-*' > /dev/null; then
+            c=$(jq -r '.[1]' <<< "$PARTS")
+            mv parts "lone-${c}" && mkdir parts && mv "lone-${c}" "parts/archaic-part-${c}"
+          fi
+          ls parts
       - name: One report per population, over the autosomes that ran
         env:
           WANT: ${{ needs.archaic-sites.outputs.count }}
