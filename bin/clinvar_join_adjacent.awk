@@ -31,7 +31,12 @@
 # both), or unphased with the same GT (0/1 and 1/0 are the same het call).
 # Two unphased het calls may also sit on different haplotypes; the genotype
 # cannot tell, so bin/clinvar_hits.awk and bin/collect_summary.py say so in
-# the note of such a hit. A call with a missing allele (./1) is never joined. The gene is not known
+# the note of such a hit. An unphased call with a missing allele (./1, the
+# other copy holds another ALT) is never joined. A phased one (1|.) is: its
+# ALT sits on a known haplotype, so it joins a record in the same phase set
+# whose ALT sits on that haplotype (1|0 or 1|.), and the combined record's GT
+# keeps "." on a haplotype where either part is missing (not called there; the
+# other alt allele when the part comes from a split 1|2). The gene is not known
 # here (the sample VCF is not annotated yet): a combined allele counts only
 # when ClinVar holds a record for it, and that record names its gene.
 #
@@ -50,18 +55,28 @@ BEGIN {
 
 # The phase signature of a record's genotype: two records with the same
 # non-empty signature can carry their ALT alleles on the same haplotype
-# (they do when phased or homozygous; unphased het calls may not).
-function hapsig(fmt, smp,    nf, f, ns, s, i, gt, ps, a, na, phased, sorted) {
+# (they do when phased or homozygous; unphased het calls may not). A phased
+# missing allele counts as "no ALT here" in the signature, so 1|. and 1|0
+# match; an unphased one gives no signature.
+function hapsig(fmt, smp,    nf, f, ns, s, i, gt, ps, a, na, phased, m) {
     nf = split(fmt, f, ":"); ns = split(smp, s, ":")
     gt = ""; ps = "."
     for (i = 1; i <= nf; i++) {
         if (f[i] == "GT" && i <= ns) gt = s[i]
         if (f[i] == "PS" && i <= ns) ps = s[i]
     }
-    if (gt == "" || gt ~ /[^0-9|\/]/ || gt !~ /[1-9]/) return ""
+    if (gt == "" || gt !~ /[1-9]/) return ""
     phased = (index(gt, "|") > 0)
-    if (phased && index(gt, "/") > 0) return ""
-    if (phased) return "P:" ps ":" gt
+    if (phased) {
+        if (index(gt, "/") > 0) return ""
+        na = split(gt, a, "|"); m = ""
+        for (i = 1; i <= na; i++) {
+            if (a[i] !~ /^([0-9]+|\.)$/) return ""
+            m = m (i > 1 ? "|" : "") (a[i] == "." ? "0" : a[i])
+        }
+        return "P:" ps ":" m
+    }
+    if (gt ~ /[^0-9\/]/) return ""
     na = split(gt, a, "/")
     if (na == 2 && a[1] + 0 > a[2] + 0) return "U:" a[2] "/" a[1]
     return "U:" gt
@@ -71,6 +86,25 @@ function genotype_out(sig,    p) {
     if (substr(sig, 1, 2) == "U:") return substr(sig, 3)
     p = substr(sig, 3)
     return substr(p, index(p, ":") + 1)
+}
+
+# The GT of the record that joins parts with genotypes g1 and g2 and phase
+# signature sig: for a phased pair, the signature's alleles, with "." on a
+# haplotype where either part is missing (not called there, or the other ALT
+# of a split record).
+function joined_gt(sig, g1, g2,    m, a, b, n, i, out) {
+    if (substr(sig, 1, 2) == "U:") return genotype_out(sig)
+    n = split(genotype_out(sig), m, "|"); split(g1, a, "|"); split(g2, b, "|")
+    out = ""
+    for (i = 1; i <= n; i++)
+        out = out (i > 1 ? "|" : "") ((m[i] == "0" && (a[i] == "." || b[i] == ".")) ? "." : m[i])
+    return out
+}
+
+function gt_of(fmt, smp,    nf, f, ns, s, i) {
+    nf = split(fmt, f, ":"); ns = split(smp, s, ":")
+    for (i = 1; i <= nf; i++) if (f[i] == "GT" && i <= ns) return s[i]
+    return ""
 }
 
 function ps_out(sig,    p) {
@@ -139,12 +173,13 @@ mode == "prepare" {
     if (!plain(ref) || !plain(alt) || NF < 10) next
     sig = hapsig($9, $10)
     if (sig == "") next
+    rgt = gt_of($9, $10)
     end = pos + length(ref) - 1
     # Pair with every buffered record that ends at most WINDOW bases before this one.
     for (j = 1; j <= nb; j++) {
         d = pos - bend[j]
         if (d < 1 || d > window || bsig[j] != sig) continue
-        gt = genotype_out(sig)
+        gt = joined_gt(sig, bgt[j], rgt)
         fmt = "GT"; smp = gt
         if (substr(sig, 1, 2) == "P:" && ps_out(sig) != ".") { fmt = "GT:PS"; smp = gt ":" ps_out(sig) }
         np++
@@ -157,10 +192,10 @@ mode == "prepare" {
     k = 0
     for (j = 1; j <= nb; j++) {
         if (bend[j] < pos - window) continue
-        k++; bpos[k] = bpos[j]; bend[k] = bend[j]; bref[k] = bref[j]; balt[k] = balt[j]; bsig[k] = bsig[j]
+        k++; bpos[k] = bpos[j]; bend[k] = bend[j]; bref[k] = bref[j]; balt[k] = balt[j]; bsig[k] = bsig[j]; bgt[k] = bgt[j]
     }
     nb = k + 1
-    bpos[nb] = pos; bend[nb] = end; bref[nb] = ref; balt[nb] = alt; bsig[nb] = sig
+    bpos[nb] = pos; bend[nb] = end; bref[nb] = ref; balt[nb] = alt; bsig[nb] = sig; bgt[nb] = rgt
     # A later pair starts at a buffered record, so every pending record that
     # starts before the first of them can go out, in POS order.
     flush_pending(bpos[1])

@@ -14,7 +14,9 @@
 # severity: alleles of the gene that are not a full loss of function, separated by ";": each is
 #   hypomorph or pseudodeficiency, then chrom:pos:ref:alt (GRCh38), then a name; "." for none. Such
 #   an allele never makes a carrier finding on its own (the couple screen, step 39, and the
-#   carrier list of the sample report).
+#   carrier list of the sample report). With a called deletion of the gene it is a second hit (the
+#   two-hit lines of the sample report, bin/collect_summary.py two_hits). In the couple screen a
+#   hypomorph beside a full loss of function in the other partner's same gene is a shared gene.
 # Rebuilt with: couple_report.py genes (docs/39-couple.md says how).
 gene	chrom	start	end	inheritance	lists	condition	severity
 ISG15	chr1	1001138	1014540	AR	Orphanet	Mendelian susceptibility to mycobacterial diseases due to complete ISG15 deficiency	.
@@ -186,7 +188,7 @@ HSD3B2	chr1	119413725	119453802	AR	Orphanet	Congenital adrenal hyperplasia due t
 PHGDH	chr1	119648411	119744227	AR	Orphanet	3-phosphoglycerate dehydrogenase deficiency, infantile/juvenile form; and 1 other	.
 HMGCS2	chr1	119747979	119769092	AR	Orphanet	3-hydroxy-3-methylglutaryl-CoA synthase deficiency	.
 PEX11B	chr1	145911348	145918747	AR	Orphanet	Infantile Refsum disease; and 2 others	.
-RBM8A	chr1	145920935	145928067	AR	Orphanet	Thrombocytopenia-absent radius syndrome	.
+RBM8A	chr1	145920935	145928067	AR	Orphanet	Thrombocytopenia-absent radius syndrome	hypomorph chr1:145927447:C:T c.-21G>A (rs139428292), a low-expression allele: TAR syndrome with a null allele such as the 1q21.1 deletion on the other copy; hypomorph chr1:145927328:C:G c.67+32G>C (rs201779890), the other low-expression allele of TAR syndrome
 HJV	chr1	146017468	146036746	AR	Orphanet	HJV or HAMP-related hemochromatosis	.
 GJA8	chr1	147902795	147909269	AR	Orphanet	Cataract-microcornea syndrome; and 3 others	.
 NOTCH2NLC	chr1	149390534	149471833	AR	Orphanet	Oculopharyngodistal myopathy	.

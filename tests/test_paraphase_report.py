@@ -22,13 +22,25 @@ Checks:
      or from its homologous region on a row in SMN2; a quality under 20 or a
      filter other than PASS is not a call; a row with fewer fields than the
      header is skipped, or read as not resolved, never a crash; the
-     comparison says agree, disagree, or nothing when one side has no call.
+     comparison says agree, disagree, or nothing when one side has no call;
+  5. the region catalog, assets/paraphase_genes.tsv: it holds the rows this
+     test expects (a dropped row goes red), the old eight regions give the
+     table byte for byte as the hard-coded table before the catalog wrote it
+     (a one-field change in the JSON goes red), a synthetic JSON of every new
+     entry (F8 intron 22, OPN1LW/OPN1MW, IKBKG, the NEB repeat, CYP11B1,
+     TPSAB1, AMY1A, the CFH cluster) parses into its rows, and a region
+     without the field its row reads is "not assessed";
+  6. the region count: docs/35-paralogs.md and scripts/35b-paraphase.sh state
+     PARAPHASE_REGIONS, the number of regions of the pinned Paraphase
+     4.1.0's data/38/config.yaml (the e2e case paralog-rows-1 counts them in
+     the image); a planted other number goes red.
 
 Run: python3 tests/test_paraphase_report.py
 """
 import gzip
 import json
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -99,7 +111,71 @@ VCF = ("##fileformat=VCFv4.2\n"
        "chr7\t5970000\t.\tC\tT\t.\tPASS\tHPBOUND=1-2\tGT:DP:AD\t1:20:0,19\t0:22:22,0\t1:18:1,17\n"
        "chr7\t5980000\t.\tG\tA\t.\tPASS\tHPBOUND=1-2\tGT:DP:AD\t0:20:20,0\t0:22:22,0\t.:3:2,1\n")
 
+# The table the hard-coded regions wrote for PARAPHASE_JSON before
+# assets/paraphase_genes.tsv (bin/paraphase_report.py at main 71d5d58d).
+GOLDEN_OLD8 = (
+    "region\tgene\tcopy_number\tstatus\tdetail\ttotal_cn\tregion_depth\tgenome_depth\n"
+    "hba\tHBA1\t2\tcalled\tgenotype -a/aa (3 alpha-globin genes); 4.2 kb deletion (-a4.2): HBA2 lost (hba_4p2delhap1)\t3\t90\t31.5\n"
+    "hba\tHBA2\t1\tcalled\tgenotype -a/aa (3 alpha-globin genes); 4.2 kb deletion (-a4.2): HBA2 lost (hba_4p2delhap1)\t3\t90\t31.5\n"
+    "ncf1\tNCF1\t2\tcalled\t.\t6\t.\t.\n"
+    "pms2\tPMS2\t2\tcalled\t.\t4\t.\t.\n"
+    "rccx\tCYP21A2 (RCCX)\t4\tcalled\tRCCX module copies (each carries CYP21A2 or its pseudogene CYP21A1P); CYP21A2 alleles: WT / WT\t4\t.\t.\n"
+    "smn1\tSMN1\t2\tcalled\t.\t4\t120\t31.5\n"
+    "smn1\tSMN2\t.\tno call\tone haplotype seen and the depth does not settle one copy or two\t4\t120\t31.5\n"
+    "smn1\tSMN exon 7-8 deletion\t0\tcalled\t.\t4\t120\t31.5\n"
+    "strc\tSTRC\t2\tcalled\t.\t4\t.\t.\n"
+    "CFC1\tCFC1,CFC1B\t3\tcalled\tcopies of the whole gene family (gene and paralogs together)\t3\t.\t.\n"
+    "GBA\tGBA1\t2\tcalled\tcopies of GBA1 alone (Paraphase's gene1 haplotypes); pseudogene copies 2 (gene2 haplotypes)\t4\t.\t.\n"
+    "OTOA\tOTOA\t2\tcalled\tcopies of OTOA alone (Paraphase's gene1 haplotypes); pseudogene copies 1 (gene2 haplotypes); "
+    "1 haplotype(s) not placed on either\t4\t.\t.\n"
+    "TNXB\tTNXB\t.\tno call\tcopies of the whole gene family (gene and paralogs together)\t.\t.\t.\n")
+
+# The rows assets/paraphase_genes.tsv must hold, in its order.
+EXPECTED_ROWS = [
+    ("smn1", "SMN1"), ("smn1", "SMN2"), ("smn1", "SMN exon 7-8 deletion"), ("hba", "HBA1"), ("hba", "HBA2"),
+    ("rccx", "CYP21A2 (RCCX)"), ("GBA", "GBA1"), ("pms2", "PMS2"), ("strc", "STRC"), ("ncf1", "NCF1"),
+    ("OTOA", "OTOA"), ("f8", "F8 intron 22"), ("opn1lw", "OPN1LW"), ("opn1lw", "OPN1MW"), ("ikbkg", "IKBKG"),
+    ("neb", "NEB triplicate repeat"), ("CYP11B1", "CYP11B1,CYP11B2"), ("TPSAB1", "TPSAB1,TPSB2"),
+    ("AMY1A", "AMY1A,AMY1B,AMY1C"), ("CFHclust", "CFH,CFHR1,CFHR2,CFHR3,CFHR4")]
+
+# Synthetic regions shaped as Paraphase 4.1.0 writes them (its src/genes/*.rs,
+# src/toolkit/update_calls.rs and docs/*.md), and the row each must give:
+# (gene, copy_number, status, a piece of the detail).
+NEW_REGIONS = {
+    "f8": ({"total_cn": 3, "region_specific_info": {"sv_called": {"f8_int22invhap1": "inversion"},
+                                                    "exon1_to_exon22_depth": 30}},
+           [("F8 intron 22", "3", "called", "inversion (f8_int22invhap1)")]),
+    "opn1lw": ({"total_cn": 2, "region_specific_info": {"opn1lw_cn": 1, "opn1mw_cn": 1, "phasing_success": True}},
+               [("OPN1LW", "1", "called", ""), ("OPN1MW", "1", "called", "")]),
+    "ikbkg": ({"total_cn": 4, "region_specific_info": {"gene_cn": 2, "deletion_haplotypes": ["ikbkg_pseudohap1"],
+                                                       "del_read_number": 12}},
+              [("IKBKG", "2", "called", "11.7 kb deletion: ikbkg_pseudohap1")]),
+    "neb": ({"total_cn": 6, "region_specific_info": {"repeat_name": {"tri1": ["neb_hap1", "neb_hap2"],
+                                                                     "tri2": ["neb_hap3", "neb_hap4"],
+                                                                     "tri3": ["neb_hap5", "neb_hap6"]}}},
+            [("NEB triplicate repeat", "6", "called", "TRI1: 2 haplotype(s)")]),
+    "CYP11B1": ({"total_cn": 3, "region_specific_info": {"fusions_called": {
+        "CYP11B1_hap3": {"type": "deletion", "breakpoint": [[1, 2], [3, 4]], "sequence": "12"}}}},
+                [("CYP11B1,CYP11B2", "3", "called", "deletion (CYP11B1_hap3)")]),
+    "TPSAB1": ({"total_cn": 5, "genes_in_region": "TPSAB1,TPSB2", "region_specific_info": {}},
+               [("TPSAB1,TPSB2", "5", "called", "whole gene family")]),
+    "AMY1A": ({"total_cn": 6, "genes_in_region": "AMY1A,AMY1B,AMY1C", "region_specific_info": {}},
+              [("AMY1A,AMY1B,AMY1C", "6", "called", "whole gene family")]),
+    "CFHclust": ({"total_cn": 4, "genes_in_region": "CFH,CFHR1,CFHR2,CFHR3,CFHR4",
+                  "region_specific_info": {"fusions_called": {}}},
+                 [("CFH,CFHR1,CFHR2,CFHR3,CFHR4", "4", "called", "no deletion or duplication")]),
+}
+
+# The regions of the pinned Paraphase 4.1.0's data/38/config.yaml (top-level
+# keys); the e2e case paralog-rows-1 counts them in PARAPHASE_IMAGE.
+PARAPHASE_REGIONS = 165
+
 PARASCOPY_HEAD = "chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\thomologous_regions\n"
+
+
+def region_counts(text):
+    """Every count of Paraphase regions a text states ("162 GRCh38 regions", "all 162")."""
+    return [int(n) for n in re.findall(r"(\d+) GRCh38 regions|all (\d+)\b|Paraphase's (\d+)", text) for n in n if n]
 
 
 def main():
@@ -227,6 +303,58 @@ def main():
         check("compare: agree, disagree, no comparison",
               (pr.compare_smn1(2, s1), pr.compare_smn1(2, s2), pr.compare_smn1(None, s1), pr.compare_smn1(2, s3))
               == ("agree", "disagree", None, None))
+        # 5. the region catalog
+        genes = pr.load_genes()
+        got = [(r, g) for r, entries in genes.items() for g, _ in entries]
+        check("the catalog holds the expected rows, in order", got == EXPECTED_ROWS, got)
+        no_neb = os.path.join(work, "genes-no-neb.tsv")
+        with open(pr.GENES_TSV) as f, open(no_neb, "w") as g:
+            g.writelines(x for x in f if not x.startswith("neb\t"))
+        dropped = [(r, g) for r, entries in pr.load_genes(no_neb).items() for g, _ in entries]
+        check("control: the catalog with its NEB row dropped is not the expected one",
+              dropped != EXPECTED_ROWS and len(dropped) == len(EXPECTED_ROWS) - 1, len(dropped))
+        rc, out = run("table", "--sample", "S", "--json", j, "--out-cn", cn, "--out-variants", var)
+        with open(cn) as f:
+            table = f.read()
+        check("the old eight regions give the table byte for byte as before the catalog", rc == 0 and table == GOLDEN_OLD8,
+              table)
+        moved = json.loads(json.dumps(PARAPHASE_JSON))
+        moved["pms2"]["region_specific_info"]["gene_cn"] = 3
+        check("control: one changed field in the JSON is not the old table",
+              "".join("\t".join(map(str, x)) + "\n" for x in pr.cn_table(moved)) not in GOLDEN_OLD8)
+        new = {k: dict(v[0], genome_depth=30, region_depth={"median": 60}) for k, v in NEW_REGIONS.items()}
+        t = pr.cn_table(new)
+        for name, (_, want) in NEW_REGIONS.items():
+            rows_ = [x for x in t if x[0] == name]
+            ok = len(rows_) == len(want) and all(
+                (x[1], x[2], x[3]) == w[:3] and w[3] in x[4] for x, w in zip(rows_, want))
+            check(f"{name}: the synthetic JSON gives its catalog rows", ok, rows_)
+        both = {"TPSAB1": dict(NEW_REGIONS["TPSAB1"][0], region_specific_info={"gene_cn": 2})}
+        rows_ = pr.cn_table(both)
+        check("TPSAB1: a total_cn row gives the whole family even beside a gene_cn",
+              [x[2] for x in rows_] == ["5"] and "whole gene family" in rows_[0][4], rows_)
+        check("the new regions with a field of their own are listed first",
+              [x[0] for x in t][:4] == ["CFHclust", "CYP11B1", "f8", "ikbkg"], [x[0] for x in t])
+        for name in ("f8", "opn1lw", "ikbkg", "neb", "CYP11B1", "CFHclust"):
+            bare = {name: dict(NEW_REGIONS[name][0], region_specific_info={})}
+            rows_ = pr.cn_table(bare)
+            check(f"{name}: without its field, not assessed and no copy number",
+                  rows_ and all(x[2] == "." and x[3] == "not assessed" and "Paraphase wrote no" in x[4] for x in rows_),
+                  rows_)
+        bad = os.path.join(work, "genes.tsv")
+        with open(bad, "w") as f:
+            f.write("region\tgene\tfield\n")
+        rc, out = run("table", "--sample", "S", "--json", j, "--out-cn", cn, "--out-variants", var, "--genes", bad)
+        check("a catalog with the wrong columns stops the table (exit 1)", rc == 1 and "header" in out, (rc, out))
+
+        # 6. the region count in the docs and the step
+        for path in (os.path.join(REPO, "docs", "35-paralogs.md"), os.path.join(REPO, "scripts", "35b-paraphase.sh")):
+            with open(path) as f:
+                text = f.read()
+            said = region_counts(text)
+            check(f"{os.path.relpath(path, REPO)} states {PARAPHASE_REGIONS} Paraphase regions",
+                  said and set(said) == {PARAPHASE_REGIONS}, said)
+        check("control: a planted 162 is caught", 162 in region_counts("It covers 162 GRCh38 regions."))
     finally:
         shutil.rmtree(work)
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
