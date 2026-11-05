@@ -796,8 +796,9 @@ jobs:
       # Each group keeps its smallest images up to GROUP_BUDGET_MB of zstd
       # output; the rest are pulled on every run. Four groups of 1500 MB are
       # 5.9 GB, and while main replaces one group the old and the new entry
-      # both count: 7.3 GB. With the three data entries above (2.0 GB and the
-      # 0.27 GB HAPNEST panel) that is 9.6 GB, under the 10 GB limit. An image pinned by digest
+      # both count: 7.3 GB. With the five data entries above (about 2.3 GB:
+      # MoChA 0.64, 1000 Genomes sites 1.36, HAPNEST 0.27, hla and GENCODE
+      # 0.03, PGS a few KB) that is 9.6 GB, under the 10 GB limit. An image pinned by digest
       # is never saved: docker load gives it back without its digest, so
       # e2e-run.sh would pull it again anyway.
       - name: Image sizes, and save images for the next run

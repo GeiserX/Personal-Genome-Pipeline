@@ -361,7 +361,9 @@ check_ge "files the single-sample run publishes for HG002" "$(wc -l < "${SINGLE}
 check "the trio run publishes every file the single-sample run does for HG002, with the same content" \
   diff "${SINGLE}/files.txt" <(awk 'NR == FNR {keep[$1]; next} $1 in keep' "${SINGLE}/files.txt" "${CASE_TMP}/trio-files.txt")
 check "no family/ folder without --pedigree" test ! -e "${SINGLE}/out/family"
-F1=$(awk '$2 != "index" {print $1; exit}' "${SINGLE}/files.txt")
+# Not a .gz file: norm() reads through gzip -cdf, which drops trailing
+# garbage after a gzip stream, so a line added to one would not show.
+F1=$(awk '$2 != "index" && $1 !~ /\.gz$/ {print $1; exit}' "${SINGLE}/files.txt")
 rm -rf "${CASE_TMP}/single-planted"
 cp -r "${SINGLE}/out" "${CASE_TMP}/single-planted"
 echo "planted" >> "${CASE_TMP}/single-planted/${F1#./}"
