@@ -13,7 +13,7 @@
 #   and VCF that run published.
 # Switches: SKIP_VALIDATION=true; THREADS=N (--max_cpus); SKIP_TRIM=true (--skip_trim);
 #   INTERVALS="chr20 chr22" (--intervals); ALIGN_DIR=dir (the BAM from <sample>/dir/); TOOLS=a,b
-#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype, ancient, lpa, vntyper, viral, chip, mei and mocha run only when named; paraphase needs the BAM
+#   (only these --tools names; parascopy, paraphase, y_haplogroup, y_str, consumer_export, bloodtype, ancient, lpa, vntyper, viral, chip, mei, mocha and locityper run only when named; paraphase needs the BAM
 #   to be PacBio HiFi, PL:PACBIO, or its step fails and the rest goes on; cyrius runs when setup.sh --cyrius installed it, whose
 #   licence is non-commercial: TOOLS without cyrius leaves it out); KIR=true (KIR genes with HLA);
 #   HLA_QC=true (OptiType beside T1K: HLA-A and HLA-B reach PharmCAT only when both agree);
@@ -259,6 +259,12 @@ if [[ ",${T// /}," == *",mei,"* ]]; then plan "50 Mobile element insertions" mei
 MD=${MOCHA_DATA:-${G}/reference/mocha-${MOCHA_PANEL_VERSION}}
 if [[ ",${T// /}," == *",mocha,"* ]]; then plan "51 Mosaic alterations (MoChA)" mocha "$(need "${MD}/DONE")" \
   && NF+=(--mocha_data "$MD") || true; else KNOWN+=" mocha"; fi
+# Step 53 (a second opinion at hard polymorphic genes, Locityper) is opt-in and listed only when TOOLS names it; it reads
+# the BAM and the database setup.sh --locityper-data builds (DONE is written last). LOCITYPER_BG_REGION picks preproc's region.
+LD=${LOCITYPER_DATA:-${G}/reference/locityper-${LOCITYPER_PANEL_VERSION}}
+case "$LD" in /*) ;; *) LD="${G}/${LD}" ;; esac
+if [[ ",${T// /}," == *",locityper,"* ]]; then plan "53 Hard loci (Locityper)" locityper "$(if [ -z "$NOBAM" ]; then echo 'no BAM'; else need "${LD}/DONE"; fi)" \
+  && NF+=(--locityper_data "$LD") && { [ -z "${LOCITYPER_BG_REGION:-}" ] || NF+=(--locityper_bg_region "$LOCITYPER_BG_REGION"); } || true; else KNOWN+=" locityper"; fi
 for t in ${T//,/ }; do [[ "${KNOWN} " == *" ${t} "* ]] || { echo "ERROR: unknown step '${t}' in TOOLS. Known:${KNOWN}" >&2; exit 2; }; done
 arg --cytoband "$(data_file cytoband || true)"; ! GEX=$(data_file gencode_exons) || NF+=(--gencode_exons "$GEX"); arg --delly_exclude "$(data_file delly_exclude || true)"; arg --manta_call_regions "${MANTA_CALL_REGIONS:-}"
 # Step 20's annotation of the chrM calls (MITO_VARIANTS_ANNOTATE): ClinVar with its index, and gnomAD's chrM sites.
