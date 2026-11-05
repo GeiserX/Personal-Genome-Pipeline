@@ -185,7 +185,7 @@ GOLDEN_TITLES = sorted([
     "Clonal Haematopoiesis (CHIP)", "Mosaic Chromosomal Alterations (MoChA)", "Mobile Element Insertions",
     "Telomere content (relative)", "Mitochondrial Analysis", "Clinical Variant Filter",
     "Variant Prioritization (slivar)", "Symptom-Driven Ranking (Exomiser)", "Polygenic Risk Scores", "Fine-Grained Ancestry", "Traits",
-    "Ancient Populations", "ClinVar Hits (best-reviewed first, 3 of 3)", "Steps Not Run",
+    "Ancient Populations", "Genes This Genome Could Not Read Reliably", "ClinVar Hits (best-reviewed first, 3 of 3)", "Steps Not Run",
     "Not Assessed by This Pipeline"])
 
 

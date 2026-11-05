@@ -15,6 +15,17 @@ for d in "${path_dirs[@]}"; do
 done
 [ -n "$real" ] || { echo "docker shim: no real docker on PATH" >&2; exit 127; }
 
+# E2E_LAZY_IMAGES (set by scripts/ci/e2e-run.sh): images pulled at first use.
+# A `docker run` or `docker create` of one that is not here pulls it first,
+# with e2e-run.sh's retry on a registry 5xx.
+if [ -n "${E2E_LAZY_IMAGES:-}" ] && { [ "${1:-}" = run ] || [ "${1:-}" = create ]; }; then
+  for a in "$@"; do
+    [[ " ${E2E_LAZY_IMAGES} " == *" ${a} "* ]] || continue
+    "$real" image inspect "$a" > /dev/null 2>&1 && continue
+    "$(dirname "$self_dir")/../../scripts/ci/e2e-run.sh" --pull-image "$a" >&2 || exit $?
+  done
+fi
+
 max=$(nproc)
 clamp() { awk -v v="$1" -v m="$max" 'BEGIN {print (v + 0 > m) ? m : v}'; }
 

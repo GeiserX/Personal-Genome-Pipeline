@@ -2,11 +2,11 @@
 # 37-y-haplogroup.sh — Y-chromosome haplogroup (paternal line) with Yleaf
 # Usage: ./scripts/37-y-haplogroup.sh <sample_name>
 #
-# Opt-in. Yleaf (YLEAF_IMAGE, 3.2.1: the only biocontainer; upstream is 4.x)
-# reads the BAM's pileup at its Y-chromosome markers and predicts the
-# haplogroup they support. The image lacks the samtools Yleaf calls and its
-# marker tables (setup.sh --yleaf-data installs them), so the pileup is made
-# in SAMTOOLS_IMAGE and bin/yleaf_run.py runs Yleaf on it. Runs only when step 16 (indexcov) infers male from
+# Opt-in. Yleaf (YLEAF_IMAGE, 4.1.6) reads the BAM's pileup at its
+# Y-chromosome markers and predicts the haplogroup they support on its own
+# tree, YFull v14.01. Its marker tables come from setup.sh --yleaf-data; the
+# pileup is made in the same SAMTOOLS_IMAGE run as the chrY BAM (the current
+# tree's pileup in a second one), and bin/yleaf_run.py runs Yleaf on it. Runs only when step 16 (indexcov) infers male from
 # the reads: the sex comes from indexcov/indexcov-indexcov.ped, not from an
 # argument. A female sample, or one with no Y to read, is skipped with one line.
 #
@@ -15,12 +15,16 @@
 # markers had reads to call one (the step says so). Also
 # y_haplogroup/<sample>_chrY.bam (+ .bai): the BAM's chrY reads only, the file
 # YFull and the Y-DNA projects read (docs/37-y-haplogroup.md). Nothing is uploaded.
-# Yleaf 3.2.1's tree is YFull v10.01. The step also places the sample on the
-# current YFull YTree (setup.sh --yleaf-data installs it in <data>/ytree) with
+# The step also places the sample on the YFull YTree release versions.env
+# pins (YTREE_VERSION) (setup.sh --yleaf-data installs it in <data>/ytree) with
 # bin/y_tree_place.py: y_haplogroup/<sample>_y_tree.txt (the terminal branch,
 # with the tree it comes from) and <sample>_y_tree_path.tsv (derived,
 # ancestral and no-call counts per level). Without that folder the step says
 # so and writes Yleaf's result only.
+# With step 03's VCF in place it also lists the chrY SNVs that no public SNP
+# table names, the ones that would place this line below its branch
+# (bin/y_private_snps.py): y_haplogroup/<sample>_y_private_snps.tsv. Without
+# the VCF, or without the tree folder, that part is skipped with one line.
 set -euo pipefail
 
 SAMPLE=${1:?Usage: $0 <sample_name>}
@@ -38,6 +42,7 @@ OUT="${OUTDIR}/${SAMPLE}_y_haplogroup.txt"
 CHRY="${OUTDIR}/${SAMPLE}_chrY.bam"
 YDATA="${GENOME_DIR}/reference/yleaf-${YLEAF_DATA_VERSION}/data"
 YTREE="${YDATA}/ytree"
+VCF="${S}/vcf/${SAMPLE}.vcf.gz"
 
 echo "=== Y haplogroup (Yleaf): ${SAMPLE} ==="
 if [ ! -s "${YDATA}/hg38/new_positions.txt" ]; then
@@ -60,13 +65,14 @@ if [ "$SEX" != male ]; then
 fi
 
 mkdir -p "$OUTDIR"
-rm -rf "${OUTDIR}/yleaf" "$OUT" "${OUTDIR}/${SAMPLE}_y_tree.txt" "${OUTDIR}/${SAMPLE}_y_tree_path.tsv" "$CHRY" "${CHRY}.bai"
+rm -rf "${OUTDIR}/yleaf" "$OUT" "${OUTDIR}/${SAMPLE}_y_tree.txt" "${OUTDIR}/${SAMPLE}_y_tree_path.tsv" \
+  "${OUTDIR}/${SAMPLE}_y_private_snps.tsv" "$CHRY" "${CHRY}.bai"
 TREE=false
 [ -s "${YTREE}/version.txt" ] && TREE=true
-# The Yleaf image has no samtools, and Yleaf downloads the whole hg38 FASTA
-# unless its read-only config names one: bin/yleaf_run.py writes Yleaf's
-# marker positions, SAMTOOLS_IMAGE makes the pileup Yleaf would make, and
-# Yleaf then runs on it, offline (bin/yleaf_run.py says why and how).
+# Yleaf downloads the whole hg38 FASTA unless its read-only config names one:
+# bin/yleaf_run.py writes Yleaf's marker positions, SAMTOOLS_IMAGE makes the
+# pileup Yleaf would make, and Yleaf then runs on it, offline
+# (bin/yleaf_run.py says why and how).
 O=$(cpath "$OUTDIR")
 echo "[1/3] Yleaf's Y marker positions..."
 run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 2g "$YLEAF_IMAGE" \
@@ -77,7 +83,7 @@ if $TREE; then
 fi
 echo "[2/3] Pileup at those positions, and the chrY reads as their own BAM (samtools)..."
 run_in --cpus 1 --memory 2g "$SAMTOOLS_IMAGE" bash -euo pipefail -c \
-  'samtools idxstats "$1" > "$2/idxstats.txt" && samtools mpileup -l "$2/positions.txt" -AQ20q1 "$1" > "$2/pileup.txt"
+  'samtools idxstats "$1" > "$2/idxstats.txt" && samtools mpileup -l "$2/positions.txt" -ABQ20q1 "$1" > "$2/pileup.txt"
    samtools view -b -o "$3" "$1" chrY && samtools index "$3"' \
   _ "$(cpath "$BAM")" "$O" "$(cpath "$CHRY")"
 if $TREE; then
@@ -98,6 +104,23 @@ if $TREE; then
   rm -f "${OUTDIR}/tree_positions.txt" "${OUTDIR}/tree_pileup.txt"
 fi
 
+# The SNVs past the deepest branch the public trees have: the sample's own
+# chrY calls minus every position the installed SNP tables name
+# (bin/y_private_snps.py), inside the chrY callable mask. Needs step 03's VCF
+# and the tree folder's tables and mask.
+PRIVATE_LINE="Private SNPs: skipped (the current tree's SNP tables are not installed)"
+if $TREE; then
+  if [ ! -s "${YTREE}/callable_mask_chrY.fasta.gz" ]; then
+    PRIVATE_LINE="Private SNPs: skipped (${YTREE} has no chrY callable mask: run scripts/setup.sh --yleaf-data again)"
+  elif [ -s "$VCF" ]; then
+    PRIVATE_LINE=$(run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" --cpus 1 --memory 2g "$YLEAF_IMAGE" \
+      python3 /pgp-bin/y_private_snps.py --vcf "$(cpath "$VCF")" --tree-dir "$(cpath "$YTREE")" \
+        --sample "$SAMPLE" --out-prefix "${O}/${SAMPLE}")
+  else
+    PRIVATE_LINE="Private SNPs: skipped (no VCF at ${VCF}: run scripts/03-deepvariant.sh ${SAMPLE} first)"
+  fi
+fi
+
 PRED="${OUTDIR}/yleaf/hg_prediction.hg"
 if [ ! -s "$PRED" ] || [ "$(grep -c . "$PRED")" -lt 2 ]; then
   echo "ERROR: Yleaf wrote no prediction (${PRED})." >&2
@@ -112,8 +135,12 @@ if [ "$HG" = NA ]; then
 else
   echo "Y haplogroup: ${HG} (${MARKERS} markers, QC-score ${QC})"
 fi
-echo "  (Yleaf ${YLEAF_DATA_VERSION}, on its own tree, YFull v10.01)"
+echo "  (Yleaf ${YLEAF_DATA_VERSION}, on its own tree, YFull v14.01)"
 echo "$TREE_LINE"
 echo "Results: ${OUT}"
 if $TREE; then echo "Current tree: ${OUTDIR}/${SAMPLE}_y_tree.txt, per level: ${OUTDIR}/${SAMPLE}_y_tree_path.tsv"; fi
+echo "$PRIVATE_LINE"
+if [ -s "${OUTDIR}/${SAMPLE}_y_private_snps.tsv" ]; then
+  echo "Private SNPs: ${OUTDIR}/${SAMPLE}_y_private_snps.tsv"
+fi
 echo "Y reads for YFull or a Y-DNA project: ${CHRY} (nothing is uploaded; docs/37-y-haplogroup.md lists the routes)"

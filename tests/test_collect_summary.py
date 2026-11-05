@@ -1274,6 +1274,98 @@ def report_followups_sections(work, schema):
           {k for l in ed["loci"] for k in l}, ed)
 
 
+def str_extra_readings(work, schema):
+    """Step 09's counts of the repeats STRchive leaves out (assets/str_extra_loci.json), read into results."""
+    import html as htmlmod
+    fmt = "GT:REPCN"
+
+    def made_up(name, tg, t, ugt, r117h=None, ugt_pc=None, stranger=False):
+        x = os.path.join(work, "str-extra", name)
+        eh = (f"chr7\t117548606\t.\tT\t<STR>\t.\tPASS\tEND=117548628;REPID=CFTR;VARID=CFTR_TG\t{fmt}\t0/1:{tg}\n"
+              f"chr7\t117548628\t.\tT\t<STR>\t.\tPASS\tEND=117548635;REPID=CFTR;VARID=CFTR_T\t{fmt}\t0/1:{t}\n"
+              if tg else "")
+        eh += (f"chr2\t233760234\t.\tA\t<STR>\t.\tPASS\tEND=233760248;REPID=UGT1A1;VARID=UGT1A1\t{fmt}\t0/1:{ugt}\n"
+               if ugt else "")
+        put(f"{x}/expansion_hunter/{name}_eh.vcf", VCF_HEAD.replace("\tS\n", f"\t{name}\n") + eh, age_days=2)
+        if stranger:
+            put(f"{x}/expansion_hunter/{name}_eh_stranger.vcf", VCF_HEAD.replace("\tS\n", f"\t{name}\n") + eh,
+                age_days=1)
+            put(f"{x}/expansion_hunter/{name}_eh_catalog.json", json.dumps([
+                {"LocusId": "CFTR", "NoThresholds": "the CFTR tract"},
+                {"LocusId": "UGT1A1", "NoThresholds": "the UGT1A1 repeat"}]))
+        if r117h:
+            put(f"{x}/traits/{name}_traits.tsv", "\t".join(collect_summary.traits_report.OUT_COLUMNS) + "\n"
+                + f"rs78655421\tCFTR\tchr7\t117530975\tCFTR R117H\t{r117h}\tcalled\tr\tno\tn\t32404922\n")
+        if ugt_pc:
+            put(f"{x}/cpic/{name}_phenotypes.tsv", "Gene\tDiplotype\tPhenotype\tStatus\n"
+                f"UGT1A1\t{ugt_pc}\tsome function\tnon-normal\n")
+        summ, txt, html_ = render(x, name)
+        ed = summ["sections"]["expansions"]["data"]
+        return summ, ed, {r["locus"]: r for r in ed.get("readings") or []}, txt, htmlmod.unescape(html_)
+
+    # TG12-5T on one copy and TG11-7T on the other, no R117H; UGT1A1 TA6/TA7.
+    summ, ed, rd, txt, html_ = made_up("EXA", "11/12", "7/5", "7/8", r117h="G/G", ugt_pc="*1/*28", stranger=True)
+    c, u = rd.get("CFTR", {}), rd.get("UGT1A1", {})
+    check("extra repeats: the two CFTR records are named by VARID, CFTR_TG and CFTR_T",
+          [l["locus"] for l in ed["loci"] if l["locus"].startswith("CFTR")] == ["CFTR_T", "CFTR_TG"],
+          [l["locus"] for l in ed["loci"]])
+    check("extra repeats: CFTR is not graded once, looked up by its locus",
+          ed.get("not_graded") == {"CFTR": "the CFTR tract", "UGT1A1": "the UGT1A1 repeat"}, ed.get("not_graded"))
+    check("extra repeats: CFTR TG11/TG12 5T/7T, with TG12-5T/TG11-7T among the two pairings the counts allow",
+          c.get("genotype") == "TG11/TG12 5T/7T" and "TG12-5T/TG11-7T" in c.get("pairings", [])
+          and len(c.get("pairings", [])) == 2, c)
+    check("extra repeats: the 5T line, R117H not carried",
+          c.get("five_t") is True and c.get("reading", "").startswith("5T: 1 copy with the 5T poly-T tract")
+          and "No R117H copy" in c["reading"] and c.get("phase") == "not_needed", c)
+    check("extra repeats: UGT1A1 7/8 TA units is *1/*28 (TA6/TA7), and agrees with PharmCAT's *1/*28",
+          (u.get("genotype"), u.get("agreement")) == ("*1/*28", "agrees") and "TA6/TA7" in u.get("reading", ""), u)
+    check("extra repeats: 5-HTTLPR is printed as not tested, with the CPIC 2023 reason",
+          rd.get("SLC6A4", {}).get("status") == "not_tested" and "37032427" in rd["SLC6A4"]["source"], rd.get("SLC6A4"))
+    check("extra repeats: the text report prints the 5T line, the UGT1A1 call and the 5-HTTLPR line",
+          "CFTR intron 9 (legacy IVS8) TG and poly-T tract: TG11/TG12 5T/7T" in txt and "    5T: 1 copy" in txt
+          and "UGT1A1 promoter TA repeat: *1/*28" in txt
+          and "SLC6A4 5-HTTLPR promoter length polymorphism: not tested" in txt, txt)
+    card = html_.split("<h2>Repeat Expansions</h2>", 1)[-1].split("<h2>", 1)[0]
+    check("extra repeats: the HTML card has the three readings",
+          "TG11/TG12 5T/7T" in card and "5T: 1 copy" in card and "*1/*28" in card and "5-HTTLPR" in card, card)
+    check("extra repeats: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+
+    # Red control: TG11-7T on both copies gives no 5T line.
+    _, _, rd, txt, _ = made_up("EXB", "11/11", "7/7", "7/7")
+    c = rd.get("CFTR", {})
+    check("extra repeats red control: TG11-7T/TG11-7T has no 5T line",
+          (c.get("genotype"), c.get("five_t")) == ("TG11-7T/TG11-7T", False) and "5T:" not in txt
+          and c.get("reading", "").startswith("No 5T copy"), c)
+    check("extra repeats: UGT1A1 7/7 is *1/*1, not compared without a PharmCAT call",
+          (rd["UGT1A1"]["genotype"], rd["UGT1A1"]["agreement"]) == ("*1/*1", "not_compared"), rd["UGT1A1"])
+
+    # One R117H copy and one 5T copy, one TG count: the pairing is known, the R117H phase is not.
+    _, _, rd, _, _ = made_up("EXC", "12/12", "5/7", "8/8", r117h="G/A", ugt_pc="*1/*1")
+    c = rd.get("CFTR", {})
+    check("extra repeats: TG12/TG12 5T/7T reads as TG12-5T/TG12-7T, R117H phase unknown",
+          c.get("genotype") == "TG12-5T/TG12-7T" and c.get("phase") == "unknown" and "phase unknown" in c["reading"]
+          and "TG12 on the 5T copy" in c["reading"], c)
+    check("extra repeats: UGT1A1 *28/*28 differs from PharmCAT's *1/*1",
+          (rd["UGT1A1"]["genotype"], rd["UGT1A1"]["agreement"]) == ("*28/*28", "differs"), rd["UGT1A1"])
+    _, _, rd, _, _ = made_up("EXD", "11/12", "5/5", "6/9", r117h="G/A")
+    check("extra repeats: 5T on both copies with R117H is in cis; UGT1A1 6/9 units is *36/*37",
+          rd["CFTR"].get("phase") == "in_cis" and rd["UGT1A1"]["genotype"] == "*36/*37", rd)
+
+    # PharmCAT's combination alleles, in both forms step 27's table can carry: one *28 copy agrees with TA6/TA7.
+    for name, pc in (("EXF", "*80+*28/*1"), ("EXG", "[*80 + *28]/*1")):
+        _, _, rd, _, _ = made_up(name, None, None, "7/8", ugt_pc=pc)
+        check(f"extra repeats: UGT1A1 TA6/TA7 agrees with PharmCAT's {pc}",
+              (rd["UGT1A1"]["genotype"], rd["UGT1A1"]["agreement"]) == ("*1/*28", "agrees"), rd["UGT1A1"])
+
+    # Without the opt-in the extra loci are not in step 09's output.
+    _, ed, rd, txt, _ = made_up("EXE", None, None, None)
+    check("extra repeats: without the loci CFTR and UGT1A1 are not sized and say how to add them",
+          [rd[k]["status"] for k in ("CFTR", "UGT1A1", "SLC6A4")] == ["not_sized", "not_sized", "not_tested"]
+          and "STR_EXTRA_LOCI=yes" in rd["CFTR"]["reading"] and "CFTR intron 9 (legacy IVS8) TG and poly-T tract: "
+          "not sized" in txt, rd)
+
+
 SMN_COLS = ("chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\t"
             "homologous_regions\n")
 
@@ -1376,6 +1468,71 @@ def parascopy_section(work, schema):
     put(f"{d}/paralogs/S_smn_copy_number.tsv", "chrom\tstart\tend\tagCN\nchr5\t1\t2\t4\n")
     ps = collect_summary.collect("S", d)["sections"].get("parascopy") or {}
     check("parascopy: a table without the psCN columns is unreadable", ps.get("state") == "unreadable", ps)
+
+    # Every other catalog table (assets/paralog_loci.tsv), and HBA without an
+    # SMN1 table: a PARALOG_LOCI of the user's that leaves SMN1 out still
+    # shows the HBA count and the other loci.
+    g = os.path.join(work, "parascopy_loci", "S")
+    put(f"{g}/paralogs/S_gba1_copy_number.tsv", SMN_COLS
+        + "chr1\t155231478\t155238000\tGBA\tPASS\t4\t45\tPASS\t2,2\t30,30\tchr1:155210851-155215050:-\n"
+        + "chr1\t155238000\t155244699\tGBA\tPASS\t4\t38\tLowQual\t?,?\t5,5\t*\n")
+    put(f"{g}/paralogs/S_c4_copy_number.tsv", SMN_COLS
+        + "chr6\t31980531\t31990000\tC4A\tPASS\t5\t40\t.\t.\t.\t*\n"
+        + "chr6\t31990000\t32006219\tC4A\tLowQual\t4\t12\t.\t.\t.\t*\n")
+    put(f"{g}/paralogs/S_amy1_copy_number.tsv", SMN_COLS
+        + "chr1\t103745406\t103761087\tAMY1C\tnot assessed: no read over chr1:103745407-103761087\t.\t.\t"
+        "not assessed: no read over chr1:103745407-103761087\t.\t.\t.\n")
+    put(f"{g}/paralogs/S_mine_copy_number.tsv", SMN_COLS + "chr2\t10\t20\tX\tPASS\t2\t50\t.\t.\t.\t*\n")
+    put(f"{g}/paralogs/S_hba_copy_number.tsv", "metric\tvalue\nstatus\tcalled\nalpha_globin_genes\t4\n"
+        "estimate\t4.02\nmessage\tfour alpha-globin genes (aa/aa): no deletion seen\n")
+    summ, txt, html = render(g)
+    ps = summ["sections"].get("parascopy") or {"state": "missing", "data": {}}
+    pd = ps["data"]
+    check("no SMN1 table: the section is still read, with HBA, and HBA is off the not-assessed list",
+          ps["state"] == "ok" and (pd.get("hba") or {}).get("alpha_globin_genes") == "4"
+          and "HBA1 and HBA2 together (alpha-globin genes, from depth): 4" in txt
+          and not any(x.startswith("HBA1/HBA2 copy number") for x in summ["not_assessed"]), (ps, summ["not_assessed"]))
+    check("no SMN1 table: SMN1 says why it has no reading, never a carrier reading",
+          pd.get("reading") == "no SMN1 table (step 35 wrote no SMN copy-number table): no carrier reading"
+          and (pd.get("smn1") or {}).get("cn") is None, pd.get("reading"))
+    loci = {x["table"]: x for x in pd.get("loci", [])}
+    check("loci: one per catalog table, in the catalog's order, a table the catalog lacks last",
+          [x["table"] for x in pd.get("loci", [])] == ["gba1", "c4", "amy1", "mine"], list(loci))
+    check("loci: GBA with every region PASS and quality 20 or more reads 4, with the catalog's genes and reading",
+          loci.get("gba1", {}).get("cn") == 4 and loci["gba1"]["status"] == "called"
+          and loci["gba1"]["text"] == "4 (2 region(s), quality 38 or more, filter PASS)"
+          and loci["gba1"]["genes"] == "GBA1,GBAP1" and "Gaucher" in loci["gba1"]["reading"], loci.get("gba1"))
+    check("loci: C4 with a low-quality region lists each region and gives no single number",
+          loci.get("c4", {}).get("cn") is None and loci["c4"]["status"] == "called"
+          and "chr6:31980532-31990000 5 (quality 40, filter PASS)" in loci["c4"]["text"]
+          and "4 (quality 12, filter LowQual)" in loci["c4"]["text"] and loci["c4"]["reading"] == "."
+          and "C4A, C4B (agCN): chr6" in txt and "Reading: " not in txt.split("C4A, C4B (agCN):", 1)[-1].split("\n", 1)[0],
+          loci.get("c4"))
+    check("loci: a not-assessed table keeps its reason",
+          loci.get("amy1", {}).get("status") == "not assessed"
+          and loci["amy1"]["text"] == "not assessed: no read over chr1:103745407-103761087", loci.get("amy1"))
+    check("loci: a table the catalog does not name is read, with its name for genes",
+          loci.get("mine", {}).get("cn") == 2 and loci["mine"]["genes"] == "mine" and loci["mine"]["reading"] == ".",
+          loci.get("mine"))
+    card_g = html.split("<h2>SMN1/SMN2 Copy Number (Parascopy)</h2>", 1)[-1].split("<h2>", 1)[0]
+    check("loci: both reports list them, the reading only for a call",
+          "  GBA1, GBAP1 (agCN): 4 (2 region(s), quality 38 or more, filter PASS). Reading: agCN of GBA1" in txt
+          and "  AMY1A, AMY1B, AMY1C (agCN): not assessed: no read over" in txt
+          and "<td>GBA1, GBAP1</td>" in card_g and "<th>Copies together (agCN)</th>" in card_g
+          and "Gaucher" in card_g, (txt, card_g))
+    check("loci: the summary validates", not validate.validate(schema, json.loads(json.dumps(summ))),
+          validate.validate(schema, json.loads(json.dumps(summ))))
+    put(f"{g}/paralogs/S_c4_copy_number.tsv", "chrom\tstart\tend\tagCN\nchr6\t1\t2\t4\n")
+    pd = (collect_summary.collect("S", g)["sections"].get("parascopy") or {}).get("data") or {}
+    check("loci: an unreadable table is that locus's problem, not the section's",
+          {x["table"]: x["status"] for x in pd.get("loci", [])}.get("c4") == "unreadable"
+          and (pd.get("hba") or {}).get("alpha_globin_genes") == "4", pd.get("loci"))
+    bound = os.path.join(g, "paralogs", "S_notch2_copy_number.tsv")
+    put(bound, SMN_COLS + "chr1\t120000000\t120100000\tNOTCH2\tPASS\t<5\t30\t.\t.\t.\t*\n")
+    lb = collect_summary.parascopy_locus("notch2", bound, None)
+    check("loci: a bound such as <5 is not resolved, and the note names the whole-number rule",
+          lb["status"] == "not resolved" and lb["cn"] is None
+          and lb["text"].endswith(": no region with a whole copy number, filter PASS and quality 20 or more"), lb)
 
     # Neither step 35 nor step 35b: the not-checked line in both reports.
     n = os.path.join(work, "noparalog", "S")
@@ -1859,8 +2016,10 @@ def main():
         check("HTML report: the same ClinVar count in its badge, yellow (never green) with a hit",
               'class="badge badge-yellow">3</span>' in html and 'badge-green">3<' not in html)
         rows = [l for l in html.splitlines() if l.strip().startswith("<tr><td>chr")]
-        check("HTML report: one row per hit, each with a Stars cell and an empty combined-allele cell",
-              len(rows) == 3 and rows[0].strip().endswith("<td>3</td><td></td><td>gnomAD AF unknown</td><td></td></tr>"),
+        check("HTML report: one row per hit, each with a Stars cell, an empty combined-allele cell and the viewer link",
+              len(rows) == 3 and rows[0].strip().endswith(
+                  '<td>3</td><td></td><td>gnomAD AF unknown</td><td></td><td><a class="locus" '
+                  'href="http://127.0.0.1:8765/#chr1:20" target="_blank" rel="noopener noreferrer">chr1:20</a></td></tr>'),
               rows)
         for r in sec["prs"]["data"]["scores"]:
             check(f"PRS row {r['pgs_id']} in both reports", r["pgs_id"] in txt and f"<td>{r['pgs_id']}</td>" in html)
@@ -1965,7 +2124,9 @@ def main():
         check("combined allele: the HTML table has the column and the notes, an SNV hit's cell empty",
               "<th>Stars</th><th>Combined allele</th>" in html_cv
               and any(f"<td>part of a combined allele: chr22:30000038 GCCAT&gt;CATGGG{unph}</td>" in r for r in cv_rows)
-              and any("<td>30000210</td>" in r and r.strip().endswith("<td></td></tr>") for r in cv_rows), cv_rows)
+              and any("<td>30000210</td>" in r and r.strip().endswith(
+                  '<td></td><td><a class="locus" href="http://127.0.0.1:8765/#chr22:30000210" target="_blank" '
+                  'rel="noopener noreferrer">chr22:30000210</a></td></tr>') for r in cv_rows), cv_rows)
         # The same hits phased (0|1, one phase set) or homozygous: both
         # parts are on one haplotype, so the notes carry no phase caveat.
         for gt_ in ("0|1", "1/1"):
@@ -2057,6 +2218,43 @@ def main():
         os.remove(f"{h}/mito/S_haplocheck.txt")
         check("no haplocheck file: the report says it was not checked",
               "Contamination (haplocheck): not checked" in render(h)[1])
+
+        # 9a. step 37's second placement, on the current public tree
+        put(f"{h}/y_haplogroup/S_y_tree.txt", "Sample_name\tHg\tLevel\tPath_derived\tPath_ancestral\t"
+            "Path_no_call\tAncestral_in_terminal\tSNPs_called\tMin_depth\tTree\tPositions\t"
+            "Outvoted_ancestral\nS\tR-FT12345\t24\t61\t2\t310\tFT999\t4210\t10\tYFull YTree 14.06.0\t"
+            "Yleaf 4.1.6 tables\tFT777\n")
+        put(f"{h}/y_haplogroup/S_y_tree_path.tsv", "Level\tBranch\tSNPs\tOn_tables\tDerived\tAncestral\t"
+            "No_call\tAncestral_SNPs\n1\tA0-T\t4\t4\t3\t0\t1\t.\n24\tR-FT12345\t6\t5\t2\t1\t2\tFT999\n")
+        summ_t, txt_t, html_t = render(h)
+        yt = summ_t["sections"]["y_tree"]["data"]
+        check("Y tree: the branch, its level and the tree release are read",
+              yt.get("haplogroup") == "R-FT12345" and yt.get("level") == "24"
+              and yt.get("tree") == "YFull YTree 14.06.0", yt)
+        check("Y tree: every level of the path is read",
+              [x["Branch"] for x in yt.get("path", [])] == ["A0-T", "R-FT12345"], yt.get("path"))
+        check("Y tree: the text report shows the branch, the path counts and the levels",
+              "Branch: R-FT12345 (level 24, YFull YTree 14.06.0)" in txt_t
+              and "61 derived, 2 ancestral, 310 no call" in txt_t and "A0-T" in txt_t, txt_t)
+        check("Y tree: the text report names the ancestral SNP inside the branch and the outvoted one",
+              "Ancestral inside the terminal branch: FT999" in txt_t
+              and "outvoted by the SNPs below it: FT777" in txt_t, txt_t)
+        check("Y tree: the HTML report has its own card with the level table",
+              "Y Placement on the Current Public Tree" in html_t and "<td>R-FT12345</td>" in html_t
+              and "<td>A0-T</td>" in html_t, None)
+        check("Y tree: Yleaf's own card is still there, so the two results stand side by side",
+              "Y-Chromosome Haplogroup" in html_t, None)
+        put(f"{h}/y_haplogroup/S_y_tree.txt", "Sample_name\tHg\tLevel\tPath_derived\tPath_ancestral\t"
+            "Path_no_call\tAncestral_in_terminal\tSNPs_called\tMin_depth\tTree\tPositions\t"
+            "Outvoted_ancestral\nS\tNA\t0\t0\t0\t0\t.\t12\t10\tYFull YTree 14.06.0\t"
+            "Yleaf 4.1.6 tables\t.\n")
+        summ_na, txt_na, _ = render(h)
+        check("Y tree: Hg NA reads as no derived call, and nothing ancestral is printed",
+              summ_na["sections"]["y_tree"]["data"].get("haplogroup") == "no branch has a derived call"
+              and "Ancestral inside the terminal branch" not in txt_na,
+              summ_na["sections"]["y_tree"]["data"])
+        os.remove(f"{h}/y_haplogroup/S_y_tree.txt")
+        os.remove(f"{h}/y_haplogroup/S_y_tree_path.tsv")
 
         # 9b. step 41: the blood group table
         b = os.path.join(work, "blood", "S")
@@ -2522,6 +2720,7 @@ def main():
         comphet_phase_section(work, schema)
         annotsv_section(work, schema)
         report_followups_sections(work, schema)
+        str_extra_readings(work, schema)
         parascopy_section(work, schema)
         report_sections_mito_roh_telomere_cnv(work, schema)
         roh_upd_karyotype(work, schema)

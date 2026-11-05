@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Serve the local genome viewer (igv.js) for one sample on 127.0.0.1.
 
-scripts/owngenome-view.sh finds the sample's files and starts this server. It
-serves exactly these, and nothing else from the disk:
+scripts/owngenome-view.sh finds the sample's files and starts this server.
+The live site serves the same page per run, behind its login, through
+bin/owngenome_live_viewer.py, which reuses sample_files, build_config,
+send_file and CSP from here. This server serves exactly these, and nothing
+else from the disk:
 
   /               index.html of this folder
   /viewer.js      the page's script, from this folder
@@ -73,6 +76,19 @@ def index_of(names):
     return next((n for n in names if os.path.isfile(n)), None)
 
 
+def sample_files(sample_dir, sample):
+    """(reads, vcf, sv_vcf) of a sample folder, by the names the steps write,
+    None for one that is not there: the default aligned/ and vcf/ folders, as
+    owngenome-view.sh picks them with none of READS, VCF, SV_VCF, ALIGN_DIR or
+    VCF_DIR set, and the ones the live site's viewer (bin/owngenome_live_viewer.py)
+    serves."""
+    def first(*names):
+        return next((p for p in (os.path.join(sample_dir, n) for n in names) if os.path.isfile(p)), None)
+    return (first(f"aligned/{sample}_sorted.bam", f"aligned/{sample}_sorted.cram"),
+            first(f"vcf/{sample}.vcf.gz"),
+            first(f"sv_merged/{sample}_sv_consensus.vcf.gz", "manta/results/variants/diploidSV.vcf.gz"))
+
+
 def build_config(sample, fasta, reads=None, vcf=None, sv_vcf=None, locus=None):
     """(config, files): the igv.js browser options and the list of files the
     server may send, /data/<index>/<basename> each."""
@@ -129,6 +145,31 @@ def parse_range(header, size):
     return start, min(end, size - 1)
 
 
+def send_file(handler, head, ctype, src):
+    """Send the file src, or the one byte range the request's Range header
+    asks for (206; 416 past the end), 1 MB at a time. head(code, ctype,
+    length, extra headers) writes the status line and headers."""
+    size = os.path.getsize(src)
+    rng = parse_range(handler.headers.get("Range"), size)
+    if rng == "bad":
+        return head(416, "text/plain; charset=utf-8", 0, [("Content-Range", f"bytes */{size}")])
+    start, end = rng if rng else (0, size - 1)
+    length = end - start + 1 if size else 0
+    extra = [("Accept-Ranges", "bytes")] + ([("Content-Range", f"bytes {start}-{end}/{size}")] if rng else [])
+    head(206 if rng else 200, ctype, length, extra)
+    if handler.command == "HEAD" or not length:
+        return
+    with open(src, "rb") as f:
+        f.seek(start)
+        left = length
+        while left > 0:
+            chunk = f.read(min(1 << 20, left))
+            if not chunk:
+                break
+            handler.wfile.write(chunk)
+            left -= len(chunk)
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     server_version = "owngenome-view"
     sys_version = ""
@@ -141,7 +182,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(length))
-        self.send_header("Accept-Ranges", "bytes")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Security-Policy", CSP)
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -180,25 +220,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if self.command != "HEAD":
                 self.wfile.write(data)
             return
-        size = os.path.getsize(src)
-        rng = parse_range(self.headers.get("Range"), size)
-        if rng == "bad":
-            return self._head(416, "text/plain; charset=utf-8", 0, [("Content-Range", f"bytes */{size}")])
-        start, end = rng if rng else (0, size - 1)
-        length = end - start + 1 if size else 0
-        extra = [("Content-Range", f"bytes {start}-{end}/{size}")] if rng else []
-        self._head(206 if rng else 200, ctype, length, extra)
-        if self.command == "HEAD" or not length:
-            return
-        with open(src, "rb") as f:
-            f.seek(start)
-            left = length
-            while left > 0:
-                chunk = f.read(min(1 << 20, left))
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
-                left -= len(chunk)
+        send_file(self, self._head, ctype, src)
 
     def do_GET(self):
         try:
