@@ -299,13 +299,13 @@ esac
 FAKE
   chmod +x "${T}/real/docker"
   : > "${T}/calls"
-  PATH="${REPO}/tests/e2e/bin:${T}/real:${PATH}" E2E_LAZY_IMAGES="big/one:1 big/two:2" \
-    docker run --rm -v /a:/a big/two:2 tool --x > /dev/null 2>&1
-  PATH="${REPO}/tests/e2e/bin:${T}/real:${PATH}" E2E_LAZY_IMAGES="big/one:1 big/two:2" \
-    docker run --rm big/two:2 tool > /dev/null 2>&1
-  PATH="${REPO}/tests/e2e/bin:${T}/real:${PATH}" E2E_LAZY_IMAGES="big/one:1 big/two:2" \
-    docker run --rm small/x:1 tool > /dev/null 2>&1
-  if [ "$(grep -c '^pull ' "${T}/calls")" = 1 ] && grep -qx 'pull -q big/two:2' "${T}/calls" \
+  PATH="${REPO}/tests/e2e/bin:${T}/real:${PATH}" E2E_LAZY_IMAGES="lazyone lazytwo" \
+    docker run --rm -v /a:/a lazytwo tool --x > /dev/null 2>&1
+  PATH="${REPO}/tests/e2e/bin:${T}/real:${PATH}" E2E_LAZY_IMAGES="lazyone lazytwo" \
+    docker run --rm lazytwo tool > /dev/null 2>&1
+  PATH="${REPO}/tests/e2e/bin:${T}/real:${PATH}" E2E_LAZY_IMAGES="lazyone lazytwo" \
+    docker run --rm plainthree tool > /dev/null 2>&1
+  if [ "$(grep -c '^pull ' "${T}/calls")" = 1 ] && grep -qx 'pull -q lazytwo' "${T}/calls" \
      && [ "$(grep -c '^run ' "${T}/calls")" = 3 ]; then
     echo "ok: the docker shim pulls a missing lazy image once, before its run"
   else
