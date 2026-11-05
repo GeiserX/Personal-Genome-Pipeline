@@ -105,3 +105,6 @@ site/
 
 # Beads: the tracker lives in a private Dolt remote, bead text never enters git
 .beads/*.jsonl
+
+# Scratch space of a checkout: logs, downloads, CI output
+/tmp/
