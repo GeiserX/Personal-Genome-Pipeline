@@ -22,7 +22,8 @@
     and go to assets/, which --assets names, as do assets/mito_confirmed.tsv
     (the confirmed mtDNA variants step 20's section names) and the paralog
     catalogs assets/paralog_loci.tsv and assets/paraphase_genes.tsv. Every
-    <id>_<table>_copy_number.tsv of step 35 goes to paralogs/. Every gene and rsID the
+    <id>_<table>_copy_number.tsv of step 35 goes to paralogs/, and so
+    does step 35's <id>_cn_intervals.tsv. Every gene and rsID the
     results mention also goes to ${id}_search_index.json beside it
     (bin/results_index.py), for the live site's search, and the report's
     charts to ${id}_charts.json, for the live page (docs/24-html-report.md).
@@ -74,6 +75,7 @@ process HTML_REPORT {
             ${id}_paraphase_copy_number.tsv|${id}_paraphase_variants.tsv|${id}_*_copy_number.tsv) place paralogs "\$f" ;;
             ${id}.mosdepth.summary.txt|${id}_callability.bed.gz) place coverage "\$f" ;;
             ${id}_sample_qc.tsv)                          place qc "\$f" ;;
+            ${id}_cn_intervals.tsv)                       place paralogs "\$f" ;;
             ${id}_prs_summary.tsv)                        place prs "\$f" ;;
             ${id}_ancestry.tsv)                           place ancestry "\$f" ;;
             ${id}_ancestry_fine.tsv|${id}_painting.png)   place ancestry_fine "\$f" ;;
@@ -99,6 +101,7 @@ process HTML_REPORT {
             ${id}_ancient.tsv|${id}_ancient_info.tsv|${id}_ancient_pca.svg) place ancient "\$f" ;;
             ${id}_lpa_kiv2.tsv)                           place lpa "\$f" ;;
             ${id}_vntyper.tsv)                            place vntyper "\$f" ;;
+            ${id}_locityper.tsv)                          place locityper "\$f" ;;
             ${id}_viral.tsv)                              place viral "\$f" ;;
             ${id}_exomiser_top.tsv|${id}_exomiser_terms.tsv) place exomiser "\$f" ;;
             ${id}_chip.tsv|${id}_chip_depth.tsv)          place chip "\$f" ;;

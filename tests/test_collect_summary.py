@@ -163,6 +163,11 @@ Checks:
      reach both reports; bin/clinvar_hits.awk's sites mode words the calls
      the same way, and a reference call below the GQ floor reads
      "ref (low confidence)".
+ 29. step 05's checked table keeps AnnotSV's FORMAT and sample columns, so
+     the genotype and phase of a deletion reach the two-hit rule: a MUTYH
+     deletion phased 0|1 and a ClinVar hit phased 1|0 in the same phase set
+     are biallelic, in trans; the same deletion genotyped 0/0 is no
+     deletion and pairs with nothing.
 
 Run: python3 tests/test_collect_summary.py
 """
@@ -1175,6 +1180,40 @@ def annotsv_section(work, schema):
     check("annotsv: without the table the section is missing, listed as not run, with no card",
           summ["sections"]["annotsv"]["state"] == "missing" and any("AnnotSV" in x for x in summ["not_run"])
           and "Class 4 and 5 (AnnotSV)" not in txt + html_, summ["not_run"])
+
+
+# MUTYH spans chr1:45329163-45340893 (assets/carrier_genes.tsv); the calls are made up.
+PHASE_HEAD = ("AnnotSV_ID\tSV_chrom\tSV_start\tSV_end\tSV_length\tSV_type\tID\tINFO\tFORMAT\tS\t"
+              "Annotation_mode\tGene_name\tB_loss_AFmax\tACMG_class\tAnnotSV_ranking_score\n")
+
+
+def annotsv_phase_pairing(work):
+    """29. a deletion's GT and PS go through annotsv_postfilter.py into the two-hit rule."""
+    import annotsv_postfilter
+
+    def run(name, gt):
+        d = os.path.join(work, "sv-phase", name, "S")
+        put(f"{d}/annotsv/S_sv_class4_5.tsv", PHASE_HEAD
+            + f"1_45335001_45337000_DEL_1\t1\t45335000\t45337000\t-2000\tDEL\tSV1\t"
+              f"END=45337000;SVTYPE=DEL;SVCALLER=manta\tGT:PS\t{gt}:45330000\tfull\tMUTYH\t\t4\t0.95\n")
+        annotsv_postfilter.main(["--class45", f"{d}/annotsv/S_sv_class4_5.tsv",
+                                 "--out", f"{d}/annotsv/S_sv_class4_5_checked.tsv"])
+        put(f"{d}/clinvar/S_clinvar_hits.vcf", VCF_HEAD
+            + "chr1\t45332000\t.\tC\tT\t50\tPASS\tGENEINFO=MUTYH:4595;CLNSIG=Pathogenic;"
+              "CLNREVSTAT=criteria_provided,_multiple_submitters,_no_conflicts\tGT:GQ:DP:PS\t1|0:50:30:45330000\n")
+        with open(f"{d}/annotsv/S_sv_class4_5_checked.tsv") as f:
+            head = f.readline().rstrip("\n").split("\t")
+        two = (collect_summary.sec_carrier(d, "S")[1].get("two_hits") or {}).get("genes", [])
+        return head, [x for x in two if x["gene"] == "MUTYH"]
+
+    head, t = run("trans", "0|1")
+    check("sv phase: the checked table ends with AnnotSV's FORMAT and sample columns", head[-2:] == ["FORMAT", "S"],
+          head)
+    check("sv phase: a deletion phased 0|1 and a hit phased 1|0 in one phase set are biallelic, in trans",
+          len(t) == 1 and t[0]["verdict"] == "biallelic" and "in trans" in t[0]["why"]
+          and "phase set 45330000" in t[0]["why"], t)
+    _, t = run("homref", "0/0")
+    check("sv phase: a deletion genotyped 0/0 pairs with nothing", t == [], t)
 
 
 def report_followups_sections(work, schema):
@@ -2719,6 +2758,7 @@ def main():
         clinical_mane_quality(work, schema)
         comphet_phase_section(work, schema)
         annotsv_section(work, schema)
+        annotsv_phase_pairing(work)
         report_followups_sections(work, schema)
         str_extra_readings(work, schema)
         parascopy_section(work, schema)

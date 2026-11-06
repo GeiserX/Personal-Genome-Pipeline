@@ -110,6 +110,76 @@ print("\n".join(sorted(out)))
 PY
 }
 
+# --- The ancestry panel, from the Actions cache or the mirror when it is there ---
+# EBI's FTP server fails now and then (curl exit 7). The e2e workflow keeps the
+# PGS Catalog's HAPNEST panel in the Actions cache (E2E_DATA_CACHE/hapnest,
+# keyed on the pin below) for prs-2-ancestry and
+# prs-scores-and-run-options-2-panel-chrx. The pin is the sha256 of the file
+# EBI served on 2026-11-04 (281,185,251 bytes, md5
+# 3630f2ec3343599f3c55827ddbe38f60 as EBI's md5s.txt lists it).
+HAPNEST_SHA256=8ba05cffc4b816f8f8aafd78add52b90ab80315e930936277e09861c5d134aa3
+# NET_BLOCKED: an env prefix that sends every HTTP(S) request to a closed port.
+NET_BLOCKED=(env http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9
+             HTTPS_PROXY=http://127.0.0.1:9 no_proxy= NO_PROXY= FETCH_TRIES=1 FETCH_WAIT=0)
+_sha256() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
+# setup_ancestry_panel NAME PANEL: setup.sh --ancestry-panel for panel NAME
+# (installed at PANEL), its log in STEP_LOG, with checks. The HAPNEST panel
+# comes from the Actions cache, an earlier install at PANEL, or else from
+# E2E_DATA_MIRROR (the e2e-data-1 release, which holds a copy), each checked
+# against HAPNEST_SHA256; then setup.sh runs with the network blocked. When
+# none has it, setup.sh downloads it from EBI as a user's run does. With E2E_HAPNEST_KEEP=true a
+# panel that matches the pin and did not come from the cache goes into it.
+setup_ancestry_panel() {
+  local name=$1 panel=$2 cached="${E2E_DATA_CACHE:-}/hapnest/${1}.tar.zst" from=""
+  if [ "$name" = GRCh38_HAPNEST_reference ] && [ -n "${E2E_DATA_CACHE:-}" ] && [ -s "$cached" ]; then
+    if [ "$(_sha256 "$cached")" = "$HAPNEST_SHA256" ]; then
+      mkdir -p "${panel%/*}"
+      ln -f "$cached" "$panel" 2>/dev/null || cp -f "$cached" "$panel"
+      from="the Actions cache"
+    else
+      echo "Data cache: ${cached} does not match its pin; trying the mirror, then setup.sh downloads it"
+      rm -f "$cached"
+    fi
+  fi
+  # A panel an earlier case installed, when it matches the pin, is used as it is.
+  if [ -z "$from" ] && [ "$name" = GRCh38_HAPNEST_reference ] && [ -s "$panel" ] \
+     && [ "$(_sha256 "$panel")" = "$HAPNEST_SHA256" ]; then
+    from="an earlier install"
+  fi
+  if [ -z "$from" ] && [ "$name" = GRCh38_HAPNEST_reference ] && [ -n "${E2E_DATA_MIRROR:-}" ]; then
+    mkdir -p "${panel%/*}"
+    # One try, cut when it stalls or takes over 15 minutes: EBI is next.
+    if curl -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 120 --max-time 900 \
+         -o "${panel}.mirror" "${E2E_DATA_MIRROR%/}/${name}.tar.zst" \
+       && [ "$(_sha256 "${panel}.mirror")" = "$HAPNEST_SHA256" ]; then
+      mv -f "${panel}.mirror" "$panel"
+      from="the mirror"
+    else
+      rm -f "${panel}.mirror"
+      echo "Data cache: ${name} not on the mirror or not matching its pin; setup.sh downloads it from EBI"
+    fi
+  fi
+  echo "+ ANCESTRY_PANEL_NAME=${name} scripts/setup.sh --ancestry-panel (panel from: ${from:-EBI, by setup.sh})"
+  if [ -n "$from" ]; then
+    "${NET_BLOCKED[@]}" ANCESTRY_PANEL_NAME="$name" "${REPO}/scripts/setup.sh" --ancestry-panel "$GENOME_DIR" 2>&1 | tee "$STEP_LOG"
+    check_eq "setup.sh --ancestry-panel exits 0 from the panel of ${from}, with EBI unreachable" "${PIPESTATUS[0]}" 0
+    check "and downloads nothing" lacks 'Downloading' "$(cat "$STEP_LOG")"
+  else
+    ANCESTRY_PANEL_NAME="$name" "${REPO}/scripts/setup.sh" --ancestry-panel "$GENOME_DIR" 2>&1 | tee "$STEP_LOG"
+    check_eq "setup.sh --ancestry-panel exits 0" "${PIPESTATUS[0]}" 0
+    if [ "$name" = GRCh38_HAPNEST_reference ]; then
+      check_eq "the downloaded panel matches its pin" "$(_sha256 "$panel")" "$HAPNEST_SHA256"
+    fi
+  fi
+  if [ "$name" = GRCh38_HAPNEST_reference ] && [ "$from" != "the Actions cache" ] && [ -n "${E2E_DATA_CACHE:-}" ] \
+     && [ "${E2E_HAPNEST_KEEP:-false}" = true ] && [ "$(_sha256 "$panel")" = "$HAPNEST_SHA256" ]; then
+    mkdir -p "${cached%/*}"
+    ln -f "$panel" "$cached" 2>/dev/null || cp -f "$panel" "$cached"
+    echo "Data cache: the panel is in ${cached} for the Actions cache"
+  fi
+  echo "${CASE_NAME}: ancestry panel from ${from:-EBI}" >> "$E2E_NOTES"
+}
+
 finish() {
   if [ "$FAILS" -gt 0 ]; then
     echo "${CASE_NAME}: ${FAILS} check(s) failed"

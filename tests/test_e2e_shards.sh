@@ -50,6 +50,40 @@ if [ "$("$S" plan 1 | cut -f1 | sort -u)" = 1 ] && [ "$("$S" plan 1 | wc -l | tr
 else bad "plan 1 gave: $("$S" plan 1 | paste -sd' ' -)"; fi
 if "$S" plan 0 > /dev/null 2>&1; then bad "plan 0 was accepted"; else ok "plan 0 is refused"; fi
 
+# --- count: as many shards as the critical path asks for ---------------------
+# Groups c 300, z9 300, d 250, e1 50: 900 seconds, the heaviest 300.
+cnt() { E2E_SHARD_FLOOR=${2:-900} "$S" count "$1"; }
+if [ "$(cnt 6)" = 1 ]; then ok "count: 900 seconds over a 900-second floor is one shard"
+else bad "count 6 gave $(cnt 6)"; fi
+if [ "$(cnt 6 100)" = 3 ]; then ok "count: 900 seconds over a 300-second critical path is three shards"
+else bad "count 6 with floor 100 gave $(cnt 6 100)"; fi
+if [ "$(cnt 2 100)" = 2 ]; then ok "count never goes over MAX"
+else bad "count 2 with floor 100 gave $(cnt 2 100)"; fi
+if [ "$(cnt 6 400)" = 2 ]; then ok "count adds a shard for a leftover of at least the floor (900 = 2 x 400 + 100: two)"
+else bad "count 6 with floor 400 gave $(cnt 6 400)"; fi
+if "$S" count 0 > /dev/null 2>&1; then bad "count 0 was accepted"; else ok "count 0 is refused"; fi
+
+# --- E2E_SELECT: only the picked cases --------------------------------------
+printf '%s\n' c1 c2 c3 e1 > "${WORK}/select.txt"
+want="1${TAB}c1 1${TAB}c2 1${TAB}c3 2${TAB}e1"
+if [ "$(E2E_SELECT="${WORK}/select.txt" "$S" plan 2 | paste -sd' ' -)" = "$want" ]; then ok "plan with E2E_SELECT splits the picked cases only"
+else bad "plan with E2E_SELECT gave: $(E2E_SELECT="${WORK}/select.txt" "$S" plan 2 | paste -sd' ' -)"; fi
+{ "$S" base; E2E_SELECT="${WORK}/select.txt" "$S" plan 2 | cut -f2; } > "${WORK}/picked.txt"
+if E2E_SELECT="${WORK}/select.txt" "$S" cover "${WORK}/picked.txt" > /dev/null; then ok "cover with E2E_SELECT wants the base and picked cases"
+else bad "cover with E2E_SELECT rejected the picked split"; fi
+if "$S" cover "${WORK}/picked.txt" > /dev/null; then bad "cover without E2E_SELECT passed a split that leaves cases out"
+else ok "cover without E2E_SELECT wants every case"; fi
+printf '%s\n' c1 c3 > "${WORK}/select-hole.txt"
+if out=$(E2E_SELECT="${WORK}/select-hole.txt" "$S" plan 2 2>&1); then bad "plan accepted a pick without c2, which c3 needs"
+elif grep -q 'c3 but not c2' <<< "$out"; then ok "a pick without a need is refused: ${out#ERROR: }"
+else bad "a missing need not named: ${out}"; fi
+printf '%s\n' 01-base e1 > "${WORK}/select-base.txt"
+if E2E_SELECT="${WORK}/select-base.txt" "$S" plan 2 > /dev/null 2>&1; then bad "plan accepted a pick naming a base case"
+else ok "a pick naming a base case is refused"; fi
+printf '%s\n' ghost > "${WORK}/select-ghost.txt"
+if E2E_SELECT="${WORK}/select-ghost.txt" "$S" plan 2 > /dev/null 2>&1; then bad "plan accepted a pick naming no case"
+else ok "a pick naming no case is refused"; fi
+
 # --- cover: the planted duplicate and the planted missing case ---------------
 { cat "${WORK}/all.txt"; echo c2; } > "${WORK}/dup.txt"
 if out=$("$S" cover "${WORK}/dup.txt"); then bad "a split listing c2 twice passed cover"
@@ -79,6 +113,27 @@ broken "a need on a base case" "z9${TAB}shard${TAB}5${TAB}01-base"
 broken "a base case with a need" "z9${TAB}base${TAB}5${TAB}c1"
 broken "a row of three columns" "z9${TAB}shard${TAB}5"
 broken "an unknown stage" "z9${TAB}later${TAB}5${TAB}-"
+
+# --- check: every case has a row ---------------------------------------------
+# z9 has no row in the planted table: check names it, while plan still runs it.
+if out=$("$S" check 2>&1); then bad "check passed a table with no row for z9"
+elif grep -qx 'z9' <<< "$out"; then ok "check names the case with no row: $(tr '\n' ' ' <<< "$out")"
+else bad "check did not name z9: ${out}"; fi
+table | grep -v "^e1${TAB}" > "${WORK}/two-missing.tsv"
+if out=$(E2E_TIMES="${WORK}/two-missing.tsv" "$S" check 2>&1); then bad "check passed a table with no row for e1 and z9"
+elif grep -qx 'e1' <<< "$out" && grep -qx 'z9' <<< "$out"; then ok "check names both cases with no row"
+else bad "check did not name both e1 and z9: ${out}"; fi
+if E2E_TIMES="${WORK}/no-such.tsv" "$S" check > /dev/null 2>&1; then bad "check passed with no table"
+else ok "check refuses a table that is not there"; fi
+mkdir -p "${WORK}/empty"
+if E2E_CASE_DIR="${WORK}/empty" E2E_TIMES=/dev/null "$S" check > /dev/null 2>&1; then bad "check passed with no case and an empty table"
+else ok "check refuses a case directory with no case"; fi
+{ table; printf '%s\n' "z9${TAB}shard${TAB}5${TAB}-"; } > "${WORK}/whole.tsv"
+if out=$(E2E_TIMES="${WORK}/whole.tsv" "$S" check 2>&1); then ok "check passes once z9 has its row: ${out}"
+else bad "check failed a table with a row for every case: ${out}"; fi
+{ table; printf '%s\n' "z9${TAB}shard${TAB}5${TAB}-" "z9${TAB}shard${TAB}6${TAB}-"; } > "${WORK}/twice.tsv"
+if E2E_TIMES="${WORK}/twice.tsv" "$S" check > /dev/null 2>&1; then bad "check passed a table with two rows for z9"
+else ok "check refuses a second row too"; fi
 
 # --- merge: one pass per case, or red ---------------------------------------
 res() { printf '%s\t%s\t%s\t%s\n' "$@"; }
@@ -129,5 +184,7 @@ n=$(awk '/^  E2E_SHARDS:/ {print $2}' "${REPO}/.github/workflows/e2e.yml")
 if { "$S" base; "$S" plan "$n" | cut -f2; } > "${WORK}/real.txt" && out=$("$S" cover "${WORK}/real.txt"); then
   ok "real table, ${n} shards: ${out}"
 else bad "real split: ${out:-plan failed}"; fi
+if out=$("$S" check 2>&1); then ok "real table: ${out}"
+else bad "real table: ${out}"; fi
 
 [ "$FAILS" -eq 0 ]

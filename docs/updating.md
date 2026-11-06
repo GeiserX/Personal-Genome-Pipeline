@@ -16,7 +16,7 @@ This page is for maintainers. It says how a pinned version gets bumped, what che
 | Python packages of the screenshot script | the `==` pins in `tests/demo/retake-screenshots.sh` | Renovate |
 | Aldy, the alternative CYP2D6 caller | its version in [Cyrius](21-cyrius.md), in the prose and the `pip install` line | Renovate |
 | GitHub Actions (`uses:` lines) | the workflows | Dependabot, monthly |
-| MkDocs and its plugins | `docs/requirements-docs.txt` | Dependabot, monthly |
+| Zensical, the docs site builder | `docs/requirements-docs.txt` | Dependabot, monthly |
 | Data releases: VEP cache, PCGR bundle, pypgx bundle, AnnotSV annotations, Yleaf data, gnomAD constraint, the GRIDSS blacklist commit | the variables at the end of `versions.env` | nobody: bump them by hand, together with the image they belong to. Guard's `coupled-versions` job fails while the VEP cache, pypgx bundle, AnnotSV or Yleaf data disagrees with its image |
 | GENCODE gene lines (step 8) and exons (steps 6 and 39) | `GENCODE_RELEASE` in `scripts/lib/common.sh` | nobody: it moves with a VEP major, to the GENCODE release of that Ensembl release (the VEP major minus 66). The `coupled-versions` job fails until it does |
 | VerifyBamID2 marker panel (step 33) | the tag in the `VB2_PANEL_FILES` URLs of `scripts/setup.sh`, with their sha256 | nobody: it moves with `VERIFYBAMID2_IMAGE`. The `coupled-versions` job fails while the tag and the image version differ |

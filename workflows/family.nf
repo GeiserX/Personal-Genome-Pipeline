@@ -54,8 +54,9 @@ workflow FAMILY {
     ch_reference      // channel: val(path) — reference FASTA
     ch_reference_fai  // channel: val(path) — reference .fai
     ch_par_bed        // channel: val(path) — assets/par_grch38.bed
-    ch_couple_outputs // channel: path — the partners' ClinVar hits, Delly VCF, ExpansionHunter VCF and SMN1
-                      //   table, named <id>_*; empty when the pedigree marks no partners
+    ch_couple_outputs // channel: path — the partners' ClinVar hits, Delly VCF, ExpansionHunter VCF, SMN1
+                      //   table, step 35's interval table and CNVpytor VCF, named <id>_*; empty when the
+                      //   pedigree marks no partners
     ch_carrier_genes  // channel: val(path) — assets/carrier_genes.tsv
     ch_exons          // channel: val(path) — GENCODE exons BED (--gencode_exons), or []
     ch_ibd_panel      // channel: val(path) — step 26b's panel folder (--ancestry_fine_panel); empty without it,
