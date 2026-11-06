@@ -151,8 +151,9 @@ for id in $ids; do
 done
 PINS=$(for id in $ids; do echo "${id} $(md5sum < "${SL}/good/${id}_hmPOS_GRCh38.txt.gz" | cut -d' ' -f1)"; done)
 read -r rc secs <<< "$(fill good "${SL}/good" 30 10)"
-if [ "$rc" = 0 ] && E2E_PGS_MD5=$PINS E2E_DATA_CACHE="${SL}/good.cache" "$RUN" --data-check pgs; then
-  echo "PASS: a mirror with every score pinned fills the entry, with the source blocked, and it checks out (${secs} s)"
+if [ "$rc" = 0 ] && E2E_PGS_MD5=$PINS E2E_DATA_CACHE="${SL}/good.cache" "$RUN" --data-check pgs \
+   && grep -q "_hmPOS_GRCh38.txt.gz from the mirror" "${SL}/good.log"; then
+  echo "PASS: a mirror with every score pinned fills the entry, with the source blocked, logs each file as from the mirror, and it checks out (${secs} s)"
 else echo "FAIL: the good mirror gave exit ${rc}: $(tail -n 3 "${SL}/good.log")"; failed=1; fi
 read -r rc secs <<< "$(fill bad "${SL}/bad" 30 10)"
 if [ "$rc" != 0 ] && [ -z "$(find "${SL}/bad.cache" -name '*.txt.gz' 2> /dev/null)" ] && grep -q 'not on the mirror' "${SL}/bad.log"; then

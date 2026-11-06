@@ -250,7 +250,6 @@ data_ok() {
 # cache keeps its own). Without E2E_DATA_KEEP=true (the workflow sets it on
 # a run that saves the cache) a case's cached files are deleted after it,
 # to give the disk back.
-DATA_CACHE=${E2E_DATA_CACHE:-}
 # E2E_DATA_MIRROR, when set, is a folder URL (a GitHub release) holding copies
 # of these pinned files under their own names. Each file is tried there once
 # first, then at its source. EBI's 1000 Genomes hosts swing between a few KB/s
@@ -293,7 +292,10 @@ mfetch() {
       [ "$secs" -ge 1 ] || secs=1
     fi
     FETCH_TRIES=1 within "$secs" fetch "${E2E_DATA_MIRROR%/}/${1##*/}" "$2" "$3" "$4" 2> /dev/null || rc=$?
-    [ "$rc" -eq 0 ] && return 0
+    if [ "$rc" -eq 0 ]; then
+      echo "Data cache: ${1##*/} from the mirror"
+      return 0
+    fi
     if [ "$rc" -eq 124 ]; then
       echo "Data cache: ${1##*/} took more than ${secs} s on the mirror; downloading it from its source"
     else

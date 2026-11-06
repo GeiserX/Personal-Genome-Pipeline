@@ -24,6 +24,8 @@ Checks:
  11. a bumped pin of the opt-in steps 50 to 53 (LOCITYPER_PANEL_VERSION and
      LOCITYPER_IMAGE for 53, MOCHA_PANEL_VERSION and MOCHA_IMAGE for 51,
      VNTYPER_IMAGE for 52, MEGANE_IMAGE for 50) marks its step.
+ 12. check() itself names step 53 rerun-ready when the run used an older
+     LOCITYPER_PANEL_VERSION than this checkout pins, and not when they match.
 Each check is then run against a planted mistake and must fail there.
 
 Run: python3 tests/test_owngenome_recheck.py
@@ -536,9 +538,30 @@ def pins_ok(m, steps):
     return not missed, missed
 
 
+def check_marks_53(m, steps):
+    """check() on a run that used an older LOCITYPER_PANEL_VERSION than this checkout pins puts 53 in
+    rerun_ready_steps; the same pin on both sides puts nothing there."""
+    tmp = tempfile.mkdtemp(prefix="recheck.", dir=os.path.join(REPO, "tmp") if os.path.isdir(os.path.join(REPO, "tmp")) else None)
+    try:
+        g = genome(tmp, installed_clinvar="20260901")
+        with open(os.path.join(g, "S1", "run_manifest.tsv"), "a") as f:
+            f.write("version\tLOCITYPER_PANEL_VERSION\tpanel-1.0\n")
+        st = m.check("S1", g, answers(m, g), steps, dict(THIS_PINS, LOCITYPER_PANEL_VERSION="panel-2.0"), "3.66.0")
+        same = m.check("S1", g, answers(m, g), steps, dict(THIS_PINS, LOCITYPER_PANEL_VERSION="panel-1.0"), "3.66.0")
+        return ("53" in st["rerun_ready_steps"] and "53" not in same["rerun_ready_steps"],
+                (st["rerun_ready_steps"], same["rerun_ready_steps"]))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     m = load()
     steps = m.run_state.read_steps(m.STEPS_TSV)
+    ok, detail = check_marks_53(m, steps)
+    check("a run on an older LOCITYPER_PANEL_VERSION makes check() name step 53 rerun-ready", ok, detail)
+    blank = [dict(st, reads="") if st["step"] == "53" else st for st in steps]
+    check("fails on a planted mistake: a run on an older LOCITYPER_PANEL_VERSION makes check() name step 53 "
+          "(row 53 with no reads)", not check_marks_53(m, blank)[0], "passed on the mutant")
     ok, detail = pins_ok(m, steps)
     check("a bumped pin of steps 50-53 (LOCITYPER_PANEL_VERSION and the rest) marks its step", ok, detail)
     blank = [dict(st, reads="") if st["step"] == "53" else st for st in steps]
