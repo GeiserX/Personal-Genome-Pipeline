@@ -1,6 +1,6 @@
 # Nextflow Parameters
 
-Every parameter of the Nextflow pipeline (`main.nf`), grouped as in [`nextflow_schema.json`](https://github.com/GeiserX/OwnGenome/blob/main/nextflow_schema.json), with its default and the description the schema gives. Give one as `--<name> <value>` to `nextflow run`, or after the sex to `run-all.sh`, which hands the options after the sex to `nextflow run` unchanged. `run-all.sh` already passes the databases it finds under `GENOME_DIR` ([Full run](getting-started.md#full-run)). How a run is built: [Nextflow Execution](nextflow.md).
+Every parameter of the Nextflow pipeline (`main.nf`), grouped as in [`nextflow_schema.json`](https://github.com/GeiserX/OwnGenome/blob/main/nextflow_schema.json), with its default and the description the schema gives. `--pedigree` is read by `main.nf` but is not in the schema yet; its row is written here. Give one as `--<name> <value>` to `nextflow run`, or after the sex to `run-all.sh`, which hands the options after the sex to `nextflow run` unchanged. `run-all.sh` already passes the databases it finds under `GENOME_DIR` ([Full run](getting-started.md#full-run)). How a run is built: [Nextflow Execution](nextflow.md).
 
 A default of none means the parameter is unset; each description says what a run does without it.
 
@@ -10,7 +10,7 @@ Define where the pipeline should find input data and save output data.
 
 | Parameter | Default | What it does |
 |---|---|---|
-| `--input` | none | Path to comma-separated samplesheet: sample, then fastq_1,fastq_2 (aligned and called), or bam,bam_index (called), or vcf,vcf_index (a VCF with one sample) with an optional bam,bam_index; sex (male or female) is required on every row that is called and when expansion_hunter is enabled. |
+| `--input` | none | Path to comma-separated samplesheet: sample, then fastq_1,fastq_2 (aligned and called), or bam,bam_index (called), or vcf,vcf_index (a VCF with one sample) with an optional bam,bam_index; sex (male or female) is required on every row that is called and when expansion_hunter is enabled. A row can also give cram,crai instead of the BAM, and gvcf,gvcf_index beside the VCF; every column: [Samplesheet Format](nextflow.md#samplesheet-format). |
 | `--pedigree` | none | The family workflow (step 38, and step 39 for two samples the pedigree marks as partners): a tab-separated pedigree (sample, sex, father, mother, partner; `assets/pedigree.example.tsv`) or a families file with a leading family column (`assets/families.example.tsv`), naming samplesheet rows. Needs `--somalier_sites` and at least two of the named samples. [Family workflow](nextflow.md) and [Multi-sample comparison](multi-sample.md#family-analysis-step-38-opt-in) say what it runs. |
 | `--outdir` | `./results` | The output directory where results will be saved. |
 | `--allow_unfiltered` | `false` | Accept a VCF that has no FILTER=PASS record by treating FILTER '.' as PASS. Without it such a VCF stops the run, because every PASS-only step would report zero hits. |
