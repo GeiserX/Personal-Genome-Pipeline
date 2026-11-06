@@ -2,7 +2,9 @@
 # The data cache entries hla and pgs of scripts/ci/e2e-run.sh: --data-check
 # passes a whole entry and fails a changed, missing or partial one (the e2e
 # workflow saves and uses only an entry that passes), and --data-key names
-# the releases; and .github/actions/free-disk names a cleanup that failed in
+# the releases; a data fill that runs past E2E_DATA_BUDGET stops with its
+# message (a planted slow mirror on 127.0.0.1, the sources blocked); and
+# .github/actions/free-disk names a cleanup that failed in
 # its summary (fake sudo, docker and df). No network, no docker.
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -60,6 +62,59 @@ if [ -n "$other" ] && [ -n "$pin" ] && [ -n "$gencode" ] \
 else echo "FAIL: the hla key does not match its inputs (${other:-?} ${pin:-?} ${gencode:-?}): ${key}"; failed=1; fi
 if "$RUN" --data-key pgs | grep -qE '^e2e-data-pgs-[0-9a-f]{16}$'; then echo "PASS: the pgs key is a hash"
 else echo "FAIL: the pgs key"; failed=1; fi
+
+# --- the data fill budget: a slow source stops at E2E_DATA_BUDGET ------------
+# A mirror on 127.0.0.1 that answers every file at about 2 KB/s, fast enough
+# that fetch's stall limit (1 KB/s) never cuts it; every other host is sent
+# to a closed port. --data-fill pgs must stop at the 3-second budget with its
+# message. The control: a mirror that answers 404 fails at once, with no
+# budget message, so the message is not printed for any failure.
+SL="${T}/slow"
+mkdir -p "$SL"
+cat > "${SL}/server.py" <<'EOF'
+import http.server, sys, time
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if sys.argv[1] == "404":
+            self.send_error(404); return
+        self.send_response(200)
+        self.send_header("Content-Length", str(10 ** 8))
+        self.end_headers()
+        try:
+            while True:
+                self.wfile.write(b"x" * 512); self.wfile.flush(); time.sleep(0.25)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+    def log_message(self, *a):
+        pass
+s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+print(s.server_address[1], flush=True)
+s.serve_forever()
+EOF
+fill() {  # fill MODE BUDGET: "EXIT SECONDS" of --data-fill pgs against the planted mirror; its log in ${SL}/MODE.log
+  local port pid rc=0 t0
+  python3 "${SL}/server.py" "$1" > "${SL}/port.$1" & pid=$!
+  for _ in $(seq 50); do [ -s "${SL}/port.$1" ] && break; sleep 0.1; done
+  port=$(head -n 1 "${SL}/port.$1")
+  rm -rf "${SL}/cache"
+  t0=$(date +%s)
+  env http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 \
+    no_proxy=127.0.0.1 NO_PROXY=127.0.0.1 E2E_FETCH_TRIES=1 E2E_FETCH_WAIT=0 E2E_DATA_BUDGET="$2" \
+    E2E_DATA_CACHE="${SL}/cache" E2E_DATA_MIRROR="http://127.0.0.1:${port}" \
+    timeout 60 "$RUN" --data-fill pgs > "${SL}/$1.log" 2>&1 || rc=$?
+  kill "$pid" 2> /dev/null; wait "$pid" 2> /dev/null
+  echo "$rc $(( $(date +%s) - t0 ))"
+}
+read -r rc secs <<< "$(fill slow 3)"
+if [ "$rc" = 124 ] && [ "$secs" -lt 30 ] && grep -q 'filling pgs took more than E2E_DATA_BUDGET=3 s' "${SL}/slow.log"; then
+  echo "PASS: a slow mirror stops the fill at its 3 s budget (exit ${rc} after ${secs} s) with its message"
+else echo "FAIL: the slow fill gave exit ${rc} after ${secs} s: $(tail -n 3 "${SL}/slow.log")"; failed=1; fi
+if pgrep -f "${SL}/cache" > /dev/null 2>&1; then echo "FAIL: a download of the stopped fill still runs"; failed=1
+else echo "PASS: nothing of the stopped fill still runs"; fi
+read -r rc secs <<< "$(fill 404 30)"
+if [ "$rc" != 0 ] && [ "$rc" != 124 ] && [ "$secs" -lt 30 ] && ! grep -q 'E2E_DATA_BUDGET' "${SL}/404.log"; then
+  echo "PASS: control: a mirror that answers 404, with the source blocked, fails at once (exit ${rc} after ${secs} s) with no budget message"
+else echo "FAIL: control gave exit ${rc} after ${secs} s: $(tail -n 3 "${SL}/404.log")"; failed=1; fi
 
 # --- free-disk: a cleanup that fails is named in the summary -----------------
 # The action's script, run as GitHub runs a composite bash step, with sudo,
