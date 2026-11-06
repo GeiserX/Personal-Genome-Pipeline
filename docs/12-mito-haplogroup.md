@@ -4,7 +4,7 @@
 Determines the maternal lineage from mitochondrial DNA (mtDNA) variants, and checks the mtDNA for a second person's reads (contamination).
 
 ## Why
-The mitochondrial haplogroup reveals deep maternal ancestry. Some haplogroups have known population-level health associations (e.g., longevity, metabolic traits).
+The mitochondrial haplogroup reveals deep maternal ancestry. The step gives no health reading for a haplogroup: the reported links between haplogroups and disease come mostly from small case-control studies, which population structure in mtDNA easily misleads, and many did not replicate (Salas and Elson, J Genet Genomics 2015, PMID 25953355). [What the pipeline does not report](not-reported.md) lists this with the other results left out on purpose.
 
 A sample with DNA of two people shows two mtDNA haplogroups at once: the variants of the second one appear as heteroplasmies at a similar level. haplocheck looks for that pattern. It is a check of the sample, not of the person: `YES` means the calls of this sample, above all its heterozygous ones, may mix two people.
 
