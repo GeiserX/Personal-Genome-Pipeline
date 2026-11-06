@@ -10,10 +10,12 @@ name: E2E
 #                  file is on main), on a push to main and on dispatch; it
 #                  does nothing when the release already exists and was
 #                  built by the same script.
-#   e2e-plan, e2e-base, e2e-shards, e2e
-#                  run every case in tests/e2e/ on that data set exactly once,
-#                  split over parallel legs: e2e-plan splits the cases
-#                  (scripts/ci/e2e-shards.sh), the leg "e2e base" runs the
+#   e2e-scope, e2e-plan, e2e-base, e2e-shards, e2e
+#                  run the cases of tests/e2e/ on that data set, each once,
+#                  split over parallel legs: e2e-scope picks the cases
+#                  (scripts/ci/e2e-scope.sh: on a pull request only those it
+#                  can affect, every case on main, monthly and on dispatch),
+#                  e2e-plan splits them (scripts/ci/e2e-shards.sh), the leg "e2e base" runs the
 #                  base cases and hands what they wrote to the legs
 #                  "e2e shard N", which run the rest. The shard holding them
 #                  then runs the parity checks: the bash single steps and the
@@ -21,13 +23,13 @@ name: E2E
 #                  agree, and so must the SV consensus and the Y haplogroup
 #                  of the hardening run (scripts/ci/parity-diff.sh). The job
 #                  e2e is the required check: it merges every leg's results
-#                  into one table and is red unless every case passed once.
-#                  Runs on pull requests that touch the pipeline, on main
-#                  after every merge that does, monthly, on dispatch. Every
-#                  pull request starts this workflow, so main can require the
-#                  e2e check: e2e-scope decides, and on a pull request that
-#                  touches none of the pipeline paths the legs are skipped
-#                  and e2e passes without running anything.
+#                  into one table and is red unless every picked case passed
+#                  once. Runs on pull requests that touch the pipeline, on
+#                  main after every merge that does, monthly, on dispatch.
+#                  Every pull request starts this workflow, so main can
+#                  require the e2e check: on a pull request that touches none
+#                  of the pipeline paths the legs are skipped and e2e passes
+#                  without running anything.
 #   settle-doubts  answers questions a code review could not answer without
 #                  running the tools. Not a gate: it prints a table.
 #   prs-memory     on dispatch only: the memory of PRS_PREPARE and pgsc_calc's
@@ -47,8 +49,8 @@ on:
     # commit as the pull request's required e2e check.
     branches: [main]
     # The e2e scope, the same paths e2e-scope checks on a pull request
-    # (E2E_SCOPE_DIRS and E2E_SCOPE_FILES below; the e2e job fails when the
-    # two lists differ), so a docs-only merge starts no run.
+    # (`scripts/ci/e2e-scope.sh scope`; e2e-plan fails when the two lists
+    # differ), so a docs-only merge starts no run.
     paths:
       - 'scripts/**'
       - 'modules/**'
@@ -60,8 +62,20 @@ on:
       - 'tests/fixtures/VERSION'
       - 'main.nf'
       - 'nextflow.config'
+      - 'nextflow_schema.json'
       - 'versions.env'
       - '.github/workflows/e2e.yml'
+      - 'tests/fixtures/annotsv/class45.sh'
+      - 'tests/fixtures/comphet/make_fixture.py'
+      - 'tests/fixtures/consumer_export/sites.tsv.gz'
+      - 'tests/fixtures/families/stub_families.tsv'
+      - 'tests/fixtures/pharmcat/refblocks.g.vcf'
+      - 'tests/fixtures/sv/cnvpytor.vcf.in'
+      - 'tests/fixtures/sv/delly.vcf.in'
+      - 'tests/fixtures/sv/manta.vcf.in'
+      - 'tests/fixtures/vcf/combined_allele_clinvar.vcf'
+      - 'tests/fixtures/vcf/combined_allele_sample.vcf'
+      - 'tests/fixtures/vcf/grch37_no_contigs.vcf'
   pull_request:
     branches: [main]
   schedule:
@@ -90,12 +104,10 @@ on:
 permissions:
   contents: read
 
-# The paths the e2e cases exercise: a directory covers everything under it.
 env:
-  E2E_SCOPE_DIRS: scripts modules workflows bin conf assets tests/e2e
-  E2E_SCOPE_FILES: tests/fixtures/VERSION main.nf nextflow.config versions.env .github/workflows/e2e.yml
-  # The shard legs besides the base leg. The cases took 230 minutes in one
-  # job on 2026-11-02 (run 41390434697).
+  # The shard legs besides the base leg. A full run uses all of them; a run
+  # of picked cases runs fewer when they fit (scripts/ci/e2e-shards.sh count). The cases took 230
+  # minutes in one job on 2026-11-02 (run 41390434697).
   E2E_SHARDS: 6
 
 concurrency:
@@ -220,51 +232,84 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # The pull request paths the e2e cases exercise. Outside a pull request the
-  # answer is always run=true: on a push the paths filter above already
-  # asked the same question. A failed or missing answer runs e2e anyway (the
-  # test below is != 'false'), so a broken scope job can never skip the gate.
+  # Which cases run (scripts/ci/e2e-scope.sh). On a pull request: none when
+  # it changes no path in the e2e scope, every case when it changes shared
+  # wiring or carries the label e2e-full, else the smoke cases plus the cases
+  # whose files, table rows or paths (scripts/ci/e2e-case-paths.tsv) it
+  # changed and the cases those need. Every case on a push, on schedule and
+  # on dispatch. Red when a case has no paths row; a red or missing answer
+  # turns e2e red, so a broken scope job never skips the gate.
   e2e-scope:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       run: ${{ steps.scope.outputs.run }}
+      select: ${{ steps.scope.outputs.select }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: github.event_name == 'pull_request'
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
           persist-credentials: false
 
-      - name: Does this pull request touch the pipeline
+      - name: Every case has a paths row
+        run: scripts/ci/e2e-scope.sh check
+
+      # Three dots: what the branch changed since it left main, whatever
+      # main did meanwhile. The label is read now, not from the event, so a
+      # re-run after adding it runs every case.
+      - name: Pick the cases
         id: scope
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        # Three dots: what the branch changed since it left main, as a paths
-        # filter sees it, whatever main did meanwhile.
+          PR: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$EVENT" != "pull_request" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          git diff --name-only "${BASE}...${HEAD_SHA}" > "${RUNNER_TEMP}/changed.txt"
-          cat "${RUNNER_TEMP}/changed.txt"
-          dirs=$(tr ' ' '|' <<< "$E2E_SCOPE_DIRS")
-          files=$(tr ' ' '|' <<< "$E2E_SCOPE_FILES" | sed 's/\./\\./g')
-          if grep -qE "^(${dirs})/|^(${files})\$" "${RUNNER_TEMP}/changed.txt"; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Nothing the e2e cases exercise changed: e2e is skipped."
+          set -o pipefail
+          if [ "$EVENT" != pull_request ]; then
+            echo "A ${EVENT} run: every case runs." | tee -a "$GITHUB_STEP_SUMMARY"
+            { echo "run=true"; echo "select=all"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          labels=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/labels" --jq '.[].name') \
+            || { echo "::warning::Could not read the labels: every case runs."; labels=e2e-full; }
+          if grep -qx e2e-full <<< "$labels"; then
+            echo "The pull request carries the label e2e-full: every case runs." | tee -a "$GITHUB_STEP_SUMMARY"
+            { echo "run=true"; echo "select=all"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # --no-renames: a moved file counts at its old path and its new one.
+          git diff --no-renames --name-only "${BASE}...${HEAD_SHA}" > "${RUNNER_TEMP}/changed.txt"
+          git diff --no-renames -U0 "${BASE}...${HEAD_SHA}" -- scripts/ci/e2e-case-paths.tsv scripts/ci/e2e-case-times.tsv \
+            | scripts/ci/e2e-scope.sh rows > "${RUNNER_TEMP}/rows.txt"
+          echo "Changed: $(paste -sd' ' "${RUNNER_TEMP}/changed.txt")"
+          if ! scripts/ci/e2e-scope.sh select "${RUNNER_TEMP}/changed.txt" "${RUNNER_TEMP}/rows.txt" \
+               > "${RUNNER_TEMP}/selected.txt" 2> "${RUNNER_TEMP}/why.txt"; then
+            cat "${RUNNER_TEMP}/why.txt"
+            exit 1
+          fi
+          { echo "### E2E scope"; echo; echo '```'; cat "${RUNNER_TEMP}/why.txt"; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+          all=$(scripts/ci/e2e-shards.sh plan 1 | wc -l)
+          if [ ! -s "${RUNNER_TEMP}/selected.txt" ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "$(wc -l < "${RUNNER_TEMP}/selected.txt")" -eq "$all" ]; then
+            { echo "run=true"; echo "select=all"; } >> "$GITHUB_OUTPUT"
+          else
+            { echo "run=true"; echo "select=$(paste -sd' ' "${RUNNER_TEMP}/selected.txt")"; } >> "$GITHUB_OUTPUT"
           fi
 
-  # Splits the cases over the parallel jobs below (scripts/ci/e2e-shards.sh,
-  # with the measured times and needs of scripts/ci/e2e-case-times.tsv), and
-  # runs the checks that need no fixture. Runs when e2e runs; a failed or
-  # missing scope answer runs it too.
+  # Splits the picked cases over the parallel jobs below
+  # (scripts/ci/e2e-shards.sh, with the measured times and needs of
+  # scripts/ci/e2e-case-times.tsv), and runs the checks that need no
+  # fixture. Runs when e2e-scope picked a case.
   e2e-plan:
     needs: e2e-scope
     if: >-
-      ${{ !cancelled() && needs.e2e-scope.outputs.run != 'false' && (
+      ${{ !cancelled() && needs.e2e-scope.result == 'success' && needs.e2e-scope.outputs.run == 'true' && (
         github.event_name == 'pull_request' ||
         github.event_name == 'push' ||
         github.event_name == 'schedule' ||
@@ -275,6 +320,7 @@ jobs:
       jobs: ${{ steps.plan.outputs.jobs }}
       shards: ${{ steps.plan.outputs.shards }}
       trace: ${{ steps.plan.outputs.trace }}
+      select: ${{ needs.e2e-scope.outputs.select }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -285,13 +331,11 @@ jobs:
       # on a pull request and never on main after the merge, or the reverse.
       - name: The push paths are the e2e scope
         run: |
-          read -ra dirs <<< "$E2E_SCOPE_DIRS"
-          read -ra files <<< "$E2E_SCOPE_FILES"
-          want=$( { printf '%s/**\n' "${dirs[@]}"; printf '%s\n' "${files[@]}"; } | sort)
+          want=$(scripts/ci/e2e-scope.sh scope)
           have=$(awk '/^  push:/ {p = 1; next} p && /^  [a-z_]+:/ {exit}
-                      p && /^      - / {sub(/^      - /, ""); gsub(/\047/, ""); print}' .github/workflows/e2e.yml | sort)
+                      p && /^      - / {sub(/^      - /, ""); gsub(/\047/, ""); print}' .github/workflows/e2e.yml | LC_ALL=C sort)
           if [ "$want" != "$have" ]; then
-            echo "::error::The push paths of e2e.yml differ from E2E_SCOPE_DIRS and E2E_SCOPE_FILES (< scope, > push paths):"
+            echo "::error::The push paths of e2e.yml differ from the scope of scripts/ci/e2e-scope.sh (< scope, > push paths):"
             diff <(echo "$want") <(echo "$have") || true
             exit 1
           fi
@@ -302,24 +346,37 @@ jobs:
       - name: Pull retry self-test
         run: scripts/ci/e2e-run.sh --self-test-pull
 
-      # The base job plus E2E_SHARDS shard jobs; a traced run puts every other
-      # case in one shard, in name order, as one serial run would. The two
-      # parity checks below read the outputs of two cases each, so each pair
-      # must share a shard.
+      # The base job plus E2E_SHARDS shard jobs, or for picked cases as many
+      # as they need (e2e-shards.sh count); a traced run puts every other case
+      # in one shard, in name order, as one serial run would. The two parity
+      # checks below read the outputs of two cases each, so each pair that
+      # runs must share a shard.
       - name: Split the cases
         id: plan
         env:
           TRACE: ${{ inputs.trace && 'true' || 'false' }}
+          SELECT: ${{ needs.e2e-scope.outputs.select }}
         run: |
           set -o pipefail
+          # A full run keeps all E2E_SHARDS legs: the runner's disk, not time,
+          # is what a leg runs out of. Five legs put 30 to 37 cases in one and
+          # filled a runner's disk until the runner itself died (run
+          # 41995851301, shard 3); six legs pass (run 41995719742).
           n=$E2E_SHARDS
+          if [ "$SELECT" != all ]; then
+            tr ' ' '\n' <<< "$SELECT" > "${RUNNER_TEMP}/select.txt"
+            export E2E_SELECT="${RUNNER_TEMP}/select.txt"
+            n=$(scripts/ci/e2e-shards.sh count "$E2E_SHARDS")
+          fi
           [ "$TRACE" = true ] && n=1
           scripts/ci/e2e-shards.sh plan "$n" > "${RUNNER_TEMP}/plan.tsv"
           { scripts/ci/e2e-shards.sh base; cut -f2 "${RUNNER_TEMP}/plan.tsv"; } > "${RUNNER_TEMP}/all.txt"
           scripts/ci/e2e-shards.sh cover "${RUNNER_TEMP}/all.txt"
+          TAB=$'\t'
           for pair in "nextflow-from-fastq-1-bash nextflow-from-fastq-2-nextflow" \
                       "nextflow-hardening-1-manta nextflow-hardening-2-nf"; do
             read -r a b <<< "$pair"
+            grep -q "${TAB}${b}\$" "${RUNNER_TEMP}/plan.tsv" || continue
             sa=$(awk -F'\t' -v c="$a" '$2 == c {print $1}' "${RUNNER_TEMP}/plan.tsv")
             sb=$(awk -F'\t' -v c="$b" '$2 == c {print $1}' "${RUNNER_TEMP}/plan.tsv")
             if [ -z "$sa" ] || [ "$sa" != "$sb" ]; then
@@ -330,7 +387,7 @@ jobs:
           jobs=$(seq 1 "$n" | jq -R . | jq -sc .)
           { echo "jobs=${jobs}"; echo "shards=${n}"; echo "trace=${TRACE}"; } >> "$GITHUB_OUTPUT"
           {
-            echo "### E2E split: base and ${n} shards"
+            echo "### E2E split: base and ${n} shards, $(wc -l < "${RUNNER_TEMP}/plan.tsv") shard cases"
             echo
             echo "| Job | Cases | Measured minutes |"
             echo "|---|---|---|"
@@ -380,20 +437,16 @@ jobs:
           echo "$cpu"
           echo "Runner: ${cpu}" >> "$GITHUB_STEP_SUMMARY"
 
+      # Before anything is pulled or restored: the legs ran out of disk on
+      # 2026-11-04 with only part of the preinstalled software removed.
+      - uses: ./.github/actions/free-disk
+
       # Images go to /var/lib/docker on /; the work area goes to whichever of
       # / and /mnt has more room, so the two do not compete for one disk. The
       # base outputs unpack only under the work area they were packed in, so
       # a shard leg takes the base leg's choice when its artifact arrives.
-      - name: Free disk space and pick the work area
-        # A shard starts its cases with about 15 GB free on /, and shard 1
-        # needs most of it: the toolchains below are not used by any case.
+      - name: Pick the work area
         run: |
-          df -h / /mnt
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
-            /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
-            /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium /opt/microsoft /opt/az \
-            /opt/hostedtoolcache/Python /opt/hostedtoolcache/PyPy /opt/hostedtoolcache/go /opt/hostedtoolcache/Ruby
-          df -h / /mnt
           work="${RUNNER_TEMP}/e2e-work"
           if [ "$(df --output=avail -k /mnt | tail -1)" -gt "$(df --output=avail -k / | tail -1)" ]; then
             work=/mnt/e2e-work
@@ -527,8 +580,13 @@ jobs:
         id: cases-list
         env:
           SHARDS: ${{ needs.e2e-plan.outputs.shards }}
+          SELECT: ${{ needs.e2e-plan.outputs.select }}
         run: |
           set -o pipefail
+          if [ "$SELECT" != all ]; then
+            tr ' ' '\n' <<< "$SELECT" > "${RUNNER_TEMP}/select.txt"
+            export E2E_SELECT="${RUNNER_TEMP}/select.txt"
+          fi
           list="${RUNNER_TEMP}/cases.txt"
           if [ "$JOB" = base ]; then scripts/ci/e2e-shards.sh base > "$list"
           else scripts/ci/e2e-shards.sh plan "$SHARDS" | awk -F'\t' -v k="$JOB" '$1 == k {print $2}' > "$list"; fi
@@ -538,6 +596,8 @@ jobs:
           grep -qx nextflow-hardening-2-nf "$list" && echo "parity_hardening=true" >> "$GITHUB_OUTPUT"
           grep -qx mocha-1 "$list" && echo "data_mocha=true" >> "$GITHUB_OUTPUT"
           grep -qx archaic-ancestry-1 "$list" && echo "data_archaic=true" >> "$GITHUB_OUTPUT"
+          grep -qx bash-step-08-hla "$list" && echo "data_hla=true" >> "$GITHUB_OUTPUT"
+          grep -qx prs-scores-and-run-options-1-strand-sex "$list" && echo "data_pgs=true" >> "$GITHUB_OUTPUT"
           echo "list=${list}" >> "$GITHUB_OUTPUT"
 
       # Before the base outputs: the base leg pulled the same images.
@@ -589,12 +649,18 @@ jobs:
       # runs" there) and downloads what a miss leaves out. Saved like the
       # images: on main, or a run by hand with save_images, on a miss. Only
       # the leg whose cases include the case restores and saves its entry.
+      # Two small ones the same way, keyed by e2e-run.sh --data-key: hla.dat
+      # of two IPD-IMGT/HLA releases and GENCODE's genes and exons
+      # (bash-step-08-hla, which then runs with the network blocked), and the
+      # four real PGS Catalog score files of prs-scores-and-run-options-1.
       - name: Data cache keys
         id: data-keys
         run: |
           . versions.env
           echo "mocha=e2e-data-mocha-${MOCHA_PANEL_MANIFEST_SHA256:0:16}-chr20" | tee -a "$GITHUB_OUTPUT"
           echo "archaic=e2e-data-1kg-sites-${ARCHAIC_1KG_SITES_MD5}" | tee -a "$GITHUB_OUTPUT"
+          echo "hla=$(scripts/ci/e2e-run.sh --data-key hla)" | tee -a "$GITHUB_OUTPUT"
+          echo "pgs=$(scripts/ci/e2e-run.sh --data-key pgs)" | tee -a "$GITHUB_OUTPUT"
 
       - name: Restore cached data, MoChA panel
         id: data-mocha
@@ -612,6 +678,49 @@ jobs:
           path: ${{ env.E2E_DATA_CACHE }}/archaic
           key: ${{ steps.data-keys.outputs.archaic }}
 
+      - name: Restore cached data, IPD-IMGT/HLA and GENCODE
+        id: data-hla
+        if: steps.cases-list.outputs.data_hla == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/hla
+          key: ${{ steps.data-keys.outputs.hla }}
+
+      - name: Restore cached data, PGS Catalog scores
+        id: data-pgs
+        if: steps.cases-list.outputs.data_pgs == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/pgs
+          key: ${{ steps.data-keys.outputs.pgs }}
+
+      # The PGS Catalog's synthetic HAPNEST panel (prs-2-ancestry and
+      # prs-scores-and-run-options-2, 268 MB), from EBI's FTP server, keyed
+      # on the sha256 tests/e2e/lib.sh pins. The cases take it from
+      # E2E_DATA_CACHE/hapnest, check it and then run setup.sh with EBI
+      # unreachable; on a miss the first one downloads it and puts it there
+      # (setup_ancestry_panel in lib.sh). Saved like the entries above: on
+      # main, or a run by hand with save_images, on a miss.
+      - name: Data cache, HAPNEST panel
+        id: hapnest
+        env:
+          LIST: ${{ steps.cases-list.outputs.list }}
+          SAVE: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && 'true' || 'false' }}
+        run: |
+          grep -qxE 'prs-2-ancestry|prs-scores-and-run-options-2-panel-chrx' "$LIST" || exit 0
+          sha=$(sed -n 's/^HAPNEST_SHA256=//p' tests/e2e/lib.sh)
+          [ "${#sha}" -eq 64 ] || { echo "::error::No HAPNEST_SHA256= line in tests/e2e/lib.sh"; exit 1; }
+          { echo "run=true"; echo "key=e2e-data-hapnest-${sha:0:16}"; } | tee -a "$GITHUB_OUTPUT"
+          echo "E2E_HAPNEST_KEEP=${SAVE}" >> "$GITHUB_ENV"
+
+      - name: Restore cached data, HAPNEST panel
+        id: data-hapnest
+        if: steps.hapnest.outputs.run == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/hapnest
+          key: ${{ steps.hapnest.outputs.key }}
+
       - name: Run the e2e cases
         id: cases
         env:
@@ -621,17 +730,20 @@ jobs:
           E2E_TRACE: ${{ needs.e2e-plan.outputs.trace }}
           # The free disk a leg needs before its first case (e2e-run.sh).
           E2E_MIN_FREE_GB: 10
+          # Copies of the pinned e2e data, tried before EBI (data_fetch in e2e-run.sh).
+          E2E_DATA_MIRROR: https://github.com/GeiserX/OwnGenome/releases/download/e2e-data-1
           E2E_BASE_OUT: ${{ matrix.job == 'base' && format('{0}/base.tar.zst', runner.temp) || '' }}
           E2E_BASE_IN: ${{ matrix.job != 'base' && format('{0}/e2e-base/base.tar.zst', runner.temp) || '' }}
           # Keep the downloads to the end of the job only when a save step uses them.
-          E2E_DATA_KEEP: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && ((steps.cases-list.outputs.data_mocha == 'true' && steps.data-mocha.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_archaic == 'true' && steps.data-archaic.outputs.cache-hit != 'true')) && 'true' || 'false' }}
+          E2E_DATA_KEEP: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && ((steps.cases-list.outputs.data_mocha == 'true' && steps.data-mocha.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_archaic == 'true' && steps.data-archaic.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_hla == 'true' && steps.data-hla.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_pgs == 'true' && steps.data-pgs.outputs.cache-hit != 'true')) && 'true' || 'false' }}
           HIT_MOCHA: ${{ steps.data-mocha.outputs.cache-hit || 'false' }}
           HIT_ARCHAIC: ${{ steps.data-archaic.outputs.cache-hit || 'false' }}
-          DATA_MOCHA: ${{ steps.cases-list.outputs.data_mocha || 'false' }}
-          DATA_ARCHAIC: ${{ steps.cases-list.outputs.data_archaic || 'false' }}
+          HIT_HLA: ${{ steps.data-hla.outputs.cache-hit || 'false' }}
+          HIT_PGS: ${{ steps.data-pgs.outputs.cache-hit || 'false' }}
+          DATA_ANY: ${{ steps.cases-list.outputs.data_mocha || steps.cases-list.outputs.data_archaic || steps.cases-list.outputs.data_hla || steps.cases-list.outputs.data_pgs || 'false' }}
         run: |
-          if [ "$DATA_MOCHA" = true ] || [ "$DATA_ARCHAIC" = true ]; then
-            echo "Data cache (${JOB}): exact key hit, MoChA panel ${HIT_MOCHA}, 1000 Genomes sites ${HIT_ARCHAIC}" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$DATA_ANY" = true ]; then
+            echo "Data cache (${JOB}): exact key hit, MoChA panel ${HIT_MOCHA}, 1000 Genomes sites ${HIT_ARCHAIC}, IPD-IMGT/HLA and GENCODE ${HIT_HLA}, PGS scores ${HIT_PGS}" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
           scripts/ci/e2e-run.sh
 
@@ -645,6 +757,8 @@ jobs:
         env:
           HIT_MOCHA: ${{ steps.data-mocha.outputs.cache-hit }}
           HIT_ARCHAIC: ${{ steps.data-archaic.outputs.cache-hit }}
+          HIT_HLA: ${{ steps.data-hla.outputs.cache-hit }}
+          HIT_PGS: ${{ steps.data-pgs.outputs.cache-hit }}
         run: |
           d=$E2E_DATA_CACHE
           if [ "$HIT_MOCHA" != true ] && [ -s "${d}/mocha/manifest.txt" ] \
@@ -654,6 +768,13 @@ jobs:
           if [ "$HIT_ARCHAIC" != true ] && [ -s "${d}/archaic/1kg_sites.vcf.gz" ]; then
             echo "archaic=true" >> "$GITHUB_OUTPUT"
           fi
+          # Whole and checked (data_ok in e2e-run.sh), or not saved.
+          for n in hla pgs; do
+            hit=HIT_${n^^}
+            if [ "${!hit}" != true ] && [ -d "${d}/${n}" ] && scripts/ci/e2e-run.sh --data-check "$n"; then
+              echo "${n}=true" >> "$GITHUB_OUTPUT"
+            fi
+          done
           du -sh "${d}"/* 2> /dev/null || echo "Data cache: nothing downloaded"
 
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -668,6 +789,36 @@ jobs:
           path: ${{ env.E2E_DATA_CACHE }}/archaic
           key: ${{ steps.data-keys.outputs.archaic }}
 
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.data-save.outputs.hla == 'true'
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/hla
+          key: ${{ steps.data-keys.outputs.hla }}
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.data-save.outputs.pgs == 'true'
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/pgs
+          key: ${{ steps.data-keys.outputs.pgs }}
+
+      # The case leaves the panel there only once its sha256 matched.
+      - name: Data cache, HAPNEST panel, what to save
+        id: hapnest-save
+        if: >-
+          always() && steps.hapnest.outputs.run == 'true' && env.E2E_HAPNEST_KEEP == 'true' &&
+          steps.data-hapnest.outputs.cache-hit != 'true'
+        run: |
+          if [ -s "${E2E_DATA_CACHE}/hapnest/GRCh38_HAPNEST_reference.tar.zst" ]; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          fi
+          du -sh "${E2E_DATA_CACHE}/hapnest" 2> /dev/null || echo "Data cache: no HAPNEST panel to save"
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.hapnest-save.outputs.save == 'true'
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/hapnest
+          key: ${{ steps.hapnest.outputs.key }}
+
       - name: Upload the base outputs
         if: matrix.job == 'base'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -677,7 +828,8 @@ jobs:
             ${{ runner.temp }}/base.tar.zst
             ${{ runner.temp }}/base.tar.zst.from
           compression-level: 0
-          retention-days: 1
+          # Three days, so "Re-run failed jobs" the next day still finds it.
+          retention-days: 3
           overwrite: true
 
       # The cases nextflow-from-fastq-1-bash and -2-nextflow ran the bash steps
@@ -741,8 +893,9 @@ jobs:
       # Each group keeps its smallest images up to GROUP_BUDGET_MB of zstd
       # output; the rest are pulled on every run. Four groups of 1500 MB are
       # 5.9 GB, and while main replaces one group the old and the new entry
-      # both count: 7.3 GB. With the two data entries above (2.0 GB) that is
-      # 9.3 GB, under the 10 GB limit. An image pinned by digest
+      # both count: 7.3 GB. With the five data entries above (about 2.3 GB:
+      # MoChA 0.64, 1000 Genomes sites 1.36, HAPNEST 0.27, hla and GENCODE
+      # 0.03, PGS a few KB) that is 9.6 GB, under the 10 GB limit. An image pinned by digest
       # is never saved: docker load gives it back without its digest, so
       # e2e-run.sh would pull it again anyway.
       - name: Image sizes, and save images for the next run
@@ -857,9 +1010,10 @@ jobs:
     steps: *leg-steps
 
   # The required check. Green when e2e-scope finds nothing to run; otherwise
-  # green only when the plan and every leg succeeded, every case of the split
+  # green only when the plan and every leg succeeded, every picked case
   # reported exactly one pass (one table of every case goes to the summary)
-  # and each parity check passed once. A leg that was skipped, cancelled or
+  # and each parity check whose cases ran passed once. Red when e2e-scope
+  # did not succeed. A leg that was skipped, cancelled or
   # cut by its time limit leaves cases without a result, which is red too.
   e2e:
     needs: [e2e-scope, e2e-plan, e2e-base, e2e-shards]
@@ -878,8 +1032,13 @@ jobs:
       - name: Does anything need to run
         id: scope
         env:
+          SCOPE: ${{ needs.e2e-scope.result }}
           RUN: ${{ needs.e2e-scope.outputs.run }}
         run: |
+          if [ "$SCOPE" != success ]; then
+            echo "::error::e2e-scope ended ${SCOPE:-unknown}: no answer to which cases run, so e2e cannot pass."
+            exit 1
+          fi
           if [ "$RUN" = false ]; then
             echo "Nothing the e2e cases exercise changed: e2e passes without running." | tee -a "$GITHUB_STEP_SUMMARY"
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -900,9 +1059,14 @@ jobs:
           LEGS: ${{ needs.e2e-shards.result }}
           SHARDS: ${{ needs.e2e-plan.outputs.shards }}
           TRACE: ${{ needs.e2e-plan.outputs.trace }}
+          SELECT: ${{ needs.e2e-scope.outputs.select }}
         run: |
           set -o pipefail
           rc=0
+          if [ -n "$SELECT" ] && [ "$SELECT" != all ]; then
+            tr ' ' '\n' <<< "$SELECT" > "${RUNNER_TEMP}/select.txt"
+            export E2E_SELECT="${RUNNER_TEMP}/select.txt"
+          fi
           if [ "$PLAN" != success ] || [ "$BASE" != success ] || [ "$LEGS" != success ]; then
             echo "::error::The plan job ended ${PLAN:-unknown}, the base leg ${BASE:-unknown} and the shard legs ${LEGS:-unknown}; e2e needs all three to succeed."
             rc=1
@@ -930,10 +1094,13 @@ jobs:
             for f in "$dir"/*/extra.md; do [ -s "$f" ] && cat "$f"; done
           } >> "$GITHUB_STEP_SUMMARY"
           tail -n 1 "$table"
-          for p in fastq hardening; do
+          for p in fastq:nextflow-from-fastq-2-nextflow hardening:nextflow-hardening-2-nf; do
+            want=0
+            grep -qx "${p#*:}" "$expected" && want=1
+            p=${p%%:*}
             n=$(cat /dev/null "$dir"/*/parity.tsv | grep -cx "${p}"$'\t'"pass" || true)
-            if [ "$n" -ne 1 ]; then
-              echo "::error::The ${p} parity check passed ${n} times; it must pass once."
+            if [ "$n" -ne "$want" ]; then
+              echo "::error::The ${p} parity check passed ${n} times; it must pass ${want} times, as its cases ran ${want} times."
               rc=1
             fi
           done

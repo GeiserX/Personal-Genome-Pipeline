@@ -43,6 +43,7 @@ include { ARCHAIC_GENOTYPES; ARCHAIC_IBDMIX; ARCHAIC_REPORT } from './modules/lo
 include { ANCIENT_SITES; ANCIENT_GENO; ANCIENT_PCA; ANCIENT_REPORT } from './modules/local/ancient/main'
 include { LPA_REGIONS; LPA_DEPTH; LPA } from './modules/local/lpa/main'
 include { VNTYPER } from './modules/local/vntyper/main'
+include { LOCITYPER } from './modules/local/locityper/main'
 include { VIRAL_READS; VIRAL_REPORT } from './modules/local/viral/main'
 include { EXOMISER_PREPARE; EXOMISER; EXOMISER_REPORT } from './modules/local/exomiser/main'
 include { CHIP_PREPARE; CHIP_MUTECT2; CHIP_ANNOTATE; CHIP_REPORT } from './modules/local/chip/main'
@@ -105,6 +106,7 @@ workflow {
         'chip',
         'mei',
         'mocha',
+        'locityper',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
@@ -161,6 +163,7 @@ workflow {
         ['chip',             'chip_gff',           '--chip_gff'],
         ['mei',              'megane_kmers',       '--megane_kmers'],
         ['mocha',            'mocha_data',         '--mocha_data'],
+        ['locityper',        'locityper_data',     '--locityper_data'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -1075,6 +1078,19 @@ workflow {
                                                         MOCHA_REPORT.out.versions)
     }
 
+    // ─── Locityper second opinion at hard loci (opt-in: locityper, step 53)
+    // Locityper on each sample's BAM with the database of --locityper_data
+    // (setup.sh --locityper-data, built from the same reference). A sample
+    // without a BAM is left out. Equivalent to scripts/53-locityper.sh.
+    ch_locityper          = Channel.empty()
+    ch_locityper_versions = Channel.empty()
+    if (tools_list.contains('locityper')) {
+        LOCITYPER(ch_bam, ch_reference, ch_reference_fai,
+                  Channel.value(file(params.locityper_data, checkIfExists: true)))
+        ch_locityper          = LOCITYPER.out.table
+        ch_locityper_versions = LOCITYPER.out.versions
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 6: REPORTING — HTML report & MultiQC
     // ═══════════════════════════════════════════════════════════════════
@@ -1169,6 +1185,7 @@ workflow {
         .join(ch_mei.map                          { meta, calls, sites -> [meta.id, sites] }, remainder: true)
         .join(ch_mocha.map                        { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_mocha_summary.map                { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_locityper.map                    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
         .map { items -> [items[1], items[2], items[3..-1].collectMany { f -> (f instanceof List ? f : [f]) }.findAll { f -> f != null } + report_assets] }
@@ -1207,7 +1224,8 @@ workflow {
             ch_chip_versions,
             ch_mei_versions,
             ch_exomiser_versions,
-            ch_mocha_versions
+            ch_mocha_versions,
+            ch_locityper_versions
         )
         .map { f -> f.text }
         .unique()

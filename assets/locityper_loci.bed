@@ -1,0 +1,11 @@
+# The loci step 53 genotypes with Locityper (docs/53-locityper.md), GRCh38, BED (0-based start).
+# Columns: chrom, start, end, locus name. The regions are those of the Locityper authors' own
+# GRCh38 database of 326 loci (Zenodo 15879519, db.tar.gz, ref.bed of each locus), except FCGR,
+# their FCGR3A and FCGR2B loci joined because they overlap. setup.sh --locityper-data builds the
+# database of these rows from the HPRC v2.1 pangenome VCF (LOCITYPER_PANEL_URL) and reads that VCF
+# 250 kb either side of each row, the room Locityper's locus extension needs (up to 200 kb).
+chr1	161506761	161681047	FCGR
+chr6	32484347	32593538	HLA-DRB1
+chr6	32652603	32669077	HLA-DQB1
+chr19	54723153	54868521	KIR
+chr22	42122284	42152960	CYP2D6
