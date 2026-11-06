@@ -103,14 +103,15 @@ RAW="${GENOME_DIR}/${SAMPLE}/raw"
 TSV="${RAW}/${SAMPLE}_tsv2vcf.tsv"
 
 # --- Pre-step: one TSV of rsid, chromosome, position, genotype ---
-# 23andMe: drop the comment header.
-grep -v '^#' "${RAW}/${SAMPLE}_raw.txt" > "$TSV"
+# 23andMe: drop the comment header. Its MT positions are on hg19's chrM, not
+# the rCRS: chip-to-vcf.sh moves them through the chain's chrM block; here,
+# simply drop them (the awk filter below).
+grep -v '^#' "${RAW}/${SAMPLE}_raw.txt" | awk -F'\t' '$2 != "MT"' > "$TSV"
 
-# MyHeritage instead: quoted CSV fields and its own header.
-grep -v "^#" "${RAW}/MyHeritage_raw_dna_data.csv" | \
-  grep -v "^RSID" | \
-  sed 's/"//g' | \
-  awk -F',' '{print $1"\t"$2"\t"$3"\t"$4}' \
+# MyHeritage instead: quoted CSV fields, its own header and often Windows
+# (CRLF) line endings; drop the carriage returns first.
+tr -d '\r' < "${RAW}/MyHeritage_raw_dna_data.csv" | sed 's/"//g' | \
+  awk -F',' -v OFS='\t' '/^#/ || NF == 0 || tolower($1) == "rsid" {next} {print $1, $2, $3, $4}' \
   > "$TSV"
 
 # AncestryDNA instead: skip the header row, join the two allele columns,
@@ -168,18 +169,37 @@ docker run --rm --user root \
   "${BCFTOOLS_IMAGE}" \
   bcftools index -t "/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz"
 
-# --- Stage 2: Liftover to GRCh38 ---
+# --- Stage 2: Liftover to GRCh38, chrM kept in place ---
+#
+# GRCh37's MT and GRCh38's chrM are the same sequence (the rCRS), so chrM is
+# not lifted: the UCSC chain maps hg19's chrM (the Yoruba sequence, two bases
+# longer) and would move rCRS positions, m.1555 to 1553. Split it off, give it
+# GRCh38's contig lines and merge it back after the liftover.
+
+docker run --rm --user root \
+  -v "${GENOME_DIR}:/genome" \
+  "${BCFTOOLS_IMAGE}" \
+  sh -c "bcftools view -t ^chrM /genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz -Oz -o /genome/${SAMPLE}/raw/${SAMPLE}_hg19_nuclear.vcf.gz &&
+    bcftools view -t chrM /genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz -Oz -o /genome/${SAMPLE}/raw/${SAMPLE}_chrM_unlifted.vcf.gz &&
+    bcftools reheader --fai /genome/${REF_FASTA}.fai -o /genome/${SAMPLE}/raw/${SAMPLE}_chrM.vcf.gz /genome/${SAMPLE}/raw/${SAMPLE}_chrM_unlifted.vcf.gz"
 
 docker run --rm --user root \
   -v "${GENOME_DIR}:/genome" \
   "${PICARD_IMAGE}" \
   java -jar /usr/picard/picard.jar LiftoverVcf \
-    I="/genome/${SAMPLE}/raw/${SAMPLE}_hg19_chr.vcf.gz" \
-    O="/genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz" \
+    I="/genome/${SAMPLE}/raw/${SAMPLE}_hg19_nuclear.vcf.gz" \
+    O="/genome/${SAMPLE}/raw/${SAMPLE}_lifted.vcf.gz" \
     CHAIN=/genome/liftover/hg19ToHg38.over.chain.gz \
     R="/genome/${REF_FASTA}" \
     REJECT="/genome/${SAMPLE}/raw/${SAMPLE}_liftover_rejected.vcf.gz" \
     WARN_ON_MISSING_CONTIG=true
+
+# The lifted records and chrM in one file, in the GRCh38 contig order
+docker run --rm --user root \
+  -v "${GENOME_DIR}:/genome" \
+  "${BCFTOOLS_IMAGE}" \
+  sh -c "bcftools concat /genome/${SAMPLE}/raw/${SAMPLE}_lifted.vcf.gz /genome/${SAMPLE}/raw/${SAMPLE}_chrM.vcf.gz -Oz -o /genome/${SAMPLE}/raw/${SAMPLE}_merged.vcf.gz &&
+    bcftools sort /genome/${SAMPLE}/raw/${SAMPLE}_merged.vcf.gz -Oz -o /genome/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 
 # Index the final VCF
 docker run --rm --user root \
@@ -192,7 +212,7 @@ echo "Done. VCF at: ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 
 **Expected output:** A bgzipped, tabix-indexed VCF on GRCh38 coordinates with ~600,000 SNPs. Typical breakdown: ~430K hom-ref, ~107K het, ~66K hom-alt, ~1K missing. Some variants (~0.3%) are rejected during liftover; ~900 have swapped REF/ALT between builds.
 
-> **X/Y/MT chromosomes:** All chromosomes are converted (MT is renamed to chrM to match GRCh38 convention). Chip arrays cover very few mtDNA positions, so for mitochondrial haplogroup estimation, dedicated tools like [HaploGrep](https://haplogrep.i-med.ac.at/) that accept raw 23andMe files directly will give better results.
+> **X/Y/MT chromosomes:** All chromosomes are converted. MT is renamed to chrM to match GRCh38 convention and keeps its positions: GRCh37's MT and GRCh38's chrM are both the rCRS, so it is not lifted (the hg19 chain maps hg19's own chrM, the Yoruba sequence, and would move m.1555 to 1553). MyHeritage and AncestryDNA MT positions are read as rCRS positions, as the GRCh37 build they name. 23andMe numbers its MT sites on hg19's chrM instead (its v5 site list puts m.3243 at 3244), so for a 23andMe file `chip-to-vcf.sh` first moves each MT position to the rCRS through the chrM block of `hg19ToHg38.over.chain.gz`, and drops a site that falls in one of that chain's gaps, printing how many it moved and dropped. The 23andMe-layout file of [step 40](40-export-consumer.md) writes rCRS MT positions, unlike 23andMe, so its MT sites read back through this script land one or two bases off; the round trip there leaves chrM out. Chip arrays cover very few mtDNA positions, so for mitochondrial haplogroup estimation, dedicated tools like [HaploGrep](https://haplogrep.i-med.ac.at/) that accept raw 23andMe files directly will give better results.
 
 > **23andMe / AncestryDNA:** Place your file at `${GENOME_DIR}/${SAMPLE}/raw/${SAMPLE}_raw.txt`. Both are tab-separated but not in the same layout: AncestryDNA needs its own pre-step above (two allele columns, numeric chromosome codes), which `chip-to-vcf.sh` runs for you. AncestryDNA reports two alleles on X, Y and MT, so its genotypes there are diploid; 23andMe reports one allele there for a male.
 

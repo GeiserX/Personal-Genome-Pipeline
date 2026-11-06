@@ -1,0 +1,15 @@
+# MyHeritage DNA raw data.
+# Synthetic test fixture for tests/test_chip_to_vcf_mt.py: made-up positions and
+# genotypes on a made-up reference, in the layout of a MyHeritage export
+# (quoted CSV, a column header row, Windows line endings).
+RSID,CHROMOSOME,POSITION,RESULT
+"rs9000001","1","101","AG"
+"rs9000002","1","202","CC"
+"rs9000003","1","303","GT"
+"rs9000004","1","404","--"
+"rs9000005","1","1010","TT"
+"rs9000006","X","505","AA"
+"rs9000008","Y","707","GG"
+"rs9000011","MT","73","G"
+"rs9000012","MT","1555","G"
+"rs9000013","MT","3243","A"

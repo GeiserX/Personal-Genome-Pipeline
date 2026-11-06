@@ -921,8 +921,12 @@ def cmd_report(a):
                         b[0 if cg[0] == frm_f else 1] += 1
                 # de novo: an allele the child carries that neither parent has
                 if how == "inconsistent" and f_known and m_known:
-                    # on a male's single X only the mother's alleles count, on his Y the father's
-                    seen = mset if sexchr and chrom == "chrX" else fset if sexchr else fset | mset
+                    # on a male's single X only the mother's alleles count, on his Y the father's;
+                    # a female's two X come one from each parent, so both parents' alleles count
+                    if sexchr and chrom == "chrX":
+                        seen = mset if ch.sex == "male" else fset | mset
+                    else:
+                        seen = fset if sexchr else fset | mset
                     novel = sorted(set(cg) - seen - {0})
                     if novel:
                         ch.de_novo.append(de_novo_row(ch, c, fmt, cvals, call, gi, alleles, novel, sexchr))
