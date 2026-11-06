@@ -114,6 +114,18 @@ broken "a base case with a need" "z9${TAB}base${TAB}5${TAB}c1"
 broken "a row of three columns" "z9${TAB}shard${TAB}5"
 broken "an unknown stage" "z9${TAB}later${TAB}5${TAB}-"
 
+# --- check: every case has a row ---------------------------------------------
+# z9 has no row in the planted table: check names it, while plan still runs it.
+if out=$("$S" check 2>&1); then bad "check passed a table with no row for z9"
+elif grep -qx 'z9' <<< "$out"; then ok "check names the case with no row: $(tr '\n' ' ' <<< "$out")"
+else bad "check did not name z9: ${out}"; fi
+{ table; printf '%s\n' "z9${TAB}shard${TAB}5${TAB}-"; } > "${WORK}/whole.tsv"
+if out=$(E2E_TIMES="${WORK}/whole.tsv" "$S" check 2>&1); then ok "check passes once z9 has its row: ${out}"
+else bad "check failed a table with a row for every case: ${out}"; fi
+{ table; printf '%s\n' "z9${TAB}shard${TAB}5${TAB}-" "z9${TAB}shard${TAB}6${TAB}-"; } > "${WORK}/twice.tsv"
+if E2E_TIMES="${WORK}/twice.tsv" "$S" check > /dev/null 2>&1; then bad "check passed a table with two rows for z9"
+else ok "check refuses a second row too"; fi
+
 # --- merge: one pass per case, or red ---------------------------------------
 res() { printf '%s\t%s\t%s\t%s\n' "$@"; }
 while read -r c; do res "$c" pass 1 "shard 1"; done < "${WORK}/all.txt" > "${WORK}/r-all.tsv"
@@ -163,5 +175,7 @@ n=$(awk '/^  E2E_SHARDS:/ {print $2}' "${REPO}/.github/workflows/e2e.yml")
 if { "$S" base; "$S" plan "$n" | cut -f2; } > "${WORK}/real.txt" && out=$("$S" cover "${WORK}/real.txt"); then
   ok "real table, ${n} shards: ${out}"
 else bad "real split: ${out:-plan failed}"; fi
+if out=$("$S" check 2>&1); then ok "real table: ${out}"
+else bad "real table: ${out}"; fi
 
 [ "$FAILS" -eq 0 ]

@@ -7,6 +7,7 @@
 #        scripts/ci/e2e-shards.sh cover FILE
 #        scripts/ci/e2e-shards.sh merge EXPECTED RESULTS...
 #        scripts/ci/e2e-shards.sh times TRACE...
+#        scripts/ci/e2e-shards.sh check
 #
 #   base     prints the base cases, one per line, in name order. The job
 #            "e2e base" runs them once, and every shard starts from what
@@ -35,6 +36,10 @@
 #            scripts/ci/e2e-run.sh with E2E_TRACE=true). Keeps each case's
 #            stage and needs, adds the traced needs. Exits 1 when the trace
 #            saw no case read another case's files, which means it saw nothing.
+#   check    exits 1 unless the table is well formed and every case has a
+#            row, naming each case with none (tests/test_e2e_shards.sh runs it
+#            on the real table). The split itself still runs a case with no
+#            row, as a shard case of 300 seconds that needs nothing.
 #
 # Env: E2E_CASE_DIR  the case directory (default tests/e2e)
 #      E2E_TIMES     the table (default scripts/ci/e2e-case-times.tsv)
@@ -281,6 +286,15 @@ times() {
     }' <(cases) <(rows) "$@"
 }
 
+# check: the table checks of every command, plus a row for every case.
+check() {
+  local missing
+  check_table
+  missing=$(awk -F'\t' 'FILENAME == ARGV[1] { r[$1] = 1; next } !($1 in r)' <(rows) <(cases))
+  [ -z "$missing" ] || die "$(printf '%s\n' "in ${TIMES}, no row for:" "$missing" "Add each with its stage, its measured seconds and its needs.")"
+  echo "OK: every case of ${CASE_DIR} has a row in ${TIMES}"
+}
+
 cmd=${1:-}
 [ "$#" -gt 0 ] && shift
 case "$cmd" in
@@ -290,5 +304,6 @@ case "$cmd" in
   cover) cover "${1:?Usage: $0 cover FILE}" ;;
   merge) [ "$#" -ge 1 ] || die "Usage: $0 merge EXPECTED RESULTS..."; merge "$@" ;;
   times) times "$@" ;;
-  *) sed -n '2,46p' "$0" >&2; exit 2 ;;
+  check) check ;;
+  *) sed -n '2,51p' "$0" >&2; exit 2 ;;
 esac
