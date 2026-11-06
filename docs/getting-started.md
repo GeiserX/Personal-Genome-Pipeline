@@ -75,6 +75,16 @@ Works for long-running analyses. Each step has a hard memory limit. On the `run-
 
 ## Quick Start
 
+### Get the code
+
+```bash
+git clone https://github.com/GeiserX/OwnGenome.git
+cd OwnGenome
+git tag --sort=-v:refname | head -n 1   # the newest release; `git checkout <tag>` stays on it, main moves on
+```
+
+Every command on these pages runs from this folder, the repository root.
+
 ### Step 0: Quick Test (Optional)
 
 Verify everything works on a small public dataset before committing to a full run:
@@ -157,7 +167,7 @@ When the run starts from an existing VCF, the pipeline does not read a gVCF besi
 
 GRIDSS is not part of the SV consensus (step 22): it reports every event as a pair of breakends, which never match the DEL, DUP and INV records of Manta, Delly and CNVpytor.
 
-Without `THREADS` or `--max_cpus`, `run-all.sh` passes the machine's CPU count as `--max_cpus`, and without `--max_memory` it passes the machine's RAM in whole GB (31.GB on a 32 GB Linux machine). Nextflow refuses a task that asks for more than the machine has, and the larger steps ask for 8 CPUs and 32 GB; with the caps they run with less. Options after the sex go to `nextflow run` unchanged, for example `./scripts/run-all.sh your_name male --max_memory 24.GB` to cap each task at 24 GB, or `--sex_check warn` to go on when the sex inferred from the BAM differs from the one given. [Nextflow Execution](nextflow.md) lists every parameter. `MAX_JOBS` is no longer read: Nextflow starts a task when its CPUs and memory fit in what is left of the machine's, and `--max_cpus` and `--max_memory` cap each task, not the total; [a shared host](hardware-requirements.md#a-shared-host) shows how to bound the total.
+Without `THREADS` or `--max_cpus`, `run-all.sh` passes the machine's CPU count as `--max_cpus`, and without `--max_memory` it passes the machine's RAM in whole GB (31.GB on a 32 GB Linux machine). Nextflow refuses a task that asks for more than the machine has, and the larger steps ask for 8 CPUs and 32 GB; with the caps they run with less. Options after the sex go to `nextflow run` unchanged, for example `./scripts/run-all.sh your_name male --max_memory 24.GB` to cap each task at 24 GB, or `--sex_check warn` to go on when the sex inferred from the BAM differs from the one given. [Nextflow Parameters](parameters.md) lists every parameter. `MAX_JOBS` is no longer read: Nextflow starts a task when its CPUs and memory fit in what is left of the machine's, and `--max_cpus` and `--max_memory` cap each task, not the total; [a shared host](hardware-requirements.md#a-shared-host) shows how to bound the total.
 
 **Data.** `run-all.sh` passes each database it finds under `GENOME_DIR`; a step without its data is listed as `skipped (data not installed: ...)`, and the run goes on:
 
