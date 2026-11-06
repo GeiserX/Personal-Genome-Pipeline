@@ -167,6 +167,39 @@ def main():
         check("a prose gene field: the lookup finds GC too",
               "none of the reports mentions GC" not in lookup_says(ppath, "GC"), lookup_says(ppath, "GC"))
 
+        # Sections that name their gene under "locus": the repeat expansions
+        # (flagged, key loci, the CFTR and UGT1A1 readings) and Locityper.
+        loc = copy.deepcopy(s_tsv)
+        loc["sections"]["expansions"].update(state="ok", data={
+            "flagged": [{"locus": "HTT", "repeat_count": "41/19"}],
+            "key_loci": [{"locus": "FMR1", "repeat_count": "30/30"}],
+            "readings": [{"locus": "UGT1A1", "repeat": "promoter TA repeat"}]})
+        loc["sections"]["locityper"].update(state="ok", data={
+            "loci": [{"locus": "FCGR", "region": "chr1:161505430-161678654", "status": "called"},
+                     {"locus": "HLA-DRB1", "region": "chr6:32484348-32593538", "status": "called"}]})
+        lpath = os.path.join(work, "summary-locus.json")
+        with open(lpath, "w") as f:
+            json.dump(loc, f)
+        lt = results_index.build(loc, tsv, render_report.SECTION_OF)["terms"]
+        want = {"HTT": "expansions", "FMR1": "expansions", "UGT1A1": "expansions", "FCGR": "locityper",
+                "HLA-DRB1": "locityper"}
+        check("a 'locus' key: HTT, FMR1 and UGT1A1 are terms of the expansions section, FCGR and HLA-DRB1 of Locityper",
+              all(sec in [it["section"] for it in lt.get(t, [])] for t, sec in want.items()),
+              {t: lt.get(t) for t in want})
+        check("a 'locus' key: a region is not a term",
+              not [t for t in lt if t.startswith("CHR")], sorted(lt))
+        check("a 'locus' key: the lookup finds HTT and FCGR too",
+              all("none of the reports mentions" not in lookup_says(lpath, t) for t in ("HTT", "FCGR")),
+              [lookup_says(lpath, t) for t in ("HTT", "FCGR")])
+        keep = genome_lookup.GENE_KEYS
+        genome_lookup.GENE_KEYS = tuple(k for k in keep if k != "locus")
+        try:
+            gone = results_index.build(loc, tsv, render_report.SECTION_OF)["terms"]
+        finally:
+            genome_lookup.GENE_KEYS = keep
+        check("red control: without the 'locus' key none of them is a term",
+              not set(want) & set(gone), sorted(set(want) & set(gone)))
+
         # 2. bash and Nextflow forms
         nf = results_index.build(s_vcf, vcf, render_report.SECTION_OF)
         for key in results_index.TABLES:
