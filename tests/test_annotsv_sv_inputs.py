@@ -306,6 +306,27 @@ def test_extra_callers(w):
           "delly: 2 PASS DEL/DUP calls, 1 added" in err and "cnvpytor: 3 DEL/DUP calls with e-val < 0.01 and q0 < 0.5, 2 added" in err,
           err)
 
+    # A Manta record that is filtered or genotyped 0/0 is no call: it must not
+    # hide the Delly PASS deletion it overlaps.
+    for label, gt, filt in (("a 0/0", "0/0", "PASS"), ("a MinGQ", "0/1", "MinGQ"), ("a ./.", "./.", "PASS")):
+        b = os.path.join(w, "base_nocall.vcf")
+        with open(b, "w") as f:
+            f.write(BASE + "chr20\t2000100\tMantaDEL:9\tN\t<DEL>\t500\t{0}\tEND=2049900;SVTYPE=DEL;SVLEN=-49800\tGT\t{1}\n"
+                    .format(filt, gt))
+        rc, out, err = run("cnvpytor_to_vcf.py", "--base", b, "--delly", delly)
+        ids = [r[2] for r in records(out)]
+        check("{0} Manta deletion stays and does not hide Delly's DEL00000002".format(label),
+              rc == 0 and "MantaDEL:9" in ids and "DEL00000002" in ids, (ids, err))
+    with open(b, "w") as f:
+        f.write(BASE + "chr20\t2000100\tMantaDEL:9\tN\t<DEL>\t500\tPASS\tEND=2049900;SVTYPE=DEL;SVLEN=-49800\tGT\t0|1\n")
+    rc, out, err = run("cnvpytor_to_vcf.py", "--base", b, "--delly", delly)
+    check("control: a PASS 0|1 Manta deletion still covers Delly's DEL00000002",
+          rc == 0 and "DEL00000002" not in [r[2] for r in records(out)], err)
+    sites = "".join("\t".join(l.split("\t")[:8]) + "\n" for l in (BASE + "chr20\t2000100\tMantaDEL:9\tN\t<DEL>\t500\tPASS\tEND=2049900;SVTYPE=DEL\tGT\t0/0\n").splitlines())
+    rc, out, err = run("cnvpytor_to_vcf.py", "--base", "-", "--delly", delly, stdin=sites)
+    check("a sites-only base deletion covers Delly's DEL00000002 (no genotype to read)",
+          rc == 0 and "DEL00000002" not in [r[2] for r in records(out)], (records(out), err))
+
     rc, out, err = run("cnvpytor_to_vcf.py", "--base", "-", "--base-name", "sv_vcf", stdin=BASE)
     check("no other caller: stdin in, the base out with SVCALLER=sv_vcf",
           rc == 0 and "none given" in err and [info(r).get("SVCALLER") for r in records(out)] == ["sv_vcf"] * 2, err)

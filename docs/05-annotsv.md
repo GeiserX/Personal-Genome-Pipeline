@@ -1,7 +1,7 @@
 # Step 5: Structural Variant Annotation (AnnotSV)
 
 ## What This Does
-Classifies every structural variant from Manta that passes duphold's depth filter (step 15; when that file is missing or older than Manta's calls, the script annotates Manta's calls and says so), plus the Delly and CNVpytor deletions and duplications that no Manta call covers, using ACMG guidelines (class 1-5), adding gene overlap, population frequency, and clinical significance.
+Classifies every structural variant from Manta that passes duphold's depth filter (step 15; when that file is missing or older than Manta's calls, the script annotates Manta's calls and says so), plus the Delly and CNVpytor deletions and duplications that no Manta call covers (a Manta record that is filtered or genotyped 0/0 covers nothing), using ACMG guidelines (class 1-5), adding gene overlap, population frequency, and clinical significance.
 
 ## Why
 Raw Manta output contains thousands of SVs with no clinical interpretation. AnnotSV tells you which ones matter by cross-referencing known pathogenic SVs, gene databases, and population data.
