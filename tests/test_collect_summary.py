@@ -1420,6 +1420,14 @@ def cn_report_section(work, schema):
     """Step 35's tables that no Parascopy model makes reach both reports: the
     CYP21A2 call, the gene-dosage rows and the interval rows; and a table with
     a header but without the copy-number columns reads as unreadable."""
+    only = os.path.join(work, "cn_dosage_only", "S")
+    put(f"{only}/paralogs/S_cn_dosage.tsv", "locus\tstatus\tcopies\testimate\treason\treading\n"
+        "HP\tcalled\t3\t3.04\t.\tthree copies\n")
+    summ, txt, html = render(only)
+    dosage = ((summ["sections"].get("parascopy") or {}).get("data") or {}).get("dosage") or []
+    check("cn report: a folder with only the dosage table still shows it in the summary and both reports",
+          [x["copies"] for x in dosage] == ["3"] and "HP (haptoglobin) copies (from depth): 3 (estimate 3.04)" in txt
+          and ">HP (haptoglobin) copies (from depth)<" in html, (dosage, txt))
     d = os.path.join(work, "cn_report", "S")
     put(f"{d}/paralogs/S_smn_copy_number.tsv", SMN_COLS
         + "chr5\t70950920\t70953320\tSMN1\tPASS\t4\t60\tPASS\t2,2\t33,30\tchr5:70075496-70077900:+\n")
@@ -1496,6 +1504,16 @@ def cn_report_section(work, schema):
           and "2 rows (2 not assessed); none called" in card(html)
           and "no deletion or duplication" not in txt, txt)
 
+    # A row cut short of a column is unreadable, never a row of '.' values.
+    put(f"{d}/paralogs/S_cn_dosage.tsv", "locus\tstatus\tcopies\testimate\treason\treading\nHP\tcalled\n")
+    ps = collect_summary.collect("S", d)["sections"].get("parascopy") or {}
+    check("cn report: a dosage row cut short of its columns is unreadable", ps.get("state") == "unreadable", ps)
+    os.remove(f"{d}/paralogs/S_cn_dosage.tsv")
+    put(f"{d}/paralogs/S_cn_intervals.tsv", IV_COLS
+        + "CFTR_dele2_3\tCFTRdele2,3\tchr7\t117479000\t117481000\tcalled\t2\t2\tno change\t1.97\t.\n"
+        + "AZFc\tAZFc\n")
+    ps = collect_summary.collect("S", d)["sections"].get("parascopy") or {}
+    check("cn report: an interval row cut short before its status is unreadable", ps.get("state") == "unreadable", ps)
     # A header without the copy-number columns is unreadable, also with no row under it.
     put(f"{d}/paralogs/S_cn_dosage.tsv", "locus\tstatus\n")
     ps = collect_summary.collect("S", d)["sections"].get("parascopy") or {}

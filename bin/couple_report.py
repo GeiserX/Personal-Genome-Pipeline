@@ -519,16 +519,19 @@ def cnv_note(row, dels):
     return ""
 
 
-def cn_shared(a, b, intervals, found):
+def cn_shared(a, b, intervals, found, carrier):
     """The genes where both partners carry a change once the read-depth
     alleles count: one has a present allele of CN_ALLELES and the other a
     present allele or a finding in the same gene. The gene table leaves
     these alleles out, so without this a couple who both carry CFTRdele2,3
     would read as sharing nothing. intervals: {partner: {locus: row}} of the
-    partners with an interval table."""
+    partners with an interval table; carrier: the genes of the carrier list,
+    so a gene the list leaves out is no shared risk here either."""
     names = dict(CN_ALLELES)
     out = []
     for label, genes, loci in CN_ALLELE_GENES:
+        if not any(g in carrier for g in genes):
+            continue
         have, by_depth = {}, False
         for s in (a, b):
             iv = intervals.get(s) or {}
@@ -849,7 +852,7 @@ def cmd_screen(a):
         write_table(base + ".tsv", rows)
         for s in (x, y):
             write_table(os.path.join(a.out_dir, "%s_couple_carrier.tsv" % s), rows)
-        shared_cn = cn_shared(x, y, ivs, found)
+        shared_cn = cn_shared(x, y, ivs, found, genes)
         write_markdown(base + ".md", x, y, sexes, rows, assessed, gaps, len(genes), common, cn, shared_cn)
         n = {k: sum(1 for r in rows if r["result"] == k) for k in ("shared", "x_linked", "one_partner")}
         print("%s and %s: %d shared gene%s, %d X-linked, %d with one partner only (%s.tsv)" % (

@@ -482,6 +482,26 @@ def main():
         check("cn shared, red: with C's CFTRdele2,3 absent and no HBB deletion the plain negative line stays",
               rc == 0 and "No gene of the list where both partners carry a change.\n" in head
               and "Possible shared risk" not in head and "possibly shared" not in log, head)
+        # DFNB1: one partner's del(GJB6-D13S1830) beside the other's GJB2 hit
+        g_hits = put(f"{t}/G.vcf", HEAD + hit("GJB2"))
+        g_iv = put(f"{t}/G_cn_intervals.tsv", ivh + ivrow("GJB6_D13S1830", "chr13", 20223037, 20531806, copies="1",
+                                                          change="deletion"))
+        rc, log = run("screen", "--pedigree", ped2, "--genes", GENES, "--clinvar", f"C={c_hits}", "--clinvar",
+                      f"D={g_hits}", "--cn-intervals", f"C={g_iv}", "--out-dir", f"{t}/cn4")
+        md = open(f"{t}/cn4/couple_C_D.md").read() if os.path.exists(f"{t}/cn4/couple_C_D.md") else ""
+        head = md.split("## Shared risk", 1)[-1].split("## X-linked", 1)[0]
+        check("cn shared: C's del(GJB6-D13S1830) beside D's GJB2 hit is a possible DFNB1 shared risk naming both",
+              rc == 0 and "- **GJB2/GJB6 (DFNB1)**: C: del(GJB6-D13S1830) present (read depth, step 35: 1 of 2 "
+              "copies); D: " in head and "GJB2" in head.split("; D: ", 1)[-1], (rc, log, head))
+        # A carrier list without CFTR: CFTRdele2,3 in both is no shared risk; HBB still is
+        no_cftr = put(f"{t}/no_cftr.tsv", "".join(ln for ln in open(GENES) if not ln.startswith("CFTR\t")))
+        rc, log = run("screen", "--pedigree", ped2, "--genes", no_cftr, "--clinvar", f"C={c_hits}", "--clinvar",
+                      f"D={d_hits}", "--cn-intervals", f"C={c_iv}", "--cn-intervals", f"D={d_iv}", "--out-dir", f"{t}/cn5")
+        md = open(f"{t}/cn5/couple_C_D.md").read() if os.path.exists(f"{t}/cn5/couple_C_D.md") else ""
+        head = md.split("## Shared risk", 1)[-1].split("## X-linked", 1)[0]
+        check("cn shared: a carrier list without CFTR gives no CFTR shared risk, HBB stays",
+              rc == 0 and "**CFTR**" not in head and "- **HBB**: C: HBB exon 3 deletion present" in head
+              and "possibly shared, from read depth: CFTR" not in log, (rc, log, head))
 
         # 10. genes
         gtf = put(f"{t}/g.gtf", "##description: evidence-based annotation of the human genome (GRCh38), version 99\n" + "".join(

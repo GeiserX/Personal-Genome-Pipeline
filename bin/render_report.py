@@ -85,8 +85,9 @@ def ancient_lines(d):
 
 
 COUPLE_NOTE = ("A screen, not a diagnosis: the couple report (couple_<a>_<b>.md in the family folder) lists the "
-               "genes, variant types and repeats it does not see. See a genetic counsellor before acting on a "
-               "result, or on its absence (docs/39-couple.md).")
+               "genes, variant types and repeats it does not see. These counts are of its gene table: a carrier "
+               "deletion allele from read depth (step 35), and a possible shared risk it adds, is in that report "
+               "only. See a genetic counsellor before acting on a result, or on its absence (docs/39-couple.md).")
 PRS_ANCESTRY_NOTE = ("Most PRS scores were developed in European-ancestry populations and predict less well for "
                      "other ancestries, even with an ancestry-adjusted percentile.")
 

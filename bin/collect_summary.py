@@ -905,8 +905,10 @@ def read_cn_intervals(path):
     """Step 35's interval table (bin/copy_number.py intervals): the rows with
     a deletion or a duplication, and a count of the rows by status."""
     rows = read_tsv(path)
-    if not {"locus", "name", "chrom", "start", "end", "status", "copies", "expected", "change"} <= tsv_columns(path):
+    cols = ("locus", "name", "chrom", "start", "end", "status", "copies", "expected", "change")
+    if not set(cols) <= tsv_columns(path):
         raise Unreadable(f"{os.path.basename(path)} lacks the locus, name, status, copies, expected or change column")
+    short_row(path, rows, cols)
     counts = {}
     for r in rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
@@ -923,7 +925,17 @@ def read_cn_dosage(path):
     in the table's order."""
     if not set(DOSAGE_COLUMNS) <= tsv_columns(path):
         raise Unreadable(f"{os.path.basename(path)} lacks the {', '.join(DOSAGE_COLUMNS[:-1])} or reading column")
-    return [{k: r.get(k) or "." for k in DOSAGE_COLUMNS} for r in read_tsv(path)]
+    rows = read_tsv(path)
+    short_row(path, rows, DOSAGE_COLUMNS)
+    return [{k: r.get(k) or "." for k in DOSAGE_COLUMNS} for r in rows]
+
+
+def short_row(path, rows, cols):
+    """A row cut short of a column (csv gives None there) makes the table
+    unreadable, so it never reads as a row of '.' values."""
+    bad = next((i for i, r in enumerate(rows, 2) if any(r.get(k) is None for k in cols)), None)
+    if bad:
+        raise Unreadable(f"{os.path.basename(path)} line {bad} lacks a field")
 
 
 def read_hba(path):
