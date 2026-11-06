@@ -59,6 +59,22 @@ include { MOCHA_PREP; MOCHA_PHASE; MOCHA_CALL; MOCHA_REPORT } from './modules/lo
 workflow {
 
     // ─── Validate inputs ────────────────────────────────────────────────
+    // Every parameter must be one nextflow_schema.json declares: Nextflow
+    // takes any --name as a new parameter, so a misspelt option (--outdirr,
+    // --max-cpus) would be ignored with no word. --pedigree is read with
+    // containsKey and has no default; config_profile_* are the test
+    // profiles' labels.
+    def schema_params = new groovy.json.JsonSlurper()
+        .parseText(file("${projectDir}/nextflow_schema.json").text)['definitions']
+        .values().collectMany { group -> (group['properties'] ?: [:]).keySet() as List }
+    def known_params = schema_params + ['pedigree', 'config_profile_name', 'config_profile_description']
+    def unknown_params = params.keySet().findAll { k -> !known_params.contains(k) }.sort()
+    if (unknown_params) {
+        error "unknown parameter${unknown_params.size() > 1 ? 's' : ''} " +
+              "${unknown_params.collect { k -> '--' + k }.join(', ')}: not an option of this pipeline " +
+              "(nextflow_schema.json lists them; options take underscores, as --max_cpus). Check the spelling."
+    }
+
     if (!params.input) {
         error "Please provide a samplesheet with --input <samplesheet.csv>"
     }
