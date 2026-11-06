@@ -59,7 +59,7 @@ step	label	tool	recorded	processes	sections	upstream	hours	hours_from	hours_low	
 35	Parascopy SMN1/SMN2	parascopy	yes	PARASCOPY	parascopy	02				
 35b	Paraphase (PacBio HiFi)	paraphase	yes	PARAPHASE_CHECK,PARAPHASE,PARAPHASE_REPORT	paralogs	02				
 36	PGx consensus		no	PGX_CONSENSUS		07,21,32	0.01	measured	0.0002	
-37	Y haplogroup (Yleaf)	y_haplogroup	yes	Y_POSITIONS,Y_PILEUP,Y_HAPLOGROUP	y_haplogroup	02				
+37	Y haplogroup (Yleaf)	y_haplogroup	yes	Y_POSITIONS,Y_PILEUP,Y_HAPLOGROUP,Y_PRIVATE	y_haplogroup,y_tree	02,03				
 38	Family		yes	FAMILY_PREPARE,GLNEXUS,GLNEXUS_VCF,FAMILY_RELATE,FAMILY_CHECK,WHATSHAP_PED,FAMILY_REPORT,FAMILY_IBD_SITES,FAMILY_IBD_PHASE,FAMILY_IBD_SEGMENTS,FAMILY_IBD_REPORT		03,23				
 39	Couple carrier screen		yes	COUPLE_CARRIER	couple	06,19,09,35				
 40	Raw-data export	consumer_export	yes	CONSUMER_EXPORT	consumer_export	03				
@@ -72,6 +72,7 @@ step	label	tool	recorded	processes	sections	upstream	hours	hours_from	hours_low	
 47	Viral DNA	viral	yes	VIRAL_READS,VIRAL_REPORT	viral	02				
 48	Exomiser (HPO terms)	exomiser	yes	EXOMISER_PREPARE,EXOMISER,EXOMISER_REPORT	exomiser	03				
 49	CHIP (clonal blood cells)	chip	yes	CHIP_PREPARE,CHIP_MUTECT2,CHIP_ANNOTATE,CHIP_REPORT	chip	02				
-50	Mobile element insertions	mei	yes	MEI_DEPTH,MEI,MEI_REPORT	mei	02				
-51	Mosaic alterations (MoChA)	mocha	yes	MOCHA_PREP,MOCHA_PHASE,MOCHA_CALL,MOCHA_REPORT	mosaic	03				
-52	MUC1 VNTR (VNtyper)	vntyper	yes	VNTYPER	vntyper	02				
+50	Mobile element insertions	mei	yes	MEI_DEPTH,MEI,MEI_REPORT	mei	02				MEGANE_IMAGE
+51	Mosaic alterations (MoChA)	mocha	yes	MOCHA_PREP,MOCHA_PHASE,MOCHA_CALL,MOCHA_REPORT	mosaic	03				MOCHA_PANEL_VERSION,MOCHA_IMAGE
+52	MUC1 VNTR (VNtyper)	vntyper	yes	VNTYPER	vntyper	02				VNTYPER_IMAGE
+53	Hard loci (Locityper)	locityper	yes	LOCITYPER	locityper	02				LOCITYPER_PANEL_VERSION,LOCITYPER_IMAGE

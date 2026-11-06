@@ -60,6 +60,11 @@ jobs:
           echo "run=${run}" >> "$GITHUB_OUTPUT"
           [ "$run" = true ] || echo "Only docs changed: nothing here can affect the pipeline, skipping the Nextflow steps."
 
+      # The stub runs pull every image of the pipeline: the pinned leg ran
+      # out of disk on 2026-11-04.
+      - uses: ./.github/actions/free-disk
+        if: steps.scope.outputs.run == 'true'
+
       - name: Resolve the Nextflow version
         if: steps.scope.outputs.run == 'true'
         id: nf
@@ -116,6 +121,30 @@ jobs:
         run: |
           python3 -m json.tool nextflow_schema.json > /dev/null
           python3 -m json.tool assets/schema_input.json > /dev/null
+
+      # The stub run below pulls every image of the default tools: the pinned
+      # leg ran out of disk in it twice on 2026-11-05 (#300, job 127077180393;
+      # #290, run 41966270772). The free-disk step above runs first. On that
+      # leg, the free space under / and under Docker's root goes to the log
+      # and the summary, and
+      # below MIN_FREE_GB the job stops here, naming the cause, instead of
+      # failing in a task or in Nextflow's onComplete handler.
+      - name: Free disk before the stub runs
+        if: steps.scope.outputs.run == 'true' && matrix.line == 'pinned'
+        env:
+          MIN_FREE_GB: 20
+          LINE: ${{ matrix.line }}
+        run: |
+          root=$(docker info --format '{{.DockerRootDir}}' 2> /dev/null || true)
+          root=${root:-/var/lib/docker}
+          sudo df -h / "$root" "$RUNNER_TEMP" || df -h /
+          free=$(sudo df --output=avail -k "$root" | tail -1)
+          msg="Free disk before the stub runs (nextflow ${LINE}): $((free / 1048576)) GB under the Docker root ${root}, at least ${MIN_FREE_GB} GB wanted"
+          echo "$msg" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$free" -lt $((MIN_FREE_GB * 1048576)) ]; then
+            echo "::error::${msg}: the runner has too little disk for the stub runs' images; re-run the job"
+            exit 1
+          fi
 
       # The default tools, each stub run inside its own image.
       - name: Stub run of the test profile with Docker
@@ -659,6 +688,7 @@ jobs:
       - name: Show what Nextflow was waiting for
         if: failure() && steps.scope.outputs.run == 'true'
         run: |
+          echo "Free disk when the job failed:"; df -h / "$RUNNER_TEMP" || true
           log=.nextflow.log
           [ -f "$log" ] || { echo "No .nextflow.log: no Nextflow run had started."; exit 0; }
           # A report, not a check: no command here may stop the step, and a

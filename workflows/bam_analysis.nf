@@ -34,7 +34,7 @@ include { SOMALIER         } from '../modules/local/somalier/main'
 include { SOMALIER_RELATE  } from '../modules/local/somalier/main'
 include { SAMPLE_QC        } from '../modules/local/somalier/main'
 include { VERIFYBAMID2     } from '../modules/local/verifybamid2/main'
-include { Y_POSITIONS; Y_PILEUP; Y_HAPLOGROUP } from '../modules/local/y_haplogroup/main'
+include { Y_POSITIONS; Y_PILEUP; Y_HAPLOGROUP; Y_PRIVATE } from '../modules/local/y_haplogroup/main'
 include { Y_STR } from '../modules/local/y_str/main'
 
 workflow BAM_ANALYSIS {
@@ -75,15 +75,19 @@ workflow BAM_ANALYSIS {
     ch_mito_annotated   = Channel.empty()   // [meta, <id>_chrM_annotated.tsv]
     ch_mito_deletions   = Channel.empty()   // [meta, <id>_chrM_deletions.tsv]
     ch_mito_copies      = Channel.empty()   // [meta, <id>_mtdna_copies.tsv]
+    ch_cn_intervals     = Channel.empty()   // [meta, <id>_cn_intervals.tsv] when Parascopy runs
     ch_kir_genotype     = Channel.empty()
     ch_hla_optitype     = Channel.empty()   // [meta, <id>_optitype_result.tsv] with --hla_qc
     ch_hla_concordance  = Channel.empty()   // [meta, <id>_hla_concordance.tsv] when OptiType typed reads
     ch_smn_copy_number  = Channel.empty()
     ch_hba_copy_number  = Channel.empty()
+    ch_parascopy_tables = Channel.empty()
     ch_paraphase_cn     = Channel.empty()
     ch_paraphase_vars   = Channel.empty()
     ch_sample_qc        = Channel.empty()
     ch_y_haplogroup     = Channel.empty()
+    ch_y_tree           = Channel.empty()   // [meta, <id>_y_tree.txt, <id>_y_tree_path.tsv]
+    ch_y_private        = Channel.empty()   // [meta, <id>_y_private_snps.tsv]
     ch_y_str            = Channel.empty()   // [meta, <id>_y_str.tsv] (y_str, male samples)
     ch_y_str_csv        = Channel.empty()   // [meta, <id>_y_str.csv]
     ch_mosdepth_depth   = Channel.empty()   // [meta, summary, global_dist] when mosdepth runs
@@ -234,8 +238,14 @@ workflow BAM_ANALYSIS {
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('parascopy')) {
         PARASCOPY(ch_bam, ch_reference, ch_reference_fai, ch_parascopy_data, ch_parascopy_bed)
+        ch_cn_intervals    = PARASCOPY.out.intervals
         ch_smn_copy_number = PARASCOPY.out.copy_number
         ch_hba_copy_number = PARASCOPY.out.hba
+        // every other catalog row's table: SMN1's and HBA's come apart, above
+        ch_parascopy_tables = PARASCOPY.out.tables.map { meta, fs ->
+            def apart = ["${meta.id}_smn_copy_number.tsv", "${meta.id}_hba_copy_number.tsv"].collect { n -> n.toString() }
+            [meta, (fs instanceof List ? fs : [fs]).findAll { f -> !(f.name in apart) }]
+        }
         ch_versions        = ch_versions.mix(PARASCOPY.out.versions)
     }
 
@@ -250,7 +260,7 @@ workflow BAM_ANALYSIS {
         PARAPHASE_CHECK(ch_bam)
         ch_paraphase_bam = ch_bam.join(PARAPHASE_CHECK.out.ok).map { meta, bam, bai, _ok -> [meta, bam, bai] }
         PARAPHASE(ch_paraphase_bam, ch_reference, ch_reference_fai)
-        PARAPHASE_REPORT(PARAPHASE.out.results)
+        PARAPHASE_REPORT(PARAPHASE.out.results, file("${projectDir}/assets/paraphase_genes.tsv", checkIfExists: true))
         ch_paraphase_cn   = PARAPHASE_REPORT.out.copy_number
         ch_paraphase_vars = PARAPHASE_REPORT.out.variants
         ch_versions     = ch_versions.mix(PARAPHASE_CHECK.out.versions, PARAPHASE.out.versions,
@@ -344,7 +354,16 @@ workflow BAM_ANALYSIS {
         Y_PILEUP(ch_y_bam, Y_POSITIONS.out.positions.first(), Y_POSITIONS.out.tree_positions.first())
         Y_HAPLOGROUP(Y_PILEUP.out.pileup, ch_reference, ch_yleaf_data)
         ch_y_haplogroup = Y_HAPLOGROUP.out.haplogroup
-        ch_versions     = ch_versions.mix(Y_POSITIONS.out.versions, Y_PILEUP.out.versions, Y_HAPLOGROUP.out.versions)
+        ch_y_tree       = Y_HAPLOGROUP.out.tree
+        // The private-SNP scan reads the sample's own calls, so it takes the
+        // VCF of the same row (the BAM channel is already filtered to males).
+        Y_PRIVATE(ch_y_bam.map { meta, _bam, _bai -> [meta.id, meta] }
+                      .join(ch_vcf.map { meta, vcf, _tbi -> [meta.id, vcf] })
+                      .map { _id, meta, vcf -> [meta, vcf] },
+                  ch_yleaf_data)
+        ch_y_private    = Y_PRIVATE.out.private_snps
+        ch_versions     = ch_versions.mix(Y_POSITIONS.out.versions, Y_PILEUP.out.versions,
+                                          Y_HAPLOGROUP.out.versions, Y_PRIVATE.out.versions)
     }
 
     //
@@ -377,6 +396,7 @@ workflow BAM_ANALYSIS {
     telomere_results = ch_telomere_results
     coverage         = ch_coverage
     callability      = ch_callability     // [meta, <id>_callability.bed.gz]
+    cn_intervals     = ch_cn_intervals    // [meta, <id>_cn_intervals.tsv]: bin/cn_loci.tsv's interval rows
     mito_vcf         = ch_mito_vcf
     mito_annotated   = ch_mito_annotated  // [meta, <id>_chrM_annotated.tsv]
     mito_deletions   = ch_mito_deletions  // [meta, <id>_chrM_deletions.tsv]
@@ -386,10 +406,13 @@ workflow BAM_ANALYSIS {
     hla_concordance  = ch_hla_concordance // [meta, <id>_hla_concordance.tsv] (--hla_qc, reads typed)
     smn_copy_number  = ch_smn_copy_number // [meta, <id>_smn_copy_number.tsv]
     hba_copy_number  = ch_hba_copy_number // [meta, <id>_hba_copy_number.tsv]
+    parascopy_tables = ch_parascopy_tables // [meta, [<id>_<table>_copy_number.tsv, ...]]: the other catalog rows' tables
     paraphase_cn     = ch_paraphase_cn    // [meta, <id>_paraphase_copy_number.tsv]
     paraphase_vars   = ch_paraphase_vars  // [meta, <id>_paraphase_variants.tsv]
     sample_qc        = ch_sample_qc       // [meta, <id>_sample_qc.tsv]
     y_haplogroup     = ch_y_haplogroup    // [meta, <id>_y_haplogroup.txt]
+    y_tree           = ch_y_tree          // [meta, <id>_y_tree.txt, <id>_y_tree_path.tsv]
+    y_private        = ch_y_private       // [meta, <id>_y_private_snps.tsv]
     y_str            = ch_y_str           // [meta, <id>_y_str.tsv]
     y_str_csv        = ch_y_str_csv       // [meta, <id>_y_str.csv]
     versions         = ch_versions

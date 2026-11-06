@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "sample": "DEMO-001",
+  "offline": true,
+  "items": [
+    {"item": "clinvar_file_date", "label": "ClinVar (step 06's file)", "kind": "file",
+     "ran_with": "20251201", "installed": "20251201", "upstream": "20260105", "class": "refresh-available"},
+    {"item": "VEP_CACHE_RELEASE", "label": "Ensembl / VEP cache", "kind": "pin",
+     "ran_with": "115", "installed": "115", "upstream": "115", "class": "no-newer-release"}
+  ]
+}

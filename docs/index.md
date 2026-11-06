@@ -65,6 +65,8 @@ OwnGenome was called Personal-Genome-Pipeline until November 2026.
   <figcaption markdown>The HTML report from [step 24](24-html-report.md), run on DEMO-001, an invented sample. Every number in it is made up.</figcaption>
 </figure>
 
+To see the [live site](live-site.md) without installing anything, open the demo at https://geiserx.github.io/OwnGenome/demo/: it replays an invented run of the same sample.
+
 ## Pipeline steps
 
 One page per step, grouped by stage. The step number is the script name and the output directory.
@@ -116,6 +118,7 @@ graph LR
 ## Guides and reference
 
 - [Interpreting your results](interpreting-results.md): what each report means and what to do with it.
+- [What the pipeline does not report](not-reported.md): the results left out on purpose and what short reads cannot see, each with its source. A missing result there is not a normal one.
 - [Genome viewer](viewer.md): open any finding in igv.js with your own reads, served from your computer only.
 - [Look up a variant, an rsID or a gene](lookup.md): your genotype at one site or every variant in one gene, with what the reports say about it.
 - [Multi-sample comparison](multi-sample.md): partners, siblings, parents; carrier overlap and shared variants.

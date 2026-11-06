@@ -20,6 +20,7 @@
 #        ./scripts/setup.sh --chip-data <genome_dir>
 #        ./scripts/setup.sh --megane-kmers <genome_dir>
 #        ./scripts/setup.sh --mocha-data <genome_dir>
+#        ./scripts/setup.sh --locityper-data <genome_dir>
 #                                            what an opt-in step needs, and nothing
 #                                            else: Cyrius (step 21), Parascopy's
 #                                            homology table and models plus its
@@ -41,7 +42,10 @@
 #                                            reference plus its image (step 50), the
 #                                            STRchive catalog of steps 09 and 9b
 #                                            (also part of a full setup), MoChA's
-#                                            phasing panel plus its images (step 51)
+#                                            phasing panel plus its images (step 51),
+#                                            Locityper's database of the loci of
+#                                            assets/locityper_loci.bed plus its
+#                                            image (step 53)
 #        ./scripts/setup.sh --archaic <genome_dir>
 #                                            the archaic genomes and 1000 Genomes
 #                                            frequencies of step 43, as one table
@@ -99,7 +103,7 @@ REFRESH=""
 SAMPLE_QC_ONLY=false
 OPT_IN=""
 case "${1:-}" in
-  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--masked-reference|--exomiser-data|--chip-data|--strchive-data|--megane-kmers|--mocha-data|--vep-cache|--annotsv-data|--archaic)
+  --cyrius|--parascopy-data|--kir-data|--ancestry-panel|--ancestry-fine-panel|--yleaf-data|--consumer-sites|--ancient-panel|--viral-data|--masked-reference|--exomiser-data|--chip-data|--strchive-data|--megane-kmers|--mocha-data|--locityper-data|--vep-cache|--annotsv-data|--archaic)
     OPT_IN=${1#--}
     shift ;;
   --pull-only)
@@ -124,7 +128,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "       $0 --pull-only"
   echo "       $0 --refresh clinvar <genome_dir>"
   echo "       $0 --sample-qc-data <genome_dir>"
-  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --masked-reference | --exomiser-data | --chip-data | --strchive-data | --megane-kmers | --mocha-data | --archaic | --vep-cache | --annotsv-data <genome_dir>"
+  echo "       $0 --cyrius | --parascopy-data | --kir-data | --ancestry-panel | --ancestry-fine-panel | --yleaf-data | --consumer-sites | --ancient-panel | --viral-data | --masked-reference | --exomiser-data | --chip-data | --strchive-data | --megane-kmers | --mocha-data | --locityper-data | --archaic | --vep-cache | --annotsv-data <genome_dir>"
   echo ""
   echo "  <genome_dir>  Where to store reference data and sample outputs."
   echo "                Needs at least 500 GB free space per sample."
@@ -147,7 +151,7 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                stored, hours on a home connection), and its images; then exit. Step 26b runs ADMIXTURE,"
   echo "                free for academic use, and RFMix, free for academic research use only: any other use,"
   echo "                a personal one included, needs a licence from Stanford."
-  echo "  --yleaf-data  Install Yleaf ${YLEAF_DATA_VERSION:-}'s Y marker tables and tree and the current YFull tree (step 37, ~75 MB), pull its image and exit."
+  echo "  --yleaf-data  Install Yleaf ${YLEAF_DATA_VERSION:-}'s Y marker tables and trees and the current YFull tree (step 37, about 210 MB to download, 220 MB on disk), pull its image and exit."
   echo "  --consumer-sites"
   echo "                Build the site table of the raw-data export (step 40): the 23andMe v5 site list joined with"
   echo "                dbSNP ${CONSUMER_DBSNP_BUILD:-}'s GRCh38 VCF (~30 GB download, deleted once the table is built); then exit."
@@ -174,6 +178,10 @@ if [ -z "$GENOME_DIR" ] && ! $PULL_ONLY; then
   echo "                image (~6.4 GB) and exit."
   echo "  --mocha-data  Install MoChA's phasing panel for step 51 (1000 Genomes high coverage, ${MOCHA_PANEL_VERSION:-}: ~30 GB read,"
   echo "                one chromosome at a time) and the genetic map, pull its images and exit."
+  echo "  --locityper-data"
+  echo "                Build Locityper's database for step 53: the k-mer counts of the reference (several GB of RAM"
+  echo "                once, a few GB on disk), the HPRC ${LOCITYPER_PANEL_VERSION:-} haplotypes of the loci in"
+  echo "                assets/locityper_loci.bed (read over https, tens of MB), their pairwise alignments; pull its image and exit."
   echo "  --annotsv-data"
   echo "                Install AnnotSV's data for step 5 and exit: the bundle when it is missing (~5.3 GB), then"
   echo "                gnomAD-SV ${GNOMAD_SV_VERSION:-}'s common SVs (~1.7 GB download) and MANE ${MANE_RELEASE:-}'s Select transcripts."
@@ -330,61 +338,97 @@ install_kir_data() {
   echo "[OK] IPD-KIR ${KIR_DB_RELEASE} (step 08, KIR=true): ${dest}"
 }
 
-# install_yleaf_data: the yleaf/data folder of Yleaf YLEAF_DATA_VERSION (step
-# 37): its GRCh38 marker positions and haplogroup tree. The biocontainer of
-# YLEAF_IMAGE installs the code only. GitHub's archive of the tag, checked
-# against YLEAF_DATA_SHA256. Then the current Y tree beside it, in data/ytree
+# install_yleaf_data: the hg38 and hg_prediction_tables folders of yleaf/data
+# in Yleaf YLEAF_DATA_VERSION (step 37): its GRCh38 marker positions and
+# haplogroup trees, the data YLEAF_IMAGE ships too. GitHub's archive of the tag
+# v<version>, checked against YLEAF_DATA_SHA256; the other builds (hg19, T2T)
+# are left out. Then the current Y tree beside it, in data/ytree
 # (bin/y_tree_place.py): YFull's YTree YTREE_VERSION and the GRCh38 SNP tables
-# of Yleaf YTREE_POSITIONS_VERSION, each at a pinned commit and sha256. A
-# failed download of the current tree is a warning, not a failure.
+# of Yleaf YTREE_POSITIONS_VERSION, each at a pinned commit and sha256, and
+# the chrY strict accessibility mask of the 1000 Genomes Project
+# (YCALLABLE_MASK_RELEASE) that the private SNP list keeps to. A failed
+# download of the current tree is a warning, not a failure. The mask is
+# checked against YCALLABLE_MASK_SHA256 on every run: one that matches is
+# kept with no download, also when a new tree pin installs the tables again,
+# and one that fails is downloaded again on its own.
 install_yleaf_data() {
   local dest="${GENOME_DIR}/reference/yleaf-${YLEAF_DATA_VERSION}" tgz
   if [ -s "${dest}/data/hg38/new_positions.txt" ] && [ -s "${dest}/data/hg_prediction_tables/tree.json" ]; then
     echo "[OK] Yleaf ${YLEAF_DATA_VERSION} marker tables (step 37) already present."
   else
     tgz="${dest}.tar.gz"
-    if ! fetch "https://github.com/genid/Yleaf/archive/refs/tags/${YLEAF_DATA_VERSION}.tar.gz" "$tgz" sha256 "$YLEAF_DATA_SHA256"; then
+    if ! fetch "https://github.com/genid/Yleaf/archive/refs/tags/v${YLEAF_DATA_VERSION}.tar.gz" "$tgz" sha256 "$YLEAF_DATA_SHA256"; then
       echo "[WARN] Could not download Yleaf ${YLEAF_DATA_VERSION}."
       return 1
     fi
     rm -rf "${dest}.part"
     mkdir -p "${dest}.part"
-    tar -xzf "$tgz" -C "${dest}.part" --strip-components 2 "Yleaf-${YLEAF_DATA_VERSION}/yleaf/data"
+    tar -xzf "$tgz" -C "${dest}.part" --strip-components 2 \
+      "Yleaf-${YLEAF_DATA_VERSION}/yleaf/data/hg38" "Yleaf-${YLEAF_DATA_VERSION}/yleaf/data/hg_prediction_tables"
     rm -f "$tgz"
-    if [ ! -s "${dest}.part/data/hg38/new_positions.txt" ]; then
-      echo "[WARN] The Yleaf ${YLEAF_DATA_VERSION} archive has no yleaf/data/hg38/new_positions.txt."
+    if [ ! -s "${dest}.part/data/hg38/new_positions.txt" ] || [ ! -s "${dest}.part/data/hg_prediction_tables/tree.json" ]; then
+      echo "[WARN] The Yleaf ${YLEAF_DATA_VERSION} archive has no yleaf/data/hg38/new_positions.txt or hg_prediction_tables/tree.json."
       rm -rf "${dest}.part"
       return 1
     fi
     rm -rf "$dest"
     mv "${dest}.part" "$dest"
-    echo "[OK] Yleaf ${YLEAF_DATA_VERSION} marker tables and tree (step 37): ${dest}/data"
+    echo "[OK] Yleaf ${YLEAF_DATA_VERSION} marker tables and trees (step 37): ${dest}/data"
   fi
 
   # version.txt names every pin (releases, commits, sha256), so a re-pin of
   # any of them, at the same tree release too, installs the tables again.
-  local yt="${dest}/data/ytree" label="YFull YTree ${YTREE_VERSION} (CC BY 4.0)" want
-  want="$(printf 'tree\t%s\npositions\tYleaf %s GRCh38 SNP tables (GPL-3.0)\npins\t%s %s %s %s %s' \
+  local yt="${dest}/data/ytree" label="YFull YTree ${YTREE_VERSION} (CC BY 4.0)" want mask_ok=false
+  local mask_url="https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/working/${YCALLABLE_MASK_RELEASE}_genome_mask_GRCh38/StrictMask/${YCALLABLE_MASK_RELEASE}.chrY.mask.fasta.gz"
+  local mask="${yt}/callable_mask_chrY.fasta.gz"
+  if [ -s "$mask" ] && [ "$(_digest sha256 "$mask")" = "$YCALLABLE_MASK_SHA256" ]; then
+    mask_ok=true
+  fi
+  want="$(printf 'tree\t%s\npositions\tYleaf %s GRCh38 SNP tables (GPL-3.0)\npins\t%s %s %s %s %s %s %s' \
     "$label" "$YTREE_POSITIONS_VERSION" "$YTREE_COMMIT" "$YTREE_SHA256" \
-    "$YTREE_POSITIONS_COMMIT" "$YTREE_FTDNA_SHA256" "$YTREE_YFULL_SHA256")"
+    "$YTREE_POSITIONS_COMMIT" "$YTREE_FTDNA_SHA256" "$YTREE_YFULL_SHA256" \
+    "$YCALLABLE_MASK_RELEASE" "$YCALLABLE_MASK_SHA256")"
   if [ -s "${yt}/version.txt" ] && [ "$(cat "${yt}/version.txt")" = "$want" ]; then
-    echo "[OK] Current Y tree (${label}, step 37) already present."
+    if $mask_ok; then
+      echo "[OK] Current Y tree (${label}, step 37) already present."
+      return 0
+    fi
+    # The tables are current but the mask is missing or fails its sha256:
+    # fetch it alone. Without it step 37 skips the private SNP list.
+    echo "[WARN] ${mask} is missing or fails its sha256; downloading it again."
+    rm -f "$mask"
+    if fetch "$mask_url" "$mask" sha256 "$YCALLABLE_MASK_SHA256"; then
+      echo "[OK] Current Y tree (${label}, step 37) present, chrY callable mask downloaded again."
+    else
+      echo "[WARN] Could not download the chrY callable mask; step 37 will skip the private SNP list. Run this again to retry."
+    fi
     return 0
   fi
   rm -rf "${yt}.part"
   mkdir -p "${yt}.part"
+  # A mask that matches its pin is kept: a new tree pin does not download it again.
+  if $mask_ok; then
+    cp "$mask" "${yt}.part/callable_mask_chrY.fasta.gz"
+  fi
   if ! fetch "https://raw.githubusercontent.com/YFullTeam/YTree/${YTREE_COMMIT}/current_tree.json" \
          "${yt}.part/current_tree.json" sha256 "$YTREE_SHA256" \
      || ! fetch "https://raw.githubusercontent.com/genid/Yleaf/${YTREE_POSITIONS_COMMIT}/yleaf/data/hg38/ftdna_positions_hg38.txt" \
          "${yt}.part/positions_ftdna_hg38.txt" sha256 "$YTREE_FTDNA_SHA256" \
      || ! fetch "https://raw.githubusercontent.com/genid/Yleaf/${YTREE_POSITIONS_COMMIT}/yleaf/data/hg38/new_positions.txt" \
-         "${yt}.part/positions_yfull_hg38.txt" sha256 "$YTREE_YFULL_SHA256"; then
+         "${yt}.part/positions_yfull_hg38.txt" sha256 "$YTREE_YFULL_SHA256" \
+     || { ! $mask_ok && ! fetch "$mask_url" "${yt}.part/callable_mask_chrY.fasta.gz" sha256 "$YCALLABLE_MASK_SHA256"; }; then
     # Yleaf's own data is in place, so step 37 still runs: it says the
     # current tree is not installed and writes Yleaf's result only. An older
     # tree from an earlier pin goes too, so no step places on tables that
-    # versions.env no longer names.
+    # versions.env no longer names. A mask that matches its pin stays: with
+    # no version.txt beside it no step reads it, and the next run keeps it.
     echo "[WARN] Could not download the current Y tree (${label}); step 37 will place the sample on Yleaf's tree only. Run this again to retry."
-    rm -rf "${yt}.part" "$yt"
+    rm -rf "${yt}.part"
+    if $mask_ok; then
+      find "$yt" -mindepth 1 -maxdepth 1 ! -name callable_mask_chrY.fasta.gz -exec rm -rf {} +
+    else
+      rm -rf "$yt"
+    fi
     return 0
   fi
   printf '%s\n' "$want" > "${yt}.part/version.txt"
@@ -1358,6 +1402,116 @@ with zipfile.ZipFile(z) as f:
   echo "[OK] MoChA's phasing panel (step 51, ${chroms% }): ${dir} ($(du -sh "$dir" | cut -f1), $(wc -l < "${dir}/cnps.bed" | tr -d ' ') common CNVs)"
 }
 
+# install_locityper_data: the database of step 53 in
+# reference/locityper-LOCITYPER_PANEL_VERSION (LOCITYPER_DATA: another folder
+# inside GENOME_DIR), as the Locityper documentation builds one from a
+# pangenome VCF (locityper.vercel.app, "Preparing targets"):
+#   counts.jf    jellyfish's canonical 25-mer counts of REF_FASTA, the
+#                documentation's command (counts of 2 or more); rebuilt when
+#                the reference's .fai changes
+#   panel.vcf.gz the HPRC VCF of LOCITYPER_PANEL_URL, read over https 250 kb
+#                either side of each locus through its .tbi, whose sha256
+#                LOCITYPER_PANEL_TBI_SHA256 pins (Locityper extends a locus by
+#                up to 200 kb to clear the variants on its edges)
+#   db/          `locityper target` on those loci (GRCh38 is the panel's
+#                reference haplotype), then `locityper augment`: the pairwise
+#                alignments of the haplotypes, from which Locityper's weighted
+#                distance is an edit distance
+#   loci.bed     the loci it was built for, without comments
+# LOCITYPER_LOCI (a BED file of chrom, start, end, name) replaces
+# assets/locityper_loci.bed, for a smaller set of loci.
+# DONE names the inputs, so a changed one builds again.
+install_locityper_data() {
+  local dir=${LOCITYPER_DATA:-${GENOME_DIR}/reference/locityper-${LOCITYPER_PANEL_VERSION}}
+  local loci=${LOCITYPER_LOCI:-${PGP_ROOT}/assets/locityper_loci.bed} stamp jstamp n regions bad name
+  case "$dir" in /*) ;; *) dir="${GENOME_DIR}/${dir}" ;; esac
+  cpath "$dir" >/dev/null || return 1
+  if [ ! -s "$REF_FASTA" ] || [ ! -s "${REF_FASTA}.fai" ]; then
+    echo "[WARN] Step 53's database is built from the reference, and ${REF_FASTA} (with its .fai) is not there yet: run ./scripts/setup.sh ${GENOME_DIR} first."
+    return 1
+  fi
+  [ -s "$loci" ] || { echo "[WARN] ${loci} is not a file"; return 1; }
+  echo "Building Locityper's database (step 53, panel ${LOCITYPER_PANEL_VERSION}) in ${dir}"
+  ensure_image LOCITYPER_IMAGE 53 || return 1
+  mkdir -p "$dir"
+  # Each row: chrom, start, end, name, with start < end inside a contig of the reference's .fai.
+  bad=$(awk -F'\t' 'NR == FNR {len[$1] = $2; next}
+    !/^#/ && NF && (NF < 4 || $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/ || $4 == "" || $2 + 0 >= $3 + 0 || !($1 in len) || $3 + 0 > len[$1] + 0) {
+      print FILENAME ":" FNR; exit}' "${REF_FASTA}.fai" "$loci")
+  [ -z "$bad" ] || { echo "[WARN] ${bad}: want chrom, start, end, name (tab separated), start below end, inside a contig of ${REF_FASTA}"; return 1; }
+  awk -F'\t' -v OFS='\t' '!/^#/ && NF {print $1, $2, $3, $4}' "$loci" > "${dir}/loci.bed.new"
+  n=$(wc -l < "${dir}/loci.bed.new" | tr -d ' ')
+  [ "$n" -gt 0 ] || { rm -f "${dir}/loci.bed.new"; echo "[WARN] ${loci} lists no locus"; return 1; }
+  # The reference's .fai and its sequence (a new FASTA with the same contigs is a new reference too).
+  jstamp="fai=$(_digest sha256 "${REF_FASTA}.fai") fasta=$(_digest sha256 "$REF_FASTA") image=${LOCITYPER_IMAGE}"
+  stamp="${jstamp} panel=${LOCITYPER_PANEL_TBI_SHA256} loci=$(_digest sha256 "${dir}/loci.bed.new")"
+  if [ "$(cat "${dir}/DONE" 2>/dev/null)" = "$stamp" ] && [ -d "${dir}/db" ] && [ -s "${dir}/counts.jf" ] && [ -s "${dir}/loci.bed" ]; then
+    rm -f "${dir}/loci.bed.new"
+    echo "[OK] Locityper's database (step 53, ${n} loci) already built: ${dir}"
+    return 0
+  fi
+  rm -f "${dir}/DONE"
+
+  if [ ! -s "${dir}/counts.jf" ] || [ "$(cat "${dir}/counts.stamp" 2>/dev/null)" != "$jstamp" ]; then
+    echo "  k-mer counts of $(basename "$REF_FASTA") (jellyfish, several GB of RAM for GRCh38)..."
+    rm -f "${dir}/counts.jf" "${dir}/counts.stamp"
+    if ! run_in --rw "$dir" "$LOCITYPER_IMAGE" jellyfish count --canonical --lower-count 2 --out-counter-len 2 \
+        --mer-len 25 --threads "$THREADS" --size 3G --output "$(cpath "${dir}/counts.jf.part")" "$REF_FASTA_C"; then
+      rm -f "${dir}/counts.jf.part"
+      echo "[WARN] jellyfish could not count the reference's k-mers"
+      return 1
+    fi
+    mv "${dir}/counts.jf.part" "${dir}/counts.jf"
+    echo "$jstamp" > "${dir}/counts.stamp"
+  fi
+
+  fetch "${LOCITYPER_PANEL_URL}.tbi" "${dir}/panel.remote.tbi" sha256 "$LOCITYPER_PANEL_TBI_SHA256" \
+    || { echo "[WARN] Could not download the panel's index; run: $0 --locityper-data ${GENOME_DIR}"; return 1; }
+  # The loci 250 kb either side, merged where they meet, as chrom:start-end.
+  regions=$(awk -F'\t' -v OFS='\t' '{s = $2 - 250000; if (s < 0) s = 0; print $1, s, $3 + 250000}' "${dir}/loci.bed.new" \
+    | sort -k1,1 -k2,2n \
+    | awk -F'\t' '$1 == c && $2 <= e {if ($3 > e) e = $3; next} {if (c != "") print c ":" s + 1 "-" e; c = $1; s = $2; e = $3}
+                  END {if (c != "") print c ":" s + 1 "-" e}' | tr '\n' ' ')
+  echo "  The panel's haplotypes over ${regions% }..."
+  # --net: the panel is read over https. SC2016: $1 to $3 belong to the
+  # inner bash; SC2086: one argument per region.
+  # shellcheck disable=SC2016,SC2086
+  if ! run_in --net --rw "$dir" "$LOCITYPER_IMAGE" bash -euo pipefail -c '
+        url=$1 idx=$2 out=$3; shift 3
+        tabix -h "${url}##idx##${idx}" "$@" | bgzip > "${out}.part"
+        tabix -f -p vcf "${out}.part"
+        mv "${out}.part.tbi" "${out}.tbi"; mv "${out}.part" "$out"' \
+      _ "$LOCITYPER_PANEL_URL" "$(cpath "${dir}/panel.remote.tbi")" "$(cpath "${dir}/panel.vcf.gz")" $regions; then
+    rm -f "${dir}/panel.vcf.gz.part" "${dir}/panel.vcf.gz.part.tbi"
+    echo "[WARN] Could not read the panel over https; run: $0 --locityper-data ${GENOME_DIR}"
+    return 1
+  fi
+
+  echo "  locityper target and augment on ${n} loci (the pairwise alignments take the longest)..."
+  rm -rf "${dir}/db" "${dir}/db.part"
+  # shellcheck disable=SC2016  # $1 to $5 belong to the inner bash
+  if ! run_in --rw "$dir" "$LOCITYPER_IMAGE" bash -euo pipefail -c '
+        locityper target -d "$1/db.part" -r "$2" -j "$1/counts.jf" -v "$1/panel.vcf.gz" -g GRCh38 -L "$3" -@ "$4" > "$5" 2>&1
+        locityper augment -d "$1/db.part" -@ "$4" >> "$5" 2>&1' \
+      _ "$(cpath "$dir")" "$REF_FASTA_C" "$(cpath "${dir}/loci.bed.new")" "$THREADS" "$(cpath "${dir}/build.log")"; then
+    echo "[WARN] Locityper could not build the database; the last lines of ${dir}/build.log:"
+    tail -n 20 "${dir}/build.log" || true
+    return 1
+  fi
+  bad=""
+  while IFS=$'\t' read -r _ _ _ name; do
+    [ -e "${dir}/db.part/loci/${name}/success" ] || bad+="${name} "
+  done < "${dir}/loci.bed.new"
+  if [ -n "$bad" ]; then
+    echo "[WARN] Locityper built no database for: ${bad% } (see ${dir}/build.log)"
+    return 1
+  fi
+  mv "${dir}/db.part" "${dir}/db"
+  mv "${dir}/loci.bed.new" "${dir}/loci.bed"
+  echo "$stamp" > "${dir}/DONE"
+  echo "[OK] Locityper's database (step 53, ${n} loci, panel ${LOCITYPER_PANEL_VERSION}): ${dir} ($(du -sh "$dir" | cut -f1))"
+}
+
 # pull_image IMAGE: docker pull, tried FETCH_TRIES times (default 3),
 # FETCH_WAIT seconds apart (default 5, then 10, ...), the knobs fetch uses.
 # Docker's own message goes to the terminal: a rate limit (toomanyrequests)
@@ -1642,9 +1796,37 @@ ensure_image() {
 # whose allele frequencies stand for the modern population; UCSC's
 # hg19ToHg38 chain. Each archaic file is checked against the md5 its folder's
 # md5sums.txt lists, and each md5sums.txt against the sha256 in versions.env.
+# Two masks keep the table to sequence the method can read, as Chen et al.
+# 2020 do before IBDmix: each archaic genome's own FilterBed from MPI-EVA
+# (coverage, mapability 35, MQ25, no tandem repeats, no indels; GRCh37), and
+# the 1000 Genomes GRCh38 strict mask for the modern side. MPI-EVA publishes
+# no checksum beside the FilterBed files, so versions.env pins the sha256 of
+# each of the 66 files.
 ARCHAIC_URL=https://cdna.eva.mpg.de/neandertal/Vindija/VCF
+ARCHAIC_FILTERBED_URL=https://cdna.eva.mpg.de/neandertal/Vindija/FilterBed
 ARCHAIC_1KG_SITES_URL=https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.wgs.phase3_shapeit2_mvncall_integrated_v5c.20130502.sites.vcf.gz
+ARCHAIC_STRICT_MASK_URL=https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/working/20160622_genome_mask_GRCh38/StrictMask/20160622.allChr.mask.bed
+ARCHAIC_SEGDUPS_URL=https://hgdownload.soe.ucsc.edu/goldenPath/hg19/database/genomicSuperDups.txt.gz
 ARCHAIC_CHAIN_URL=https://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz
+
+# archaic_filterbed_sha NAME CHROM: the sha256 versions.env pins for one
+# MPI-EVA FilterBed file, from that genome's "CHROM:sha256 ..." list.
+archaic_filterbed_sha() {
+  local list v
+  case "$1" in
+    Altai) list=$ARCHAIC_FILTERBED_SHA256_ALTAI ;;
+    Vindija) list=$ARCHAIC_FILTERBED_SHA256_VINDIJA ;;
+    Denisova) list=$ARCHAIC_FILTERBED_SHA256_DENISOVA ;;
+    *) echo "ERROR: no FilterBed pins for '${1}'" >&2; return 1 ;;
+  esac
+  for v in $list; do
+    [ "${v%%:*}" = "$2" ] || continue
+    printf '%s' "${v#*:}"
+    return 0
+  done
+  echo "ERROR: versions.env pins no FilterBed sha256 for ${1} chromosome ${2}" >&2
+  return 1
+}
 
 # install_archaic: the table of step 43 in reference/archaic/ARCHAIC_DATA_VERSION
 # (ARCHAIC_DIR: another folder inside GENOME_DIR), one chrN.tsv.gz per
@@ -1653,12 +1835,14 @@ ARCHAIC_CHAIN_URL=https://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19T
 # frequency of all and of each continental group. The rows are the 1000
 # Genomes biallelic SNVs where an archaic genome was called, and the sites
 # where one of the three carries a non-reference allele: the sites IBDmix's
-# own generate_gt would keep from the same files. Per chromosome: the three
+# own generate_gt would keep from the same files, each archaic genome read
+# only inside its own FilterBed and every row inside the 1000 Genomes GRCh38
+# strict mask. Per chromosome: the three
 # archaic files are downloaded (about 165 GB in all, 13 GB at most at a time)
 # and deleted once the chromosome is built, so an interrupted install
 # resumes at the chromosome it stopped in. The 1000 Genomes file (1.5 GB) is
 # deleted at the end. ARCHAIC_REGIONS (a GRCh37 BED, chromosomes named 1 to
-# 22) keeps only those regions: the e2e case builds a slice of chr22 with it.
+# 22) keeps only those regions: the e2e case builds chr22 alone with it.
 install_archaic() {
   local dir=${ARCHAIC_DIR:-${GENOME_DIR}/reference/archaic/${ARCHAIC_DATA_VERSION}}
   local regions=${ARCHAIC_REGIONS:-} rstamp=all chroms="" c g v k stamp wk n
@@ -1667,7 +1851,7 @@ install_archaic() {
   echo "Installing the archaic data ${ARCHAIC_DATA_VERSION} (step 43) in ${dir}"
   for v in BCFTOOLS_IMAGE PICARD_IMAGE PYTHON_IMAGE IBDMIX_IMAGE; do ensure_image "$v" 43 || return 1; done
   [ -s "$REF_DICT" ] || { echo "[WARN] ${REF_DICT} is missing: run $0 ${GENOME_DIR} first (it writes the sequence dictionary)"; return 1; }
-  mkdir -p "${dir}/md5" "${dir}/download" "${dir}/work"
+  mkdir -p "${dir}/md5" "${dir}/download" "${dir}/work" "${dir}/mask" "${dir}/exclude"
   for v in "Altai|${ARCHAIC_ALTAI_MD5SUMS_SHA256}" "Vindija33.19|${ARCHAIC_VINDIJA_MD5SUMS_SHA256}" "Denisova|${ARCHAIC_DENISOVA_MD5SUMS_SHA256}"; do
     IFS='|' read -r g k <<< "$v"
     [ -s "${dir}/md5/${g}.txt" ] && [ "$(_digest sha256 "${dir}/md5/${g}.txt")" = "$k" ] && continue
@@ -1681,6 +1865,16 @@ install_archaic() {
     echo "[WARN] Could not download UCSC's hg19ToHg38 chain; run: $0 --archaic ${GENOME_DIR}"
     return 1
   fi
+  if ! { [ -s "${dir}/strict_GRCh38.bed" ] && [ "$(_digest sha256 "${dir}/strict_GRCh38.bed")" = "$ARCHAIC_STRICT_MASK_SHA256" ]; } \
+     && ! fetch "$ARCHAIC_STRICT_MASK_URL" "${dir}/strict_GRCh38.bed" sha256 "$ARCHAIC_STRICT_MASK_SHA256"; then
+    echo "[WARN] Could not download the 1000 Genomes GRCh38 strict mask; run: $0 --archaic ${GENOME_DIR}"
+    return 1
+  fi
+  if ! { [ -s "${dir}/segdups_hg19.txt.gz" ] && [ "$(_digest sha256 "${dir}/segdups_hg19.txt.gz")" = "$ARCHAIC_SEGDUPS_SHA256" ]; } \
+     && ! fetch "$ARCHAIC_SEGDUPS_URL" "${dir}/segdups_hg19.txt.gz" sha256 "$ARCHAIC_SEGDUPS_SHA256"; then
+    echo "[WARN] Could not download UCSC's segmental duplications; run: $0 --archaic ${GENOME_DIR}"
+    return 1
+  fi
   if [ -n "$regions" ]; then
     [ -s "$regions" ] || { echo "[WARN] ARCHAIC_REGIONS=${regions} is not a file"; return 1; }
     cp "$regions" "${dir}/regions.bed"
@@ -1691,7 +1885,7 @@ install_archaic() {
     chroms=$(seq 1 22 | tr '\n' ' ')
   fi
   [ -n "${chroms// /}" ] || { echo "[WARN] ARCHAIC_REGIONS=${regions} names no autosome (1 to 22)"; return 1; }
-  stamp="data=${ARCHAIC_DATA_VERSION} regions=${rstamp} bcftools=${BCFTOOLS_IMAGE} picard=${PICARD_IMAGE} code=$(_digest sha256 <(sed '/^# --- genotypes (step 43)/,$d' "${PGP_ROOT}/bin/archaic_report.py"))"
+  stamp="data=${ARCHAIC_DATA_VERSION} regions=${rstamp} bcftools=${BCFTOOLS_IMAGE} picard=${PICARD_IMAGE} masks=$(_digest sha256 <(printf '%s\n%s\n%s\n%s\n%s\n' "$ARCHAIC_STRICT_MASK_SHA256" "$ARCHAIC_SEGDUPS_SHA256" "$ARCHAIC_FILTERBED_SHA256_ALTAI" "$ARCHAIC_FILTERBED_SHA256_VINDIJA" "$ARCHAIC_FILTERBED_SHA256_DENISOVA")) code=$(_digest sha256 <(sed '/^# --- genotypes (step 43)/,$d' "${PGP_ROOT}/bin/archaic_report.py"))"
   local have=1
   for c in $chroms; do [ -s "${dir}/chr${c}.tsv.gz" ] || have=0; done
   if [ "$have" = 1 ] && [ "$(cat "${dir}/DONE" 2>/dev/null)" = "$stamp" ]; then
@@ -1718,14 +1912,39 @@ install_archaic() {
     if ! run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c '
           r=(-r "$2"); [ ! -s "$4" ] || r=(-R "$4")
           bcftools view "${r[@]}" -m2 -M2 -v snps -Ou "$1" \
-            | bcftools query -f "%POS\t%REF\t%ALT\t%INFO/AF\t%INFO/AFR_AF\t%INFO/AMR_AF\t%INFO/EAS_AF\t%INFO/EUR_AF\t%INFO/SAS_AF\n" > "$3/modern.tsv"' \
+            | bcftools query -f "%POS\t%REF\t%ALT\t%INFO/AF\t%INFO/AFR_AF\t%INFO/AMR_AF\t%INFO/EAS_AF\t%INFO/EUR_AF\t%INFO/SAS_AF\n" > "$3/modern.tsv"
+          bcftools view -r "$2" -v indels -Ou "$1" \
+            | bcftools query -f "%POS\t%REF\t%ALT\n" > "$3/indels.tsv"' \
           _ "$(cpath "$sites")" "$c" "$(cpath "$wk")" "$(cpath "${wk}/regions.bed")"; then
       echo "[WARN] Could not read chr${c} of the 1000 Genomes sites"; return 1
     fi
+    # The regions no genome is read at: UCSC's segmental duplications, and
+    # each 1000 Genomes indel with 5 bp on each side, the window reaching past
+    # the longer of its REF and ALT as the published script writes it (Chen et
+    # al.'s own excluded beds, minus the CpG one, which needs a GRCh37
+    # reference and three primate SNP sets this pipeline does not install;
+    # docs/43-archaic.md says so). The indels are read from the whole
+    # chromosome even when ARCHAIC_REGIONS cuts the table down, so an indel
+    # just outside a region still excludes the sites next to it.
+    { awk -v c="$c" 'BEGIN {OFS = "\t"} $2 == "chr" c {print c, $3, $4}' <(gzip -dc "${dir}/segdups_hg19.txt.gz")
+      awk -F'\t' -v c="$c" 'BEGIN {OFS = "\t"}
+        { n = length($2); m = split($3, a, ","); for (i = 1; i <= m; i++) if (length(a[i]) > n) n = length(a[i])
+          s = $1 - 6; if (s < 0) s = 0
+          print c, s, $1 + 5 + n }' "${wk}/indels.tsv"
+    } | sort -k2,2n -k3,3n | gzip -c > "${dir}/exclude/chr${c}.bed.gz"
+    n=$(gzip -dc "${dir}/exclude/chr${c}.bed.gz" | awk 'END {print NR + 0}')
+    if [ "$n" -lt 100 ]; then
+      echo "[WARN] the exclusion list of chr${c} has ${n} regions: the segmental duplications or the 1000 Genomes indels did not arrive"; return 1
+    fi
+    echo "  chr${c}: ${n} excluded regions (segmental duplications and indel neighbourhoods)"
     for v in $genomes; do
       g=${v%%:*}
       fetch "${ARCHAIC_URL}/${g}/chr${c}_mq25_mapab100.vcf.gz" "${dir}/download/${g}.chr${c}.vcf.gz" md5 "file://${dir}/md5/${g}.txt" \
         || { echo "[WARN] Could not download chr${c} of ${g}; run: $0 --archaic ${GENOME_DIR} (it resumes)"; return 1; }
+      k=$(archaic_filterbed_sha "${v##*:}" "$c") || return 1
+      { [ -s "${dir}/mask/${g}.chr${c}.bed.gz" ] && [ "$(_digest sha256 "${dir}/mask/${g}.chr${c}.bed.gz")" = "$k" ]; } \
+        || fetch "${ARCHAIC_FILTERBED_URL}/${g}/chr${c}_mask.bed.gz" "${dir}/mask/${g}.chr${c}.bed.gz" sha256 "$k" \
+        || { echo "[WARN] Could not download the FilterBed of chr${c} of ${g}; run: $0 --archaic ${GENOME_DIR} (it resumes)"; return 1; }
     done
     echo "  chr${c}: the archaic genotypes at those SNVs and at every archaic non-reference site..."
     # The sites to keep: the 1000 Genomes SNVs, and every position where one of
@@ -1750,7 +1969,12 @@ install_archaic() {
     if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
           python3 /pgp-bin/archaic_report.py table --chrom "$c" --modern "$(cpath "${wk}/modern.tsv")" \
             --archaic "Altai=$(cpath "${wk}/Altai.tsv")" --archaic "Vindija=$(cpath "${wk}/Vindija33.19.tsv")" \
-            --archaic "Denisova=$(cpath "${wk}/Denisova.tsv")" --out "$(cpath "${wk}/hg19.vcf")"; then
+            --archaic "Denisova=$(cpath "${wk}/Denisova.tsv")" \
+            --mask "Altai=$(cpath "${dir}/mask/Altai.chr${c}.bed.gz")" \
+            --mask "Vindija=$(cpath "${dir}/mask/Vindija33.19.chr${c}.bed.gz")" \
+            --mask "Denisova=$(cpath "${dir}/mask/Denisova.chr${c}.bed.gz")" \
+            --exclude "$(cpath "${dir}/exclude/chr${c}.bed.gz")" \
+            --out "$(cpath "${wk}/hg19.vcf")"; then
       echo "[WARN] Could not merge chr${c}"; return 1
     fi
     echo "  chr${c}: lifting to GRCh38 (Picard LiftoverVcf, UCSC's chain)..."
@@ -1761,12 +1985,19 @@ install_archaic() {
       tail -n 20 "${wk}/liftover.log"
       echo "[WARN] Picard could not lift chr${c}"; return 1
     fi
-    # The rows that land on the same chromosome, once per position.
-    # shellcheck disable=SC2016  # $1 and $2 belong to the inner bash
+    # The rows that land on the same chromosome and inside the 1000 Genomes
+    # GRCh38 strict mask, once per position. The mask is sliced to this
+    # chromosome first: bcftools -T reads the whole targets file into memory,
+    # and the mask has 4.1 million lines for the genome.
+    awk -v c="chr${c}" '$1 == c' "${dir}/strict_GRCh38.bed" > "${wk}/strict.bed"
+    if [ ! -s "${wk}/strict.bed" ]; then
+      echo "[WARN] the GRCh38 strict mask has no interval on chr${c}: ${dir}/strict_GRCh38.bed"; return 1
+    fi
+    # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
     if ! { printf 'chrom\tpos\tref\talt\tAltai\tVindija\tDenisova\tAF_ALL\tAF_AFR\tAF_AMR\tAF_EAS\tAF_EUR\tAF_SAS\n'
            run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c \
-             'bcftools query -i "CHROM==\"chr$2\"" -f "%CHROM\t%POS\t%REF\t%ALT\t%INFO/Altai\t%INFO/Vindija\t%INFO/Denisova\t%INFO/AF_ALL\t%INFO/AF_AFR\t%INFO/AF_AMR\t%INFO/AF_EAS\t%INFO/AF_EUR\t%INFO/AF_SAS\n" "$1"' \
-             _ "$(cpath "${wk}/hg38.vcf")" "$c" | awk -F'\t' '!seen[$2]++'
+             'bcftools query -T "$3" -i "CHROM==\"chr$2\"" -f "%CHROM\t%POS\t%REF\t%ALT\t%INFO/Altai\t%INFO/Vindija\t%INFO/Denisova\t%INFO/AF_ALL\t%INFO/AF_AFR\t%INFO/AF_AMR\t%INFO/AF_EAS\t%INFO/AF_EUR\t%INFO/AF_SAS\n" "$1"' \
+             _ "$(cpath "${wk}/hg38.vcf")" "$c" "$(cpath "${wk}/strict.bed")" | awk -F'\t' '!seen[$2]++'
          } | gzip -c > "${dir}/chr${c}.tsv.gz.part"; then
       echo "[WARN] Could not write chr${c} of the table"; return 1
     fi
@@ -1782,7 +2013,7 @@ install_archaic() {
   for v in "${dir}"/chr*.tsv.gz; do
     [ -e "$v" ] || continue
     c=$(basename "$v" .tsv.gz); c=${c#chr}
-    [[ " ${chroms} " == *" ${c} "* ]] || rm -f "$v" "${dir}/chr${c}.stamp"
+    [[ " ${chroms} " == *" ${c} "* ]] || rm -f "$v" "${dir}/chr${c}.stamp" "${dir}/mask/"*".chr${c}.bed.gz" "${dir}/exclude/chr${c}.bed.gz"
   done
   rm -rf "${dir}/download" "${dir}/work"
   echo "$stamp" > "${dir}/DONE"
@@ -1823,6 +2054,7 @@ case "$OPT_IN" in
   strchive-data) install_strchive_data; exit $? ;;
   megane-kmers) ensure_image MEGANE_IMAGE 50 && install_megane_kmers; exit $? ;;
   mocha-data) install_mocha_data; exit $? ;;
+  locityper-data) install_locityper_data; exit $? ;;
   vep-cache) install_vep_cache_opt_in; exit $? ;;
   annotsv-data) install_annotsv_data; exit $? ;;
   archaic) install_archaic; exit $? ;;

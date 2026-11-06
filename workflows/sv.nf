@@ -152,6 +152,7 @@ workflow SV {
     manta_vcf        = ch_manta_vcf
     delly_vcf        = ch_delly_vcf
     cnvpytor_calls   = ch_cnvpytor_calls
+    cnvpytor_vcf     = ch_cnvpytor_vcf     // [meta, <id>_cnvs.vcf.gz]
     duphold_vcf      = ch_duphold_vcf
     annotsv_tsv      = ch_annotsv_tsv
     annotsv_class4_5 = ch_annotsv_checked   // [meta, <id>_sv_class4_5_checked.tsv]

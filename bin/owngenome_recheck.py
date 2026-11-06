@@ -79,6 +79,13 @@ PINNED = (
 )
 
 
+# The opt-in steps' pins: the setup.sh option that installs their data and image (the main setup leaves
+# them out). VNtyper's reference data is inside its image, which the run pulls, so it needs no option.
+OPT_IN_SETUP = {"MEGANE_IMAGE": "--megane-kmers", "MOCHA_PANEL_VERSION": "--mocha-data", "MOCHA_IMAGE": "--mocha-data",
+                "LOCITYPER_PANEL_VERSION": "--locityper-data", "LOCITYPER_IMAGE": "--locityper-data",
+                "VNTYPER_IMAGE": None}
+
+
 class Failed(Exception):
     """A lookup with no usable answer."""
 
@@ -387,6 +394,11 @@ def classify(item, release_tag, release_pins, release_error, clinvar=False):
 def action(item, sample):
     c, key = item["class"], item["item"]
     if c == "rerun-ready":
+        if item["kind"] == "pin" and key in OPT_IN_SETUP:
+            opt = OPT_IN_SETUP[key]
+            how = (f"run ./scripts/setup.sh {opt} $GENOME_DIR (the main setup leaves this step's data out)"
+                   if opt else "the run pulls the image")
+            return f"this checkout pins {item['installed']}: {how}, then rerun: bin/owngenome_recheck.py --sample {sample} --rerun"
         if item["kind"] == "pin":
             return (f"this checkout pins {item['installed']}: run ./scripts/setup.sh (it installs the data), "
                     f"then rerun: bin/owngenome_recheck.py --sample {sample} --rerun")
@@ -437,6 +449,18 @@ def check(sample, genome_dir, answers, steps, this_pins, this_hla):
         if key == "hla_database" and not this_hla:
             item["error"] = "could not read this checkout's HLA_DB_RELEASE (scripts/lib/common.sh)"
         add(item, answers.pinned, key, lookup, pattern)
+    # The other versions.env pins a step reads (steps 50 to 53): no freshness source exists for them, so
+    # nothing is looked up; a pin here that differs from the run's makes its step rerun-ready.
+    known = {k for k, *_ in PINNED}
+    for key in dict.fromkeys(r[:-5] if r.endswith("@self") else r for s in steps for r in reads_of(s)):
+        if key in known or key not in this_pins:
+            continue
+        ran, inst = pin_value(key, version.get(key)), pin_value(key, this_pins.get(key))
+        item = {"item": key, "label": f"{key} (no upstream lookup)", "kind": "pin", "ran_with": ran,
+                "installed": inst, "class": "rerun-ready" if ran and inst and ran != inst else "no-newer-release"}
+        item["steps"] = affected_steps(steps, [key])
+        item["action"] = action(item, sample)
+        items.append(item)
     for (sec, key), value in sorted(man.items()):
         if sec != "data" or not key.startswith("pgs:"):
             continue

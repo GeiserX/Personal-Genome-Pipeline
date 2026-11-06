@@ -8,15 +8,17 @@
     likely pathogenic hits (CLINVAR_SCREEN), Delly deletions over an exon
     of 50 bp or more (with --gencode_exons; one matching a common deletion of
     AnnotSV's benign loss set is set aside, the set read from
-    --annotsv_annotations when it is there), SMN1 copy number (PARASCOPY) and
-    the FMR1 and FXN repeats (EXPANSION_HUNTER). It writes couple_<a>_<b>.tsv and .md, published
+    --annotsv_annotations when it is there), SMN1 copy number (PARASCOPY),
+    the FMR1 and FXN repeats (EXPANSION_HUNTER), and the carrier deletion
+    alleles and a male partner's AZF regions from PARASCOPY's interval table,
+    with CNVpytor's calls (CNVPYTOR_VCF) as their cross-check. It writes couple_<a>_<b>.tsv and .md, published
     under the family's folder, <outdir>/<family>/ (--family_name, default family/), and one copy of the table per partner,
     <id>_couple_carrier.tsv, published under <outdir>/<id>/couple/ for that
     partner's report.
 
     The step outputs come as one list; each file is matched to its sample by
     its name (<id>_clinvar_hits.vcf, <id>_sv.vcf.gz, <id>_eh.vcf,
-    <id>_smn_copy_number.tsv).
+    <id>_smn_copy_number.tsv, <id>_cn_intervals.tsv, <id>_cnvs.vcf.gz).
 
     Equivalent to: scripts/39-couple.sh
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -51,7 +53,8 @@ process COUPLE_CARRIER {
 
     script:
     def files = outputs instanceof List ? outputs : [outputs]
-    def kinds = [clinvar: '_clinvar_hits.vcf', delly: '_sv.vcf.gz', eh: '_eh.vcf', smn: '_smn_copy_number.tsv']
+    def kinds = [clinvar: '_clinvar_hits.vcf', delly: '_sv.vcf.gz', eh: '_eh.vcf', smn: '_smn_copy_number.tsv',
+                 'cn-intervals': '_cn_intervals.tsv', cnvpytor: '_cnvs.vcf.gz']
     def args = files.collect { f ->
         // A staged input's name is its stage path (in/<file>): keep the file name only
         def n = f.name.tokenize('/')[-1]

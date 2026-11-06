@@ -43,6 +43,7 @@ include { ARCHAIC_GENOTYPES; ARCHAIC_IBDMIX; ARCHAIC_REPORT } from './modules/lo
 include { ANCIENT_SITES; ANCIENT_GENO; ANCIENT_PCA; ANCIENT_REPORT } from './modules/local/ancient/main'
 include { LPA_REGIONS; LPA_DEPTH; LPA } from './modules/local/lpa/main'
 include { VNTYPER } from './modules/local/vntyper/main'
+include { LOCITYPER } from './modules/local/locityper/main'
 include { VIRAL_READS; VIRAL_REPORT } from './modules/local/viral/main'
 include { EXOMISER_PREPARE; EXOMISER; EXOMISER_REPORT } from './modules/local/exomiser/main'
 include { CHIP_PREPARE; CHIP_MUTECT2; CHIP_ANNOTATE; CHIP_REPORT } from './modules/local/chip/main'
@@ -105,6 +106,7 @@ workflow {
         'chip',
         'mei',
         'mocha',
+        'locityper',
     ]
     def unknown_tools = tools_list.findAll { !known_tools.contains(it) }
     if (unknown_tools) {
@@ -161,6 +163,7 @@ workflow {
         ['chip',             'chip_gff',           '--chip_gff'],
         ['mei',              'megane_kmers',       '--megane_kmers'],
         ['mocha',            'mocha_data',         '--mocha_data'],
+        ['locityper',        'locityper_data',     '--locityper_data'],
     ]
 
     db_requirements.each { tool, param_name, flag ->
@@ -853,7 +856,8 @@ workflow {
                      "the couple carrier screen reads each partner's ClinVar hits, so it does not run."
         }
         def ch_couple_outputs = couple_ids && tools_list.contains('clinvar') ? Channel.empty().mix(
-            PGX.out.clinvar_dir, SV.out.delly_vcf, BAM_ANALYSIS.out.expansion_vcf, BAM_ANALYSIS.out.smn_copy_number
+            PGX.out.clinvar_dir, SV.out.delly_vcf, BAM_ANALYSIS.out.expansion_vcf, BAM_ANALYSIS.out.smn_copy_number,
+            BAM_ANALYSIS.out.cn_intervals, SV.out.cnvpytor_vcf
         ).filter { meta, f -> couple_ids.contains(meta.id) }.map { meta, f -> f } : Channel.empty()
         FAMILY(
             ch_gvcf.filter { meta, g, idx -> family_ids.contains(meta.id) },
@@ -1075,6 +1079,19 @@ workflow {
                                                         MOCHA_REPORT.out.versions)
     }
 
+    // ─── Locityper second opinion at hard loci (opt-in: locityper, step 53)
+    // Locityper on each sample's BAM with the database of --locityper_data
+    // (setup.sh --locityper-data, built from the same reference). A sample
+    // without a BAM is left out. Equivalent to scripts/53-locityper.sh.
+    ch_locityper          = Channel.empty()
+    ch_locityper_versions = Channel.empty()
+    if (tools_list.contains('locityper')) {
+        LOCITYPER(ch_bam, ch_reference, ch_reference_fai,
+                  Channel.value(file(params.locityper_data, checkIfExists: true)))
+        ch_locityper          = LOCITYPER.out.table
+        ch_locityper_versions = LOCITYPER.out.versions
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // WORKFLOW 6: REPORTING — HTML report & MultiQC
     // ═══════════════════════════════════════════════════════════════════
@@ -1085,10 +1102,12 @@ workflow {
     // did not run for, or whose task failed and was ignored; that step's slot
     // is null and drops out of the list. The join also makes the report wait
     // for every selected step it shows, the SV consensus merge included.
-    // The ACMG SF rules, the carrier list, the gene callability table and the
-    // confirmed mtDNA variants the report applies (bin/ is the only repository
+    // The ACMG SF rules, the carrier list, the gene callability table, the
+    // confirmed mtDNA variants and the two paralog catalogs (step 35's loci,
+    // step 35b's regions) the report applies (bin/ is the only repository
     // folder a task sees).
-    def report_assets = ["acmg_sf.tsv", "carrier_genes.tsv", "callability_genes.tsv", "mito_confirmed.tsv"].collect { n -> file("${projectDir}/assets/${n}", checkIfExists: true) }
+    def report_assets = ["acmg_sf.tsv", "carrier_genes.tsv", "callability_genes.tsv", "mito_confirmed.tsv",
+                         "paralog_loci.tsv", "paraphase_genes.tsv"].collect { n -> file("${projectDir}/assets/${n}", checkIfExists: true) }
     ch_report_inputs = ch_vcf
         .map { meta, vcf, idx -> [meta.id, meta, vcf] }
         .join(PGX.out.clinvar_dir.map             { meta, f -> [meta.id, f] }, remainder: true)
@@ -1107,17 +1126,22 @@ workflow {
         .join(CLINICAL.out.haplogroup.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.haplocheck.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.y_haplogroup.map   { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.y_tree.map         { meta, tree, _path -> [meta.id, tree] }, remainder: true)
+        .join(BAM_ANALYSIS.out.y_tree.map         { meta, _tree, path -> [meta.id, path] }, remainder: true)
         .join(BAM_ANALYSIS.out.y_str.map          { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.paraphase_cn.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.paraphase_vars.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.smn_copy_number.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.hba_copy_number.map { meta, f -> [meta.id, f] }, remainder: true)
+        // step 35's other catalog tables, a list per sample (flattened below)
+        .join(BAM_ANALYSIS.out.parascopy_tables.map { meta, fs -> [meta.id, fs] }, remainder: true)
         .join(CLINICAL.out.prs_scores.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.ancestry_results.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.ancestry_fine.map      { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.ancestry_fine_png.map  { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.coverage.map       { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.callability.map    { meta, f -> [meta.id, f] }, remainder: true)
+        .join(BAM_ANALYSIS.out.cn_intervals.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.sample_qc.map      { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.telomere_results.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(BAM_ANALYSIS.out.mito_vcf.map       { meta, f -> [meta.id, f] }, remainder: true)
@@ -1163,9 +1187,10 @@ workflow {
         .join(ch_mei.map                          { meta, calls, sites -> [meta.id, sites] }, remainder: true)
         .join(ch_mocha.map                        { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_mocha_summary.map                { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ch_locityper.map                    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ch_couple_tables.map                { meta, f -> [meta.id, f] }, remainder: true)
         .filter { items -> items[1] != null }
-        .map { items -> [items[1], items[2], items[3..-1].findAll { f -> f != null } + report_assets] }
+        .map { items -> [items[1], items[2], items[3..-1].collectMany { f -> (f instanceof List ? f : [f]) }.findAll { f -> f != null } + report_assets] }
 
     // QC files for MultiQC (mosdepth summaries)
     ch_multiqc_files = BAM_ANALYSIS.out.coverage.map { meta, f -> f }
@@ -1201,7 +1226,8 @@ workflow {
             ch_chip_versions,
             ch_mei_versions,
             ch_exomiser_versions,
-            ch_mocha_versions
+            ch_mocha_versions,
+            ch_locityper_versions
         )
         .map { f -> f.text }
         .unique()

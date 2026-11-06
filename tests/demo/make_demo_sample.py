@@ -614,6 +614,19 @@ def repeats_and_more(d, rng):
     put(os.path.join(d, "y_haplogroup", f"{SAMPLE}_y_haplogroup.txt"),
         "Sample_name\tHg\tHg_marker\tTotal_reads\tValid_markers\tQC-score\tQC-1\tQC-2\tQC-3\n"
         f"{SAMPLE}_sorted\tI-M253\tM253\t4021876\t1187\t0.982\t1.0\t0.991\t0.982\n")
+    # Step 37's placement on the current tree (bin/y_tree_place.py's columns), read
+    # by the report's y_tree section; the same I-M253 as above, five levels down.
+    put(os.path.join(d, "y_haplogroup", f"{SAMPLE}_y_tree.txt"),
+        "Sample_name\tHg\tLevel\tPath_derived\tPath_ancestral\tPath_no_call\tAncestral_in_terminal\t"
+        "SNPs_called\tMin_depth\tTree\tPositions\tOutvoted_ancestral\n"
+        f"{SAMPLE}\tI-M253\t5\t41\t0\t3\t0\t1187\t3\tYFull YTree v14.06.0\tYleaf hg38 position tables\t0\n")
+    put(os.path.join(d, "y_haplogroup", f"{SAMPLE}_y_tree_path.tsv"),
+        "Level\tBranch\tSNPs\tOn_tables\tDerived\tAncestral\tNo_call\tAncestral_SNPs\n"
+        "1\tCT\t12\t12\t11\t0\t1\t\n"
+        "2\tF\t9\t9\t9\t0\t0\t\n"
+        "3\tIJ\t8\t8\t7\t0\t1\t\n"
+        "4\tI\t7\t7\t7\t0\t0\t\n"
+        "5\tI-M253\t8\t8\t7\t0\t1\t\n")
 
 
 # --- steps 17, 23, 31 ----------------------------------------------------------------
@@ -663,6 +676,26 @@ def read_count(d):
     put(os.path.join(d, "qc", f"{SAMPLE}_read_count.tsv"),
         f"key\tvalue\ninput_reads\t{r1 + r2}\ninput_source\t{src}\nprimary_records\t{r1 + r2}\n"
         "missing_reads\t0\nread_count_check\tok\n")
+
+
+# Genes the demo leaves below step 16b's share: four that another step owns and
+# four with no other reading, so both lines of the card have names in them.
+DEMO_NOT_READ = {"SMN1", "SMN2", "NCF1", "PMS2", "NBPF1", "ANKRD36C", "DUX4", "MUC12"}
+
+
+def callability(d, rng):
+    """Step 16b's gene table (mosdepth --thresholds 10 over the genes of
+    assets/callability_genes.tsv: chrom, start, end, gene, bases at 10x),
+    written from the repository's catalog, so it always matches it. The ALT-only
+    genes get no row, as in the real step."""
+    rows = ["#chrom\tstart\tend\tregion\t10X"]
+    for r in collect_summary.asset_rows("callability_genes.tsv"):
+        if r["start"] == ".":
+            continue
+        start, end = int(r["start"]), int(r["end"])
+        share = rng.uniform(0.35, 0.8) if r["gene"] in DEMO_NOT_READ else rng.uniform(0.93, 1.0)
+        rows.append(f"{r['chrom']}\t{start}\t{end}\t{r['gene']}\t{int((end - start) * share)}")
+    put(os.path.join(d, "mosdepth", f"{SAMPLE}_callability.bed.gz"), "\n".join(rows) + "\n", gz=True)
 
 
 def mosaic(d, rng):
@@ -889,7 +922,7 @@ TRAIT_ALT_COPIES = {
     "rs17822931": 0, "rs10427255": 1, "rs1815739": 1, "rs12913832": 1, "rs1800407": 0, "rs16891982": 2,
     "rs1426654": 0, "rs12203592": 0, "rs1805007": 0, "rs1805008": 0, "rs1805009": 0, "rs3827760": 0,
     "rs1801133": 1, "rs601338": 1, "rs2282679": 1, "rs887829": 1, "rs1801272": 0, "rs429358": 0, "rs7412": 0,
-    "rs10455872": 0, "rs3798220": 0,
+    "rs10455872": 0, "rs3798220": 0, "rs78655421": 0,
 }
 
 
@@ -1113,6 +1146,29 @@ def vntyper(d):
             f.write(f"{k}\t{t[k]}\n")
 
 
+def locityper(d, rng):
+    """Step 53: bin/locityper_report.py's reading of a made-up Locityper run
+    that called every locus of assets/locityper_loci.bed with two HPRC panel
+    haplotypes and passed the authors' filter."""
+    import gzip
+    import tempfile
+    import locityper_report as lr
+    loci_path = os.path.join(REPO, "assets", "locityper_loci.bed")
+    panel = ["HG00438.1", "HG00733.2", "HG01891.1", "HG02257.2", "NA18906.1", "NA19240.2"]
+    out = os.path.join(d, "locityper")
+    os.makedirs(out, exist_ok=True)
+    with tempfile.TemporaryDirectory() as run:
+        for name, _ in lr.read_loci(loci_path):
+            res = {"genotype": ",".join(rng.sample(panel, 2)), "quality": round(rng.uniform(25, 60), 1),
+                   "total_reads": rng.randint(800, 4000), "unexpl_reads": rng.randint(0, 30),
+                   "weight_dist": round(rng.uniform(0.1, 3), 3)}
+            put(os.path.join(run, "loci", name, "success"), "")
+            with gzip.open(os.path.join(run, "loci", name, "res.json.gz"), "wt") as f:
+                json.dump(res, f)
+        if lr.main(["--gt-dir", run, "--loci", loci_path, "--out", os.path.join(out, f"{SAMPLE}_locityper.tsv")]):
+            raise SystemExit("locityper_report failed")
+
+
 def mei(d, rng):
     """Step 50: bin/mei_report.py run on a made-up MEGAnE VCF (a few Alu and L1
     insertions away from the catalog) and a made-up bedcov near 31x over every
@@ -1174,7 +1230,9 @@ def make(a):
              ("lpa", lambda r: lpa(d, r)), ("chip", lambda r: chip(d, r)),
              ("archaic", lambda r: archaic(d, r)), ("ancient", lambda r: ancient(d, r)),
              ("exomiser", lambda r: exomiser(d)), ("mocha", lambda r: mocha(d)),
-             ("vntyper", lambda r: vntyper(d)), ("mei", lambda r: mei(d, r))]
+             ("vntyper", lambda r: vntyper(d)), ("mei", lambda r: mei(d, r)),
+             ("locityper", lambda r: locityper(d, r)),
+             ("callability", lambda r: callability(d, r))]
     for name, fn in parts:
         fn(random.Random(f"{a.seed}:{name}"))
         print(f"  {name}: written")

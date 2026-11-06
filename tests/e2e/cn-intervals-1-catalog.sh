@@ -11,7 +11,7 @@ mkdir -p "$CACHE"
 echo "+ scripts/ci/build-cn-intervals.py --check"
 python3 "${REPO}/scripts/ci/build-cn-intervals.py" --cache "$CACHE" --check 2>&1 | tee "$STEP_LOG"
 check_eq "build-cn-intervals.py --check exits 0 on the committed catalog" "${PIPESTATUS[0]}" 0
-check "the log says all 88 interval rows were checked" grep -q "the 88 interval rows are what the pinned downloads give" "$STEP_LOG"
+check "the log says all 90 interval rows were checked" grep -q "the 90 interval rows are what the pinned downloads give" "$STEP_LOG"
 
 # Control: one interval target moved by 1 kb
 EDITED="${CASE_TMP}/edited.tsv"

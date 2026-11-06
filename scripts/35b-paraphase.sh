@@ -4,7 +4,7 @@
 #
 # Near-identical gene copies (SMN1/SMN2, HBA1/HBA2, CYP21A2 in the RCCX
 # module, GBA1/GBAP1, PMS2/PMS2CL, STRC/STRCP1, NCF1, OTOA and the rest of
-# Paraphase's 162 GRCh38 regions) hide copy-number changes and variants from
+# Paraphase's 165 GRCh38 regions) hide copy-number changes and variants from
 # a normal alignment. Paraphase gathers the reads of each gene family,
 # phases them into haplotypes and calls each gene's copy number, the HBA
 # 3.7 kb and 4.2 kb deletions by name, and phased variants.
@@ -21,7 +21,7 @@
 #
 # Environment:
 #   ALIGN_DIR          folder of <sample>_sorted.bam (default aligned_longread)
-#   PARAPHASE_REGIONS  Paraphase regions, comma separated (default: all 162),
+#   PARAPHASE_REGIONS  Paraphase regions, comma separated (default: all 165),
 #                      e.g. smn1,hba,rccx,GBA,pms2,strc,ncf1,OTOA
 #
 # Output: ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_paraphase_copy_number.tsv
@@ -69,14 +69,15 @@ run_in --cpus "${THREADS}" --memory 8g "${PARAPHASE_IMAGE}" \
   paraphase -b "$(cpath "$BAM")" -r "$REF_FASTA_C" -o "$(cpath "$WORK")" -p "$SAMPLE" \
     -t "${THREADS}" ${REGIONS:+-g "$REGIONS"}
 
-# [3/3] One row per gene and one per variant (bin/paraphase_report.py, as the PARAPHASE_REPORT module).
+# [3/3] One row per gene and one per variant (bin/paraphase_report.py, as the PARAPHASE_REPORT module);
+# the regions shown gene by gene, and the JSON field of each, come from assets/paraphase_genes.tsv.
 # The tables are written from WORK before it replaces FINAL, so a failed report leaves the
 # previous results and their tables together.
 echo "[3/3] Writing the tables..."
 CN="${OUTDIR}/${SAMPLE}_paraphase_copy_number.tsv"
 VARS="${OUTDIR}/${SAMPLE}_paraphase_variants.tsv"
-run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PYTHON_IMAGE}" \
-  python3 /pgp-bin/paraphase_report.py table --sample "$SAMPLE" \
+run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" -v "${PGP_ROOT}/assets:/pgp-assets:ro" "${PYTHON_IMAGE}" \
+  python3 /pgp-bin/paraphase_report.py table --sample "$SAMPLE" --genes /pgp-assets/paraphase_genes.tsv \
     --json "$(cpath "${WORK}/${SAMPLE}.paraphase.json")" \
     --vcf-dir "$(cpath "${WORK}/${SAMPLE}_paraphase_vcfs")" \
     --out-cn "$(cpath "$CN")" --out-variants "$(cpath "$VARS")"

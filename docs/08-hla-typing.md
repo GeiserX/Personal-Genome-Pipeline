@@ -7,7 +7,7 @@ Determines your HLA genotype (Human Leukocyte Antigen) from WGS data — the imm
 HLA alleles determine transplant compatibility, predisposition to autoimmune diseases, and severe adverse drug reactions (e.g., HLA-B*57:01 and abacavir, HLA-B*58:01 and allopurinol).
 
 ## Tool
-- **T1K** v1.0.9 — efficient HLA genotyping from sequencing reads
+- **T1K** v1.0.10 — efficient HLA genotyping from sequencing reads
 
 ## Docker Image
 - `T1K_IMAGE`
@@ -152,7 +152,7 @@ Each row reads present, absent, uncertain (some tied candidates fit, some do not
 **Rows the report shortens or labels.**
 
 - A quality-0 allele with more than three tied candidates prints as `no confident call (N candidates, quality 0)`; `summary.json` keeps the first three and the count, the TSV keeps them all. This is common for DRB3, DRB4 and DRB5, which only some DR haplotypes carry.
-- The HLA-HFE row is a T1K sequence allele of the HFE gene. The report labels it so it is not read as the haemochromatosis genotype: C282Y and H63D come from the variant calls and appear with the ClinVar hits.
+- The HLA-HFE row is a T1K sequence allele of the HFE gene. The report labels it so it is not read as the haemochromatosis genotype: C282Y and H63D come from the variant calls. They appear with the ClinVar hits, and the HFE rule of [step 42](42-traits.md) reads the two sites together as one genotype (wt, C282Y, H63D on each copy).
 
 ## Important Notes
 - HLA typing from WGS is **approximate** — clinical HLA typing for transplant or critical drug decisions uses dedicated high-resolution panels (sequence-based typing)

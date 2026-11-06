@@ -10,25 +10,24 @@ The mitochondrial haplogroup (step 12) traces the maternal line only. The Y chro
 
 ## Tool
 
-- **Yleaf** 3.2.1 (Ralf et al., Mol Biol Evol 2018; GPL-3.0), Erasmus MC. It reads the BAM's pileup at its Y markers and predicts the haplogroup they support.
+- **Yleaf** 4.1.6 (Ralf et al., Mol Biol Evol 2018; GPL-3.0), Erasmus MC. It reads the BAM's pileup at its Y markers and predicts the haplogroup they support on its default tree, YFull v14.01 (about 183,000 marker positions on GRCh38).
 
-Upstream Yleaf is at 4.x; Bioconda has 3.2.1 only, and that build is the image here.
+- **The current YFull YTree** (release 14.06.0 of 22 September 2026, CC BY 4.0, [github.com/YFullTeam/YTree](https://github.com/YFullTeam/YTree)), walked by `bin/y_tree_place.py`. It is newer than Yleaf's v14.01, and the second position table below places SNPs Yleaf's own table does not have, so the branch it reports can sit below the one Yleaf reports. It also writes the path from the root with the calls of every level. The SNPs on YFull's tree have names only; their GRCh38 positions and bases come from two tables of Yleaf 4.1.6 (GPL-3.0): `ftdna_positions_hg38.txt` (made for FamilyTreeDNA's tree, the widest of its tables) first, then `new_positions.txt` (the one Yleaf 4 uses for its YFull v14 tree). SNP names are shared between the trees, so a name is looked up as it stands. Together they place 85% of the tree's 459,468 SNPs (76% from the first table alone), counted on 2026-10-25.
 
-- **The current YFull YTree** (release 14.06.0 of 22 September 2026, CC BY 4.0, [github.com/YFullTeam/YTree](https://github.com/YFullTeam/YTree)), walked by `bin/y_tree_place.py`. Yleaf 3.2.1 ships YFull's tree v10.01, so the branch it reports can sit several levels above the one the current tree resolves. The SNPs on YFull's tree have names only; their GRCh38 positions and bases come from two tables of Yleaf 4.1.6 (GPL-3.0): `ftdna_positions_hg38.txt` (made for FamilyTreeDNA's tree, the widest of its tables) first, then `new_positions.txt` (the one Yleaf 4 uses for its YFull v14 tree). SNP names are shared between the trees, so a name is looked up as it stands. Together they place 85% of the tree's 459,468 SNPs (76% from the first table alone), counted on 2026-10-25.
-
-The step reports both results, each with the tree it comes from.
+The step reports both results, each with the tree it comes from. Both reports (step 24, text and HTML) show them as two sections side by side: "Y-Chromosome Haplogroup (Yleaf)" with Yleaf's call, and "Y Placement on the Current Public Tree" with this one, its level, the derived, ancestral and no-call counts along the path, any ancestral SNP inside the terminal branch or outvoted above it, and one row per level of the path.
 
 ## Docker Image
 
 - `YLEAF_IMAGE`, and `SAMTOOLS_IMAGE` for the pileup
 
-The Yleaf image has no samtools, which Yleaf calls for a BAM. So the step runs in three parts (`bin/yleaf_run.py`): Yleaf's marker positions from its image, `samtools idxstats` and `samtools mpileup -l <positions> -AQ20q1` (Yleaf's own flags at its default quality 20) in `SAMTOOLS_IMAGE`, then Yleaf on that pileup.
+The step runs in three parts (`bin/yleaf_run.py`): Yleaf's marker positions from its image, `samtools idxstats` and `samtools mpileup -l <positions> -ABQ20q1` (Yleaf 4's own flags at its default quality 20) in `SAMTOOLS_IMAGE`, in the same run as the chrY BAM (step 37 makes the current tree's pileup in a second run; Nextflow's `Y_PILEUP` task makes all three in one task), then Yleaf on that pileup. If a later Yleaf asks samtools for other flags, the launcher stops instead of handing it a pileup made another way.
 
 Pinned in `versions.env`; [Image versions](versions.md) lists the current tag.
 
 ## Input
 
 - `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai` (`ALIGN_DIR` as for the other BAM steps)
+- `${SAMPLE}/vcf/${SAMPLE}.vcf.gz` from step 03, for the private-SNP list only. Without it the rest of the step runs and that one file is skipped with a line saying so.
 - `${SAMPLE}/indexcov/indexcov-indexcov.ped` from step 16: the sex indexcov infers from the reads. The step runs only when it is male, and asks for no sex of its own. A female or undetermined sample is skipped with one line and exit 0.
 
 In the Nextflow pipeline (`y_haplogroup` in `--tools`) the process runs for the rows whose samplesheet sex is male. `INDEXCOV` has checked that sex against the reads before any BAM step starts, and a mismatch stops the run (unless `--sex_check warn`).
@@ -36,15 +35,15 @@ In the Nextflow pipeline (`y_haplogroup` in `--tools`) the process runs for the 
 ## Command
 
 ```bash
-./scripts/setup.sh --yleaf-data /path/to/genome_dir   # once: Yleaf's marker tables and tree, and the current tree (~75 MB)
+./scripts/setup.sh --yleaf-data /path/to/genome_dir   # once: Yleaf's marker tables and trees, and the current tree (about 210 MB to download)
 ./scripts/37-y-haplogroup.sh your_name
 ```
 
-The Yleaf image installs Yleaf's code but not its data folder (the GRCh38 marker positions and the haplogroup tree). `setup.sh --yleaf-data` takes that folder from GitHub's archive of the same release, checked against `YLEAF_DATA_SHA256` in `versions.env`, into `reference/yleaf-<version>/data`; the pipeline takes it as `--yleaf_data`. The same command then puts the current tree in `data/ytree`: YFull's `current_tree.json` at its release commit, and the two Yleaf 4.1.6 position tables at the commit of that tag, each checked against its sha256 in `versions.env` (`YTREE_*`). An install made before the current tree existed is completed by running the command again. If the current tree cannot be downloaded, the command warns and still exits 0, because Yleaf's own data is in place. Without `data/ytree` the step prints `Current tree: not installed` and writes Yleaf's result only.
+`setup.sh --yleaf-data` takes Yleaf's data folder (the GRCh38 marker positions in `hg38/` and the haplogroup trees in `hg_prediction_tables/`, the same files the image ships) from GitHub's archive of the same release, tag `v<version>`, checked against `YLEAF_DATA_SHA256` in `versions.env`, into `reference/yleaf-<version>/data`; the pipeline takes it as `--yleaf_data`. The other builds in the archive (hg19, T2T) are left out. The same command then puts the current tree in `data/ytree`: YFull's `current_tree.json` at its release commit, and the two Yleaf 4.1.6 position tables at the commit of that tag, each checked against its sha256 in `versions.env` (`YTREE_*`). An install made before the current tree existed is completed by running the command again. If the current tree cannot be downloaded, the command warns and still exits 0, because Yleaf's own data is in place. Without `data/ytree` the step prints `Current tree: not installed` and writes Yleaf's result only.
 
 With `run-all.sh`: `TOOLS=...,y_haplogroup` (it is opt-in, so a default run lists it as skipped; without the data it is skipped with the reason).
 
-Yleaf downloads the whole hg38 FASTA on its first run unless its config file names one, and the image's config is read-only. The launcher points Yleaf at the pipeline's reference before it starts (a BAM never needs the sequence itself), so nothing is downloaded and every container runs without a network.
+Yleaf downloads the whole hg38 FASTA on its first run unless its config file names one, and the image's config is read-only. The launcher points Yleaf at the pipeline's reference before it starts (a BAM never needs the sequence itself) and turns off its check for a newer release, so nothing is downloaded and every container runs without a network.
 
 ## Output
 
@@ -53,13 +52,14 @@ Yleaf downloads the whole hg38 FASTA on its first run unless its config file nam
 | `y_haplogroup/${SAMPLE}_y_haplogroup.txt` | Yleaf's prediction: `Hg` (the haplogroup), `Hg_marker`, `Total_reads`, `Valid_markers` (Y markers with haplogroup information and enough reads), `QC-score` |
 | `y_haplogroup/yleaf/` | Yleaf's working files: the markers it read with their alleles and its log |
 | `y_haplogroup/positions.txt` | the marker positions the pileup was made at |
-| `y_haplogroup/${SAMPLE}_y_tree.txt` | the placement on the current tree: `Hg` (the terminal branch, YFull's name), `Level` (its depth below the root), `Path_derived`, `Path_ancestral`, `Path_no_call` (the SNP calls of every branch on the path), `Ancestral_in_terminal`, `SNPs_called`, `Min_depth`, and `Tree` and `Positions`, the tree release and the position tables it used |
+| `y_haplogroup/${SAMPLE}_y_tree.txt` | the placement on the current tree: `Hg` (the terminal branch, YFull's name), `Level` (its depth below the root), `Path_derived`, `Path_ancestral`, `Path_no_call` (the SNP calls of every branch on the path), `Ancestral_in_terminal`, `SNPs_called`, `Min_depth`, `Tree` and `Positions` (the tree release and the position tables it used), and `Outvoted_ancestral` (below; `.` when none) |
 | `y_haplogroup/${SAMPLE}_y_tree_path.tsv` | one row per branch from the root to the terminal one: `SNPs` (its defining SNPs), `On_tables` (those the tables place), `Derived`, `Ancestral`, `No_call`, and the names of its ancestral SNPs |
+| `y_haplogroup/${SAMPLE}_y_private_snps.tsv` | the chrY SNVs no public SNP table names: `Pos`, `Ref`, `Alt`, `Depth`, `Alt_fraction`, `GQ`, `Genotype`, with the gates and the dropped counts in the header lines ("Private SNPs" below) |
 | `y_haplogroup/${SAMPLE}_chrY.bam` and `.bai` | the BAM's chrY reads only, the file the services below read; the Nextflow pipeline publishes the same file there (`Y_PILEUP`) |
 
 The chrY BAM is written every time this step runs on a male sample. Expect it to be about 1 to 2 percent of the analysis BAM, so a few hundred megabytes to a gigabyte on a 30x genome. That is an estimate from chrY's share of the reads; we have not measured it on a full genome. If you do not need it, delete it and its `.bai`.
 
-How the placement works. A SNP is called when at least 10 reads cover it and 90% of them carry one of its two bases, derived or ancestral (Yleaf's own defaults, `-r 10` and `-b 90`); anything else is a no-call. A branch is positive when it has a derived SNP and more derived than ancestral ones, and negative when it has an ancestral SNP and no more derived than ancestral ones. The terminal branch is the deepest positive branch with no negative branch above it. A branch with no call at all neither helps nor blocks, so a branch whose SNPs no table places does not stop the walk. SNPs in the pseudoautosomal regions are left out: the analysis set masks them on chrY.
+How the placement works. A SNP is called when at least 10 reads cover it and 90% of them carry one of its two bases, derived or ancestral (Yleaf's own defaults, `-r 10` and `-b 90`); anything else is a no-call. A branch is positive when it has a derived SNP and more derived than ancestral ones, and negative when it has an ancestral SNP and no more derived than ancestral ones. The terminal branch is the deepest positive branch with no blocking branch above it. A negative branch blocks the branches below it, with one exception: a branch with a single ancestral SNP is outvoted when the branches below it on the path carry derived SNPs at two or more distinct positions (two names for one site count once). Its SNP is then listed in `Outvoted_ancestral` and the step line names it. That is one site, not one read: a call already needs 10 reads and 90% of them on one base, so what it guards against is a wrong call at one site (a mismapped stretch, an error in the position table, a recurrent mutation) stopping a placement many SNPs below support. A branch with two or more ancestral SNPs still blocks, however much sits below it, and so does a second single-ancestral-SNP branch on the same path: one odd site is outvoted, two are not. A branch with no call at all neither helps nor blocks, so a branch whose SNPs no table places does not stop the walk. SNPs in the pseudoautosomal regions are left out: the analysis set masks them on chrY.
 
 `Ancestral_in_terminal` lists the SNPs of the terminal branch that read ancestral. The sample then shares only part of that branch's block of SNPs, which is a sign of a sub-branch the tree does not have yet; it can also be a read error, so look at the depth before reading much into it. In `_y_tree.txt`, `Hg` is `NA` when no branch has a derived call.
 
@@ -87,15 +87,29 @@ The two volunteer projects older guides name:
 
 Names differ between trees. Yleaf names branches the YFull way; FamilyTreeDNA keeps its own tree. If Discover shows no page for your branch, type the branch name, or the SNP after the dash, into Discover's search: it offers the nearest branch it has (a search for YFull's `A0-T` returns FamilyTreeDNA's `A-L1098`).
 
-**Private SNPs**, the Y mutations you carry that are on no public tree, are what would place you below your branch, next to the men closest to you. This pipeline does not list them yet: that needs the callable regions of chrY and a public SNP list beyond the markers Yleaf ships. YFull's analysis reports them as novel SNPs.
+**Private SNPs**, the Y mutations you carry that are on no public tree, are what would place you below your branch, next to the men closest to you. The step lists them in `y_haplogroup/${SAMPLE}_y_private_snps.tsv` (`bin/y_private_snps.py`), from your own chrY calls minus every position the two public SNP tables name. YFull's analysis reports the same kind of thing as novel SNPs; the file is a starting point for a comparison with other men, not a result in itself.
+
+How that list is built, and what each gate removes:
+
+- chrY only, outside the pseudoautosomal regions.
+- one REF base and one ALT base, with no second ALT allele at the site: a private SNP is a single-base change, and a multiallelic chrY record is a mapping artefact on a haploid chromosome.
+- the genotype carries the ALT allele and no REF allele (`1`, `1/1`, `1|1`). Outside PAR the Y is haploid, so a heterozygous call there is an artefact.
+- `FILTER` PASS or `.`, depth 10 or more, genotype quality 20 or more, and 90% or more of the reads carrying ALT (`--min-depth`, `--min-gq`, `--min-fraction`; the depth and fraction defaults are Yleaf's own `-r 10` and `-b 90`).
+- inside the accessible part of chrY: the base is marked `P` (passed) in the chrY strict accessibility mask of the 1000 Genomes Project on GRCh38 (release 20160622, about 8.0 Mb of chrY). `setup.sh --yleaf-data` installs it as `ytree/callable_mask_chrY.fasta.gz`, checked against its sha256 in `versions.env`; `--callable-mask` points at another one. Each run of `setup.sh --yleaf-data` checks the installed mask against that sha256. A mask that matches stays, with no download, also when a new tree pin installs the tables again or the tree download fails; one that fails the check, or is missing, is downloaded again on its own (`tests/test_y_private_mask_install.py`). The mask leaves out every base where the short reads of 2,691 samples had too many reads of mapping quality 0, a low average mapping quality, or depth outside a narrow band. That removes the ampliconic, palindromic, X-transposed and heterochromatic sequence, where a call is mostly a difference between near-identical copies rather than a mutation. The sample's own reads cannot find those places: in near-identical copies the aligner gives reads mapping quality 0, the caller drops them, and the calls that remain look normal.
+- depth no more than twice the median depth of the sample's own callable chrY calls (`--max-depth-factor`, 0 turns it off). This catches only a collapsed repeat this sample carries more copies of than the mask's samples did, where reads pile up on one place.
+- not on a public SNP list: every position in `positions_ftdna_hg38.txt` and `positions_yfull_hg38.txt`, the two tables `setup.sh --yleaf-data` installs, is removed. That subtraction is what makes the list private; without it the file would be mostly the markers the haplogroup call is already built on.
+
+The header lines of the file record the gates, the mask, the sample's median chrY depth and how many records each gate dropped, so a surprising count can be traced. **Each row is unconfirmed until another man is found who carries the same mutation.** Some rows are sequencing or mapping errors. Some are real mutations only this line carries, which no tree can place. The count is not a measure of anything on its own: it rises with coverage and falls with every tree release that names one of them.
+
+The scan needs step 03's VCF (`${SAMPLE}/vcf/${SAMPLE}.vcf.gz`) and the current tree's tables and mask. Without them, the step says so in one line and writes the rest of its output as before.
 
 ## Runtime
 
-Not measured on a full genome; the end test runs the step on the fixture's chrY slices only. An estimate is a few minutes: Yleaf reads the pileup at about 129,000 Y marker positions, and the current tree's pileup is at about 369,000 more. The placement reads the tree and the tables in about a second.
+Not measured on a full genome; the end test runs the step on the fixture's chrY slices only. An estimate is a few minutes: Yleaf reads the pileup at about 183,000 Y marker positions, and the current tree's pileup is at about 369,000 more. The placement reads the tree and the tables in about a second.
 
 ## Notes
 
-- Yleaf 3 places the sample on the YFull tree v10.01 and names the haplogroup by clade and defining marker, for example `R-M269`. Its `QC-score` (0 to 1) is how consistently the markers on the path to that branch agree; the default acceptance threshold is 0.95.
+- Yleaf 4 places the sample on the YFull tree v14.01 and names the haplogroup by clade and defining marker, for example `R-M269`. Its `QC-score` (0 to 1) is how consistently the markers on the path to that branch agree; the default acceptance threshold is 0.95.
 - Short reads cover only the unique parts of the Y; that is enough for a haplogroup at 30x.
-- The two results can differ in depth and in name: YFull renames and splits branches between releases. When they disagree on the lineage itself, not just the depth, look at the per-level table: a lineage with ancestral calls on its path is the weaker one.
+- The two results can differ in depth and in name: YFull renames and splits branches between releases, and the two use different position tables. When they disagree on the lineage itself, not just the depth, look at the per-level table: a lineage with ancestral calls on its path, an outvoted one included, is the weaker one.
 - On the e2e fixture (six stretches of chrY, 1.3 Mb in all) the step runs on a copy of HG002 with a male indexcov row, because indexcov reads the fixture's slices as female.

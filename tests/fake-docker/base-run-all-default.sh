@@ -48,6 +48,9 @@ NV=$(sed -n 's/^NEXTFLOW_VERSION="\(.*\)".*/\1/p' "${REPO_ROOT}/versions.env")
 # The bundled catalog's copy is named after the ExpansionHunter image tag.
 EXPANSIONHUNTER_IMAGE=$(sed -n 's/^EXPANSIONHUNTER_IMAGE="\(.*\)".*/\1/p' "${REPO_ROOT}/versions.env")
 [ -n "$EXPANSIONHUNTER_IMAGE" ] || fail "cannot read EXPANSIONHUNTER_IMAGE from versions.env"
+# Step 43 names its data folder after the archaic data version.
+AV=$(sed -n 's/^ARCHAIC_DATA_VERSION="\(.*\)".*/\1/p' "${REPO_ROOT}/versions.env")
+[ -n "$AV" ] || fail "cannot read ARCHAIC_DATA_VERSION from versions.env"
 want="nextflow :: cwd=$(cd "${G}/sample1/nextflow" && pwd) :: NXF_VER=${NV} :: $(printf '%q ' run "${REPO_ROOT}/main.nf" -profile docker -resume \
   --input "$SHEET" --reference "${G}/reference/GRCh38_no_alt_analysis_set.fasta" --outdir "$G" --tools "$TOOLS" \
   --clinvar "$CV" --clinvar_index "${CV}.tbi" --expansion_catalog "${G}/reference/expansionhunter_variant_catalog-${EXPANSIONHUNTER_IMAGE##*:}.json" \
@@ -72,7 +75,7 @@ output_has run-all 'NOTE: starting from the existing VCF, with no gVCF with its 
 [ "$(grep -cE '^  [0-9]+b? .* runs$' "${CASE_WORK}/run-all.out")" -eq 15 ] || fail "not 15 steps run: $(grep -E ' runs$' "${CASE_WORK}/run-all.out" | tr '\n' '|')"
 [ "$(grep -cE '^  [0-9]+b? .* skipped ' "${CASE_WORK}/run-all.out")" -eq 20 ] || fail "not 20 steps skipped"
 output_has run-all '^  33 Sample identity and QC +skipped +\(data not installed: reference/somalier/sites\.hg38\.vcf\.gz\)$'
-output_has run-all '^  43 Archaic ancestry \(IBDmix\) +skipped +\(data not installed: reference/archaic/snpad2016-1kgp3-v1/DONE\)$'
+output_has run-all "^  43 Archaic ancestry \\(IBDmix\\) +skipped +\\(data not installed: reference/archaic/${AV}/DONE\\)\$"
 output_has run-all '^  42 Traits panel +skipped +\(no gVCF: sample1/vcf/sample1\.g\.vcf\.gz\)$'
 output_has run-all '^  26 Ancestry \(pgsc_calc\) +skipped +\(needs PRS\)$'
 output_has run-all '^  26b Fine-grained ancestry +skipped +\(data not installed: reference/ancestry_fine/hgdp1kgp_v2/model/DONE\)$'
