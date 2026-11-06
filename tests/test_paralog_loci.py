@@ -22,13 +22,16 @@ compares the two names lists for the five populations).
      (owner cn-depth), except RHCE, whose model covers RHD as a cross-check
      of the RHD row (the exemption is needed: without it RHCE is refused);
      every catalog gene assets/callability_genes.tsv lists has the owner
-     parascopy there (a planted '.' owner is refused);
+     parascopy there (a planted '.' owner is refused), and the catalog
+     genes it does not list are the 17 of NOT_IN_CALLABILITY;
   4. the report readers: the not-assessed row step 35 writes (its own lines,
      cut from scripts/35-paralogs.sh and run) gives a reading that names the
      reason in bin/collect_summary.py, and in bin/paraphase_report.py and
      bin/couple_report.py (the Paraphase side-by-side and the couple screen),
      and a called table still reads as before. Control: the old row with "."
-     for its place is not found over SMN1 exon 7 there.
+     for its place is not found over SMN1 exon 7 there. A catalog table
+     without agCN_filter or agCN_qual is unreadable, not "not resolved"
+     (control: the same table with every column is called).
 
 Run: python3 tests/test_paralog_loci.py
 """
@@ -50,6 +53,13 @@ CALLABILITY = os.path.join(REPO, "assets", "callability_genes.tsv")
 # RHCE's model covers most of RHD, and the catalog reads it as a cross-check.
 CN_DEPTH_EXEMPT = {("RHCE.gz", "RHD")}
 CONTIGS = {f"chr{c}" for c in list(range(1, 23)) + ["X", "Y"]}
+# The catalog genes assets/callability_genes.tsv does not list. build-callability.sh takes its
+# genes from GIAB's CMRG list and genome stratifications only, never from this catalog (it says
+# why): seven are pseudogenes, which it leaves out as not protein-coding, and none of its
+# reasons applies to the other ten. Step 35's own section gives their reading. A new catalog gene missing
+# there, or one of these listed, changes this set and goes red: rebuild, or extend the set.
+NOT_IN_CALLABILITY = {"CELP", "GBAP1", "NCF1B", "NCF1C", "OTOAP1", "PMS2CL", "STRCP1",
+                      "ABCC6", "CFH", "CFHR4", "CHRNA7", "DEFA3", "KRT86", "NEB", "PIK3CA", "PLG", "VWF"}
 
 FAILS = 0
 
@@ -236,6 +246,15 @@ def main():
     check("every catalog gene assets/callability_genes.tsv lists has the owner parascopy", not found, "; ".join(found))
     check("the callability catalog lists catalog genes (GBA1, C4A, AMY1C, SMN1 among them)",
           {"GBA1", "C4A", "AMY1C", "SMN1"} <= {r["gene"] for r in cal if r["gene"] in catalog_genes})
+    def unlisted(cal_rows):
+        return catalog_genes - {r["gene"] for r in cal_rows}
+    absent = unlisted(cal)
+    check("the catalog genes the callability catalog does not list are the 17 known ones",
+          absent == NOT_IN_CALLABILITY, sorted(absent ^ NOT_IN_CALLABILITY))
+    planted_neb = cal + [dict(cal[0], gene="NEB", owner="parascopy")]
+    check("control: a callability row for NEB, one of the 17, makes the set differ",
+          "NEB" in NOT_IN_CALLABILITY and unlisted(planted_neb) != NOT_IN_CALLABILITY,
+          sorted(unlisted(planted_neb) ^ NOT_IN_CALLABILITY))
     planted_cal = [dict(r, owner=".") if r["gene"] == "C4A" else r for r in cal]
     check("control: a catalog gene without the owner parascopy is refused",
           bool(callability_problems(catalog_genes, planted_cal)))
@@ -281,6 +300,23 @@ def main():
         check("report: a called SMN table still reads one SMN1 copy as a carrier",
               data["smn1"]["cn"] == 1 and "carrier" in data["reading"] and "not assessed" not in data["reading"],
               data.get("reading"))
+        # a catalog table without agCN_filter or agCN_qual: unreadable, never "not resolved" (which
+        # would say Parascopy ran and gave no whole copy number)
+        g = os.path.join(d, "paralogs", "S_gba1_copy_number.tsv")
+        for drop in ("agCN_filter", "agCN_qual"):
+            cols = [c for c in head11.rstrip("\n").split("\t") if c != drop]
+            vals = {"chrom": "chr1", "start": "155231478", "end": "155244699", "locus": "GBA", "agCN_filter": "PASS",
+                    "agCN": "4", "agCN_qual": "40", "psCN_filter": "PASS", "psCN": "2,2", "psCN_qual": "30,30",
+                    "homologous_regions": "*"}
+            with open(g, "w") as f:
+                f.write("\t".join(cols) + "\n" + "\t".join(vals[c] for c in cols) + "\n")
+            loc = collect_summary.parascopy_locus("gba1", g, None)
+            check(f"report: a catalog table without {drop} is unreadable, not 'not resolved'",
+                  loc["status"] == "unreadable" and loc["cn"] is None, loc)
+        with open(g, "w") as f:
+            f.write(head11 + "chr1\t155231478\t155244699\tGBA\tPASS\t4\t40\tPASS\t2,2\t30,30\t*\n")
+        loc = collect_summary.parascopy_locus("gba1", g, None)
+        check("control: the same table with every column is called", loc["status"] == "called" and loc["cn"] == 4, loc)
 
     if FAILS:
         print(f"{FAILS} check(s) failed")

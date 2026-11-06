@@ -50,6 +50,10 @@ VARIANT_HEADER = ["region", "chrom", "pos", "ref", "alt", "filter", "haplotypes"
 GENES_TSV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets",
                          "paraphase_genes.tsv")
 GENES_COLUMNS = ["region", "gene", "field", "reading", "source"]
+# Fields read by code written for one region's JSON: genotype is HBA's
+# (hba_rows counts hba1hap and hba2hap haplotypes), annotated_alleles RCCX's
+# (rccx_rows). A catalog row naming one of them on another region is refused.
+REGION_FIELDS = {"genotype": "hba", "annotated_alleles": "rccx"}
 
 
 def load_genes(path=None):
@@ -66,6 +70,9 @@ def load_genes(path=None):
     for n, c in enumerate(lines[1:], 2):
         if len(c) != len(GENES_COLUMNS) or not all(x.strip() for x in c):
             raise Unreadable(f"{path}: row {n} does not have the five columns filled")
+        if REGION_FIELDS.get(c[2], c[0]) != c[0]:
+            raise Unreadable(f"{path}: row {n} reads field {c[2]} on region {c[0]}; "
+                             f"that field is read only on region {REGION_FIELDS[c[2]]}")
         out.setdefault(c[0], []).append((c[1], c[2]))
     return out
 
@@ -293,6 +300,13 @@ def gene_rows(name, region, genes=None):
     rsi = region.get("region_specific_info") or {}
     rows = []
     for gene, field in entries:
+        # genotype and annotated_alleles are the two exceptions to the
+        # not-assessed rule below: their copy number does not come from the
+        # field. HBA counts its genes from the haplotype names, so without a
+        # genotype its rows keep that count, with status "no call" and the
+        # detail that Paraphase could not resolve the alleles; RCCX reads the
+        # module's copies from total_cn, so without annotated_alleles its row
+        # keeps the copies and lists no allele.
         if field == "genotype":
             rows += [r for r in hba_rows(region) if r[0] == gene]
         elif field == "annotated_alleles":

@@ -43,6 +43,15 @@
 # none. A change to one of those three files changes the owners, so rebuild
 # after it.
 #
+# assets/paralog_loci.tsv names owners only; it is not a source of rows. The
+# rows say where short reads fail by the measures above, gene body by gene
+# body, and a Parascopy model may cover only part of a gene. Seventeen catalog
+# genes are not rows: seven are pseudogenes (CELP, GBAP1, NCF1B, NCF1C,
+# OTOAP1, PMS2CL, STRCP1), left out as not protein-coding, and no reason
+# above applies to the other ten (ABCC6, CFH, CFHR4, CHRNA7, DEFA3, KRT86,
+# NEB, PIK3CA, PLG, VWF). Step 35's own report section reads all of them.
+# tests/test_paralog_loci.py holds that list and goes red when it changes.
+#
 # Needs curl, python3 and sha256sum or shasum. The e2e case
 # tests/e2e/callability-1-catalog.sh runs it and fails on any difference with
 # the committed file.
