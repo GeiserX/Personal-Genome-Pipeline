@@ -25,7 +25,8 @@ Checks:
      LOCITYPER_IMAGE for 53, MOCHA_PANEL_VERSION and MOCHA_IMAGE for 51,
      VNTYPER_IMAGE for 52, MEGANE_IMAGE for 50) marks its step.
  12. check() itself names step 53 rerun-ready when the run used an older
-     LOCITYPER_PANEL_VERSION than this checkout pins, and not when they match.
+     LOCITYPER_PANEL_VERSION than this checkout pins, and not when they match;
+     its action names setup.sh --locityper-data, which the main setup leaves out.
 Each check is then run against a planted mistake and must fail there.
 
 Run: python3 tests/test_owngenome_recheck.py
@@ -548,8 +549,10 @@ def check_marks_53(m, steps):
             f.write("version\tLOCITYPER_PANEL_VERSION\tpanel-1.0\n")
         st = m.check("S1", g, answers(m, g), steps, dict(THIS_PINS, LOCITYPER_PANEL_VERSION="panel-2.0"), "3.66.0")
         same = m.check("S1", g, answers(m, g), steps, dict(THIS_PINS, LOCITYPER_PANEL_VERSION="panel-1.0"), "3.66.0")
-        return ("53" in st["rerun_ready_steps"] and "53" not in same["rerun_ready_steps"],
-                (st["rerun_ready_steps"], same["rerun_ready_steps"]))
+        act = by_item(st).get("LOCITYPER_PANEL_VERSION", {}).get("action", "")
+        return ("53" in st["rerun_ready_steps"] and "53" not in same["rerun_ready_steps"]
+                and "./scripts/setup.sh --locityper-data $GENOME_DIR" in act,
+                (st["rerun_ready_steps"], same["rerun_ready_steps"], act))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -558,7 +561,7 @@ def main():
     m = load()
     steps = m.run_state.read_steps(m.STEPS_TSV)
     ok, detail = check_marks_53(m, steps)
-    check("a run on an older LOCITYPER_PANEL_VERSION makes check() name step 53 rerun-ready", ok, detail)
+    check("a run on an older LOCITYPER_PANEL_VERSION makes check() name step 53 rerun-ready, with setup.sh --locityper-data", ok, detail)
     blank = [dict(st, reads="") if st["step"] == "53" else st for st in steps]
     check("fails on a planted mistake: a run on an older LOCITYPER_PANEL_VERSION makes check() name step 53 "
           "(row 53 with no reads)", not check_marks_53(m, blank)[0], "passed on the mutant")
