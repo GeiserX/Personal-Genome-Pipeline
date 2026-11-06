@@ -337,6 +337,38 @@ def test_report():
               "The father is not sequenced. At 2 of these sites (66.7%)" in md and "needs both parents sequenced" in md, md)
 
 
+def test_daughter_x():
+    """A daughter's X comes from both parents: an allele the father carries is not de novo."""
+    daughter = TRIO.replace("kid\tmale", "kid\tfemale")
+    #            dad    kid    mum
+    rows = [
+        ("chrX", 5000000, "A", "G", ["1/1", "1/1", "0/0"]),   # dad has G: mother's dropout, not de novo
+        ("chrX", 5000100, "A", "G", ["0/0", "0/1:30:14,16:50", "0/0"]),  # neither parent has G: de novo
+        ("chrX", 5000200, "A", "G", ["1/1", "0/1", "0/0"]),   # one from each parent
+    ]
+    with tempfile.TemporaryDirectory() as d:
+        prepare(d, daughter)
+        out = os.path.join(d, "out")
+        members = os.path.join(out, "members.tsv")
+        pairs = pairs_file(os.path.join(d, "pairs.tsv"),
+                           [("dad", "kid", 0.49, 2, 5000), ("kid", "mum", 0.51, 1, 5000), ("dad", "mum", 0.01, 600, 5000)])
+        rel = os.path.join(out, "relationships.tsv")
+        run("check", "--members", members, "--pairs", pairs, "--out", rel)
+        vcf = joint(os.path.join(d, "family.vcf.gz"), rows)
+        rc, log = run("report", "--members", members, "--relationships", rel, "--vcf", vcf,
+                      "--par-bed", PAR, "--out-dir", out)
+        check("daughter: report runs (exit %d)" % rc, rc == 0, log)
+        inh = read_inh(os.path.join(out, "kid_inheritance.tsv.gz"))
+        check("daughter chrX:5000000 (dad 1/1, mum 0/0, kid 1/1) is inconsistent",
+              inh.get(("chrX", 5000000), {}).get("how") == "inconsistent", str(inh.get(("chrX", 5000000))))
+        check("daughter chrX:5000200 one allele from each parent",
+              (inh[("chrX", 5000200)]["from_father"], inh[("chrX", 5000200)]["from_mother"]) == ("G", "A"),
+              str(inh.get(("chrX", 5000200))))
+        dn = tsv(os.path.join(out, "de_novo.tsv"))
+        check("daughter: only the allele neither parent has is a de novo candidate, not the father's",
+              [(r["chrom"], r["pos"]) for r in dn] == [("chrX", "5000100")], str(dn))
+
+
 FIX = os.path.join(REPO, "tests", "fixtures", "families")
 TWO = os.path.join(FIX, "two_families.tsv")
 
@@ -518,6 +550,7 @@ if __name__ == "__main__":
     test_kinship()
     test_check()
     test_report()
+    test_daughter_x()
     test_families_file()
     test_plan()
     if FAILS:
