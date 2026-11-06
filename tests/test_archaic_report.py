@@ -378,14 +378,15 @@ def synthetic(d, plant, mid=None):
         else:
             f = rnd.uniform(0.1, 0.9)
             al = vi = de = sum(rnd.random() < f for _ in range(2))
-        rows.append(f"chr22\t{pos}\tA\tG\t{al}\t{vi}\t{de}\t" + "\t".join([f"{f:.4f}"] * 6))
+        ta, tv = al, vi          # the codes the table writes
         g = [rnd.random() < f, rnd.random() < f]
         if plant and NEA[0] <= pos < NEA[1]:
             g[0] = al == 2
         if mid and MID[0] <= pos < MID[1]:
             if kind == 0:
                 g = [False, False]
-            al, vi = (al + ar.MASKED, vi + ar.MASKED) if mid == "masked" else (9, 9)
+            ta, tv = (al + ar.MASKED, vi + ar.MASKED) if mid == "masked" else (9, 9)
+        rows.append(f"chr22\t{pos}\tA\tG\t{ta}\t{tv}\t{de}\t" + "\t".join([f"{f:.4f}"] * 6))
         if plant and DEN[0] <= pos < DEN[1]:
             g[0] = de == 2
         if any(g):
