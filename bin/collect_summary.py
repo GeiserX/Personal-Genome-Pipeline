@@ -3794,6 +3794,9 @@ def gene_deletions(d, s, spans):
             a, _, b = span.partition("-")
             if x["type"] != "DEL" or x["common"] or not (a.isdigit() and b.isdigit()):
                 continue
+            # A call genotyped 0/0 (or 0|0) is no deletion in this sample: it pairs with nothing.
+            if x.get("gt") and set(x["gt"].replace("|", "/").split("/")) == {"0"}:
+                continue
             chrom = chrom if chrom.startswith("chr") else "chr" + chrom
             # SV_start is the base before the deleted bases (annotsv_postfilter.sv_span):
             # they are SV_start+1 to SV_end, 1-based. The text keeps AnnotSV's coordinates.
