@@ -675,16 +675,17 @@ class Live:
                     rel = os.path.normpath(urllib.parse.unquote(h))
                     if not rel.startswith("..") and rel != ".":
                         out.add(rel)
-                        # A link to a folder (the report's cpsr/ when it holds CPSR's
-                        # HTML): the HTML files directly in it, which the folder
-                        # request redirects to (run_path).
-                        if h.endswith("/") and os.path.isdir(os.path.join(d, rel)):
-                            out.update(os.path.join(rel, f) for f in os.listdir(os.path.join(d, rel))
-                                       if f.lower().endswith(".html") and os.path.isfile(os.path.join(d, rel, f)))
         return out
 
     def run_file_allowed(self, run, rel):
-        return rel in self.run_files(run) or any(fnmatch.fnmatch(rel, g) for g in self.app.run_globs)
+        files = self.run_files(run)
+        if rel in files or any(fnmatch.fnmatch(rel, g) for g in self.app.run_globs):
+            return True
+        # An HTML file directly in a folder the report links (cpsr/, which holds
+        # CPSR's own report): the folder request redirects to it (run_path).
+        folder = os.path.dirname(rel)
+        return (bool(folder) and folder in files and rel.lower().endswith(".html") and bool(run["dir"])
+                and os.path.isdir(os.path.join(run["dir"], folder)))
 
     def index_page(self):
         assets = self.cfg.assets
