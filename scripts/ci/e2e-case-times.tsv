@@ -108,6 +108,8 @@ nextflow-from-fastq-3-sexcheck	shard	97	-
 nextflow-hardening-1-manta	shard	21	-
 nextflow-hardening-2-nf	shard	643	bash-step-19-delly,nextflow-hardening-1-manta
 nextflow-report-parity-1-sections	shard	206	clinvar-clip-check-1,comphet-phasing-1-reads
+nf-wiring-1-report-tables	shard	300	clinvar-clip-check-1
+nf-wiring-2-sv-str-tools	shard	900	-
 paralog-catalog-1-gba	shard	114	-
 paralog-checks-and-doc-fixes-1-hba	shard	57	-
 paralog-rows-1	shard	316	-
