@@ -166,10 +166,14 @@ file	{sample}/mosaic/{sample}_mocha_calls_raw.tsv	51	MOCHA_CALL	nextflow	tsv	exp
 file	{sample}/mosaic/{sample}_mocha_sites.tsv	51	MOCHA_CALL	nextflow	tsv	experimental	-	-
 file	{sample}/mosaic/{sample}_mocha_stats.tsv	51	MOCHA_CALL	nextflow	tsv	experimental	-	-
 file	{sample}/mosaic/{sample}_mocha_summary.tsv	51	MOCHA_REPORT	nextflow	tsv	experimental	-	-
+file	{sample}/locityper/{sample}_locityper.log	53	LOCITYPER	both	text	experimental	-	-
+file	{sample}/locityper/{sample}_locityper.tsv	53	LOCITYPER	both	tsv	experimental	-	-
+file	{sample}/locityper/work	53	LOCITYPER	both	dir	experimental	-	-
 file	{sample}/mosdepth/{sample}.mosdepth.summary.txt	16b	-	bash	tsv	stable	bash	chrom,length,bases,mean,min,max
 file	{sample}/paralogs/{sample}_*_copy_number.tsv	35	PARASCOPY	nextflow	tsv	experimental	-	-
 file	{sample}/paralogs/{sample}_cn_dosage.tsv	35	PARASCOPY	nextflow	tsv	experimental	-	-
 file	{sample}/paralogs/{sample}_cn_intervals.tsv	35	PARASCOPY	nextflow	tsv	experimental	-	-
+file	{sample}/paralogs/{sample}_cyp21a2_psv.tsv	35	PARASCOPY	both	tsv	experimental	-	-
 file	{sample}/paralogs/{sample}_hba_copy_number.tsv	35	PARASCOPY	nextflow	tsv	experimental	-	-
 file	{sample}/paralogs/{sample}_paraphase	35b	PARAPHASE	nextflow	dir	experimental	-	-
 file	{sample}/paralogs/{sample}_paraphase_copy_number.tsv	35b	PARAPHASE_REPORT	nextflow	tsv	experimental	-	-
@@ -244,6 +248,7 @@ file	{sample}/y_haplogroup/{sample}_chrY.bam.bai	37	Y_PILEUP	nextflow	index	expe
 file	{sample}/y_haplogroup/{sample}_idxstats.txt	37	Y_PILEUP	nextflow	text	internal	-	-
 file	{sample}/y_haplogroup/{sample}_y_haplogroup.txt	37	Y_HAPLOGROUP	nextflow	text	experimental	-	-
 file	{sample}/y_haplogroup/{sample}_y_pileup.txt	37	Y_PILEUP	nextflow	text	internal	-	-
+file	{sample}/y_haplogroup/{sample}_y_private_snps.tsv	37	Y_PRIVATE	nextflow	tsv	experimental	-	-
 file	{sample}/y_haplogroup/{sample}_y_tree.txt	37	Y_HAPLOGROUP	nextflow	text	experimental	-	-
 file	{sample}/y_haplogroup/{sample}_y_tree_path.tsv	37	Y_HAPLOGROUP	nextflow	tsv	experimental	-	-
 file	{sample}/y_haplogroup/{sample}_y_tree_pileup.txt	37	Y_PILEUP	nextflow	text	internal	-	-
@@ -314,6 +319,8 @@ param	archaic_pop	-	-	-	-	experimental	-	-
 param	consumer_sites	-	-	-	-	experimental	-	-
 param	megane_kmers	-	-	-	-	experimental	-	-
 param	mocha_data	-	-	-	-	experimental	-	-
+param	locityper_data	-	-	-	-	experimental	-	-
+param	locityper_bg_region	-	-	-	-	experimental	-	-
 param	viral_ref	-	-	-	-	experimental	-	-
 param	chip_gff	-	-	-	-	experimental	-	-
 param	chip_germline_resource	-	-	-	-	experimental	-	-
@@ -365,6 +372,7 @@ tool	cram_archive	34	-	-	-	experimental	-	-
 tool	parascopy	35	-	-	-	experimental	-	-
 tool	paraphase	35b	-	-	-	experimental	-	-
 tool	y_haplogroup	37	-	-	-	experimental	-	-
+tool	locityper	53	-	-	-	experimental	-	-
 tool	html_report	24	-	-	-	stable	-	-
 tool	multiqc	28	-	-	-	stable	-	-
 tool	consumer_export	40	-	-	-	experimental	-	-
