@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      checks: read
     steps:
       # The tag comes from the dispatch form or the pushed ref, so it is
       # untrusted text: it reaches the shell through env only, and it must
@@ -43,45 +44,36 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Generate release notes
-        id: notes
+      # A release is named after the version the pipeline reports, so the tag
+      # must equal manifest.version in nextflow.config at the tagged commit,
+      # and a major or minor release needs its curated notes,
+      # docs/releases/<tag>.md, which become the release body.
+      - name: The tag matches manifest.version, and the notes exist
         env:
           TAG: ${{ steps.tag.outputs.tag }}
+        run: scripts/ci/check-release.sh tag "$TAG" --notes-out "${RUNNER_TEMP}/notes.md"
+
+      # Only a commit that main's CI passed is released: it must be on main,
+      # and every check run on it (this job left out) must have finished green.
+      - name: The tagged commit is on main and its checks passed
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
-          # Verify the tag exists in the repo
-          if ! git rev-parse "${TAG}" >/dev/null 2>&1; then
-            echo "ERROR: Tag ${TAG} does not exist in this repository" >&2
+          sha=$(git rev-parse "${TAG}^{commit}")
+          if ! git merge-base --is-ancestor "$sha" origin/main; then
+            echo "ERROR: ${TAG} (${sha}) is not a commit on main" >&2
             exit 1
           fi
-
-          # Find previous tag
-          PREV_TAG=$(git tag --sort=-version:refname | grep '^v' | grep -v "^${TAG}$" | head -1)
-
-          if [ -n "$PREV_TAG" ]; then
-            RANGE="${PREV_TAG}..${TAG}"
-          else
-            RANGE="${TAG}"
-          fi
-
-          {
-            echo "notes<<EOF"
-            echo "## What's Changed"
-            echo ""
-            git log "$RANGE" --pretty=format:"- %s" --no-merges 2>/dev/null || echo "- Initial release"
-            echo ""
-            echo ""
-            echo "## Docker Images"
-            echo ""
-            echo "All image versions are listed in [\`versions.env\`](versions.env)."
-            echo ""
-            echo "To set up: \`./scripts/setup.sh /path/to/data\`"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+          gh api --paginate "repos/${REPO}/commits/${sha}/check-runs?per_page=100" \
+            --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv' > "${RUNNER_TEMP}/runs.tsv"
+          scripts/ci/check-release.sh checks "${RUNNER_TEMP}/runs.tsv" --ignore "$GITHUB_JOB"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: ${{ steps.tag.outputs.tag }}
-          body: ${{ steps.notes.outputs.notes }}
+          body_path: ${{ runner.temp }}/notes.md
           draft: false
