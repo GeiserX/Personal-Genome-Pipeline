@@ -226,6 +226,17 @@ def test_svlen(w):
     rc, out2, err2 = run("sv_svlen_fix.py", again)
     check("a second run changes nothing", rc == 0 and out2 == out, err2)
 
+    # One sample only: the reports read the GT and PS of the first sample
+    # column, so a second person's column (here the carrier, after a 0/0)
+    # must stop the step, not be read silently.
+    two = os.path.join(w, "two.vcf")
+    with open(two, "w") as f:
+        f.write(SV.replace("\ts1\n", "\ts1\ts2\n")
+                + "chr20\t1300000\tsym\tN\t<DEL>\t50\tPASS\tEND=1310000;SVTYPE=DEL\tGT\t0/0\t0/1\n")
+    rc, out3, err3 = run("sv_svlen_fix.py", two)
+    check("a VCF with two sample columns stops (exit 2) and names them",
+          rc == 2 and "holds 2 samples (s1, s2)" in err3 and not records(out3), (rc, err3))
+
 
 BASE = (
     "##fileformat=VCFv4.1\n##contig=<ID=chr1,length=248956422>\n##contig=<ID=chr20,length=64444167>\n"

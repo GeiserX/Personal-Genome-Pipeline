@@ -91,7 +91,7 @@ docker run --rm --user "$(id -u):$(id -g)" \
     -bracketedAltMode DEL,DUP,INS
 ```
 
-To annotate another SV VCF (for example Sniffles2 output), set `SV_VCF` to its host path; the file must be inside `${GENOME_DIR}`.
+To annotate another SV VCF (for example Sniffles2 output), set `SV_VCF` to its host path; the file must be inside `${GENOME_DIR}` and hold one sample. The reports read the genotype and phase of the first sample column, so a VCF with more sample columns stops the step (`bin/sv_svlen_fix.py`) instead of letting another person's genotype decide; pick the sample first with `bcftools view -s <sample>`.
 
 ## Output
 - `${GENOME_DIR}/${SAMPLE}/annotsv/${SAMPLE}_sv_annotated.tsv` — main annotated output (one row per SV, with ACMG class)
