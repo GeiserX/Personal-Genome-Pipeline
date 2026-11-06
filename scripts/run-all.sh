@@ -306,7 +306,7 @@ else echo "  benchmark-variants skipped (only one caller VCF: set EXTRA_CALLERS,
 export NXF_VER=${NXF_VER:-$NEXTFLOW_VERSION}
 # The live site (docs/live-site.md). Nextflow's weblog is the nf-weblog plugin, which Nextflow 26.10 loads only when
 # a config names it, so the block lives in a config of this run's own, passed only when OWNGENOME_LIVE_URL is set: a run
-# without it neither downloads the plugin nor warns about an unknown weblog scope. Bump the pin with its release.
+# without it neither downloads the plugin nor warns about an unknown weblog scope. Renovate bumps the pin (renovate.json).
 NF_WEBLOG_PLUGIN=nf-weblog@1.2.0
 if [ -n "${OWNGENOME_LIVE_URL:-}" ]; then
   # The ingest listener speaks plain HTTP and serves /ingest/<run> at its root, so https or a path would lose every post.
