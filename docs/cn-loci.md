@@ -1,6 +1,6 @@
 # Copy Number from Depth (the locus catalog)
 
-Several steps count copies of a gene from short-read depth: HBA1 and HBA2 in step 35, the RHD deletion in step 41 and the LPA KIV-2 repeat in step 46. Step 35 also counts three gene-dosage loci that no pinned caller models (HP, LCE3B/LCE3C and CCL3L1) and the interval rows: the recurrent CNV regions ClinGen curates (22q11.2, 1q21.1, 15q11.2, 16p11.2, 17p12 and the rest), five carrier deletion alleles and the Y chromosome AZF regions. They all use one engine, `bin/copy_number.py`, and one table, `bin/cn_loci.tsv`, with one row per locus. A new locus is a new row, not a new script.
+Several steps count copies of a gene from short-read depth: HBA1 and HBA2 in step 35, the RHD deletion in step 41 and the LPA KIV-2 repeat in step 46. Step 35 also counts three gene-dosage loci that no pinned caller models (HP, LCE3B/LCE3C and CCL3L1), CYP21A2 from depth and its pseudogene variant sites, and the interval rows: the recurrent CNV regions ClinGen curates (22q11.2, 1q21.1, 15q11.2, 16p11.2, 17p12 and the rest), five carrier deletion alleles and the Y chromosome AZF regions. They all use one engine, `bin/copy_number.py`, and one table, `bin/cn_loci.tsv`, with one row per locus. A new locus is a new row, not a new script.
 
 The table sits in `bin/` because `bin/` is the one repository folder that every container mounts: the bash steps mount it as `/pgp-bin`, and Nextflow puts it on every task's PATH.
 
@@ -25,6 +25,7 @@ Then the row's `call` column decides:
 
 - `round:D`: a whole number, when the estimate lies within D of one (HBA, D = 0.3);
 - `cut:A,B`: the number of cut points the estimate reaches (RHD: 0 under 0.5, 1 under 1.5, else 2);
+- `psv:D`: the module total of a gene and its pseudogene as `round:D` does, then the reads at the row's PSV sites ([the CYP21A2 row](#the-cyp21a2-row));
 - `class:LOW,HIGH`: low, typical or high from the 95% interval (LPA KIV-2, 30 and 45). With `interval` `cv`, that interval comes from the spread of the per-segment depths: relative standard error sqrt(cv_target^2 / n_target + cv_control^2 / n_control), applied on the log scale. It covers sampling noise only.
 
 `copy_number.py call --json` writes the result as one JSON block per locus: status, reason, estimate, copies, interval, class, the depths and the reading.
@@ -36,7 +37,7 @@ Then the row's `call` column decides:
 | `locus` | the row's name, as `--locus` takes it |
 | `kind` | `gene`, `interval` (a stretch between segmental duplications, controls outside them) or `organelle` |
 | `chrom` | GRCh38 contig of every segment |
-| `targets`, `controls`, `details` | `NAME:start-end[:label]`, separated by `;`, in BED coordinates (0-based start, end exclusive). Details get a copy number each but take no part in the call (the RHD exons) |
+| `targets`, `controls`, `details` | `NAME:start-end[:label]`, separated by `;`, in BED coordinates (0-based start, end exclusive). Details get a copy number each but take no part in the call (the RHD exons); in a `psv` row they are the PSV sites, one base each, labelled `PSEUDO_POS GENE>PSEUDO text` |
 | `target_depth` | `sum` (each target segment is one reference unit; their mean depths add up) or `pooled` (one length-weighted mean) |
 | `control_depth` | `flanks` (the mean of the flank means, each flank checked) or `pooled` |
 | `scale`, `offset` | as in the formula above |
@@ -60,6 +61,7 @@ Then the row's `call` column decides:
 | HP | 35 | the two reference copies of the duplicated HP exons (exons 3-4 and 5-6) against flanks outside HP and HPR | copies of the duplicated exons: 2 for Hp1-1, 3 for Hp2-1, 4 for Hp2-2 |
 | LCE3BC | 35 | LCE3C to LCE3B, inside the LCE3C_LCE3B deletion, against flanks outside it | 0, 1 or 2 copies: the deletion on both, one or no chromosome |
 | CCL3L1 | 35 | CCL3L3, the one reference copy of CCL3L1/CCL3L3, against single-copy flanks outside the duplications | total copies of CCL3L1 and CCL3L3, with no reading |
+| CYP21A2 | 35 | CYP21A2 and the matching stretch of CYP21A1P against flanks outside the RCCX duplication; six PSV sites as details | RCCX module total, CYP21A2 copies at each site, and a deletion or a possible conversion ([the CYP21A2 row](#the-cyp21a2-row)) |
 
 ### The gene-dosage rows
 
@@ -71,6 +73,19 @@ Step 35 (and the PARASCOPY module) runs these three rows one after the other and
 - **DEFB4** has no row. The beta-defensin repeat that carries it (DEFB4B to DEFB103B) lies in the paralog copies of SPAG11A's Parascopy model, so Parascopy owns it under the rule below. The test plants a DEFB4 row there and checks that the owner check catches it.
 
 The report does not show `<sample>_cn_dosage.tsv` yet; the table and the step log are where to read it.
+
+### The CYP21A2 row
+
+CYP21A2 and its pseudogene CYP21A1P lie in the duplicated RCCX module, about 98% identical (UCSC `genomicSuperDups` pairs chr6:31,980,532-32,013,273 with chr6:32,013,270-32,046,127). No pinned caller models CYP21A2 on short reads; Paraphase owns it on HiFi reads (step 35b) and is the row's `cross_check`, and C4 stays with Parascopy's C4A model, so both targets start where that model ends: CYP21A2 from chr6:32,038,951 to its last base (NM_000500.9) and the same stretch of CYP21A1P, chr6:32,006,221-32,008,909 (NR_040090.1), matched base by base. The flanks, chr6:31,945,001-31,975,000 and chr6:32,070,001-32,100,000, lie outside the duplication and every `genomicSuperDups` pair. Coordinates from UCSC's `ncbiRefSeq` and `genomicSuperDups` tracks, checked on 2026-11-04.
+
+The call has two parts:
+
+1. **The module total**: `scale` 2 times the two targets' depths added up over the flank depth, a whole number within 0.4, else not assessed (`between_counts`). Two modules per chromosome give 4. The tolerance is wider than HBA's 0.3 because the depth here runs high: HG002's 35x reads give 4.22, and a deletion planted in the same reads 3.32.
+2. **The PSV sites**: `copy_number.py bed --psv --locus CYP21A2` prints each site on CYP21A2 and on CYP21A1P, and `samtools mpileup -A -B -q 0 -Q 13 -d 100000` without a reference counts the bases there (every read whatever its mapping quality, bases of quality 13 or more; read starts, ends and indels are skipped). A read with CYP21A2's base counts for CYP21A2 at either position, since a converted copy's reads may land on the pseudogene. A site with 30 such reads or more gets `estimate = module total x CYP21A2 reads / (CYP21A2 + CYP21A1P reads)` and its ratio to the median of the sites.
+
+The sites, each CYP21A2's base in the reference with CYP21A1P's base at the matching position (dbSNP positions, the CYP21A1P bases read from the reference, checked on 2026-11-04): In2G c.293-13A/C>G (rs6467, chr6:32,039,081; CYP21A2 carries A or C there, CYP21A1P G), I172N c.518T>A (rs6475), V237E c.713T>A (rs12530380, the exon 6 cluster), V281L c.844G>T (rs6471), Q318X c.955C>T (rs7755898) and R356W c.1069C>T (rs7769409).
+
+A site is low when its estimate is more than 0.6 copies under the larger of the median site's count and 2. `cyp21a2_copies` is the least count over the low sites, or the median site's count when no site is low. The `finding` is `deletion` when a site is low and the module total is under 4 (the 30 kb chimeric deletion leaves one module fewer and a chimera with CYP21A1P's sequence at its 5' sites), `conversion` at the low sites when the module total is 4 or more, `pseudogene_deletion` when the module total is under 4 with no low site, and `none` otherwise. At 30x a site has about 70 reads, and read sampling alone gives an estimate of 2 copies there a standard deviation of about 0.25. On HG002's 35x reads the six sites read 1.62 to 2.82 copies, a wider spread, so the 0.6 margin is a screen setting, not a measured false-call rate. Which chromosome carries a change is not claimed, and a two-copy result does not rule out two copies on one chromosome and none on the other. The row has no MAPQ 0 guard yet: an aligner that leaves out the reads that fit both genes (novoalign by default) would lower the module total and could read as a deletion, and no such BAM has been measured here to set a threshold. Use a BAM from minimap2 or BWA-MEM. Step 35 writes the table to `<sample>_cyp21a2_psv.tsv` ([step 35](35-paralogs.md#cyp21a2-from-depth-and-psv-sites)); the couple screen takes it with `--cyp21a2`.
 
 ### The interval rows
 
@@ -115,4 +130,5 @@ pypgx owns the genes it calls from the BAM, the `bam` rows of `assets/pgx_genes.
 
 - `tests/test_copy_number.py` checks every row and refuses broken ones. For the three gene-dosage rows it calls made-up depths at 0 to 4 copies, cuts the dosage block out of step 35 and runs it on the made-up bedcov tables in `tests/fixtures/cn/` (HP 3, LCE3BC 1, CCL3L1 5 copies), checks that a row shifted by 1 kb no longer matches its table, and that the PARASCOPY module runs the same list. It runs the owner check with planted AMY1C, C4B and DEFB4 rows. It feeds made-up bedcov tables at 0, 1, 2, 3 and 4 copies and a MAPQ 0 share over the ceiling. It checks that a control with no read stops the run with `BROKEN_CONTROL`. It also checks that the depth tables of `tests/test_hba_copy_number.py` and `tests/test_lpa_kiv2.py` give, through the engine, the same tables the code before the engine wrote.
 - The fake-docker case `cn-engine-calls` runs steps 35, 41 and 46 with made-up depths. Each step calls `copy_number.py` once for its regions, step 35 and 46 once more for the call, and none calls the old per-gene scripts. A control exon with no read fails step 46 with `BROKEN_CONTROL`.
+- `tests/test_copy_number.py` section 10 checks the CYP21A2 row: its six sites, the pileup parser, and the fixtures `tests/fixtures/cn/CYP21A2_{normal,deletion,conversion}` (2 copies and no finding; 1 copy with the module total 3; an In2G ratio of 0.5 and a possible conversion), with the conversion's depths read with every site even as the red control (no finding). The e2e case `cyp21a2-short-reads-1-hg002` runs the step's and the module's blocks on HG002's reads, unmodified and with a planted conversion and a planted deletion.
 - The e2e case `cn-engine-1-parity` runs steps 41 and 46 and the HBA block of step 35 on HG002's real reads at the three loci, at full depth and at an eighth of it. The code before the engine is fetched by its commit, 6056452, so the comparison still means something after this change is on main. The LPA and HBA tables and the RhD rows of step 41's table and evidence file must be byte for byte what it wrote.

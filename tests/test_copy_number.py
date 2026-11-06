@@ -42,6 +42,19 @@ copy-number locus.
      a row with a broken control does not stop the others; the interval
      block of step 35, cut out and run, writes that table, and the PARASCOPY
      module runs the same commands.
+ 10. the CYP21A2 row (call psv): its six PSV sites hold the CYP21A2 base of
+     the reference with the CYP21A1P base at the matching position; the
+     pileup parser skips read starts, ends and indels; the fixtures of
+     tests/fixtures/cn/CYP21A2_<case> (bedcov and mpileup tables, made by
+     cyp_fixture here) give 2 copies and no finding when unmodified, 1 copy
+     with the module total down by one for a planted chimeric deletion, and
+     a ratio of 0.5 at In2G, a possible conversion, for a planted In2G
+     conversion on one copy; the same depths with the pileup ignored (every
+     site even) give no finding, so the call rests on the PSV reads; the
+     block of step 35, cut out and run on the fixtures, writes that table,
+     and writes not assessed when mpileup fails; the PARASCOPY module runs
+     the same commands; the couple screen counts the deletion and the
+     conversion as CYP21A2 findings and the unmodified table as none.
 
 Run: python3 tests/test_copy_number.py
 """
@@ -218,9 +231,9 @@ def owner_violations(cat, models):
 def main():
     # 1. the catalog
     cat = cn.load_catalog(CATALOG)
-    check("catalog: the six gene and dosage loci first, then the interval rows",
-          list(cat)[:6] == ["HBA", "LPA_KIV2", "RHD"] + DOSAGE
-          and all(r["kind"] == "interval" and r["_passes"] == ["."] for r in list(cat.values())[6:]), list(cat)[:8])
+    check("catalog: the six gene and dosage loci and CYP21A2 first, then the interval rows",
+          list(cat)[:7] == ["HBA", "LPA_KIV2", "RHD"] + DOSAGE + ["CYP21A2"]
+          and all(r["kind"] == "interval" and r["_passes"] == ["."] for r in list(cat.values())[7:]), list(cat)[:8])
     for loc, r in cat.items():
         check(f"catalog {loc}: owner cn-depth, cross_check named, PMIDs numbers or '.'",
               r["owner"] == "cn-depth" and re.fullmatch(r"none|[a-z]+:[A-Za-z0-9_]+(,[a-z]+:[A-Za-z0-9_]+)*",
@@ -481,8 +494,8 @@ def main():
             if loc != "RHD":   # step 41's report imports the engine
                 check(f"{path}: copy_number.py call --locus {loc}", f"copy_number.py call --locus {loc}" in text)
             passes = ["" if p == "." else p for p in cat[loc]["_passes"]]
-            if loc == "HBA":   # and the dosage loop's two passes (section 8), and the interval pass (section 9)
-                passes += ["", "-Q 1", ""]
+            if loc == "HBA":   # and the dosage loop's two passes (section 8), the interval pass (section 9)
+                passes += ["", "-Q 1", "", ""]  # and the CYP21A2 pass (section 10)
             # the commands only: options, then a path, a quoted argument or a variable
             calls = [o for o, arg in re.findall(r"samtools bedcov((?: -[A-Za-z](?: \d+)?)*) (\S+)", text)
                      if re.match(r'["$/]|\S+\.bed\b', arg)]
@@ -493,6 +506,7 @@ def main():
 
     dosage(cat, read)
     intervals(cat, read)
+    psv(cat, read)
 
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
     return 1 if FAILS else 0
@@ -808,6 +822,267 @@ def intervals(cat, read):
               [c["locus"] for c in ci.get("changes", [])] == ["AZFc_DAZ"] and ci.get("rows") == len(iv), ci)
         check("PARASCOPY module: the samplesheet sex goes to the interval rows",
               "def sex = meta.sex in ['male', 'female'] ? meta.sex : 'unknown'" in module and "--sex ${sex}" in module)
+
+
+# Section 10: the CYP21A2 row, call psv.
+CYP_CASES = {
+    # case: (module total, {site: CYP21A2 copies there}); the sites not named carry 2
+    "normal": (4, {}),
+    # the 30 kb chimeric deletion: one module fewer, its chimera carries CYP21A1P's sequence
+    # at the 5' sites (In2G, I172N) and CYP21A2's at the 3' ones
+    "deletion": (3, {"PSV_In2G": 1, "PSV_I172N": 1}),
+    # In2G converted to the pseudogene base on one of the two CYP21A2 copies
+    "conversion": (4, {"PSV_In2G": 1}),
+}
+CYP_FIX = os.path.join(REPO, "tests", "fixtures", "cn")
+
+
+def cyp_fixture(r, total, a2):
+    """(bedcov text, mpileup text) of a CYP21A2 genome: 15x per copy, flanks at 30x
+    (two copies), two CYP21A2 copies on CYP21A2's body and the rest of the module
+    total on CYP21A1P's. At each site the reads carrying CYP21A2's base (a2 copies,
+    2 by default) and CYP21A1P's (the rest) are split 4 to 1 between the CYP21A2
+    and the CYP21A1P position, in both cases, with read starts, ends and an indel
+    in the bases column, as samtools mpileup without a reference writes them."""
+    depth = {n: 30.0 for *_, n in cn.regions(r)}
+    depth["CYP21A2_BODY"], depth["CYP21A1P_BODY"] = 30.0, 15.0 * (total - 2)
+    bed = "".join(f"{c}\t{s}\t{e}\t{n}\t{round(depth[n] * (e - s))}\n" for c, s, e, n in cn.regions(r))
+    lines = []
+    for name, g, p, gb, pb, _ in r["_psv"]:
+        gene, pseudo = 15 * a2.get(name, 2), 15 * (total - a2.get(name, 2))
+        gbase, pbase = sorted(gb)[-1], sorted(pb)[0]
+        for pos, share in ((g, 0.8), (p, 0.2)):
+            ng, np_ = round(gene * share), round(pseudo * share)
+            reads = [gbase] * ng + [pbase] * np_
+            reads = [x.lower() if i % 2 else x for i, x in enumerate(reads)]
+            if reads:
+                reads[0] = "^]" + reads[0]
+                reads[-1] += "$"
+            if len(reads) > 2:
+                reads[1] += "+2AG"
+            lines.append((pos + 1, f"{r['chrom']}\t{pos + 1}\tN\t{len(reads)}\t{''.join(reads)}\t{'I' * len(reads)}\n"))
+    return bed, "".join(x for _, x in sorted(lines))
+
+
+def cyp_call(r, bedcov_text, pileup_text):
+    with tempfile.TemporaryDirectory() as t:
+        b, p = os.path.join(t, "b.tsv"), os.path.join(t, "p.tsv")
+        open(b, "w").write(bedcov_text)
+        open(p, "w").write(pileup_text)
+        m = cn.read_bedcov(b, r)
+        return cn.psv_assess(r, cn.assess(r, m), cn.read_pileup(p, r))
+
+
+# run_in and cpath for the CYP21A2 block of step 35: copy_number.py runs for real,
+# samtools bedcov and mpileup print tests/fixtures/cn/CYP21A2_${CYP_CASE}.*.
+STUB_CYP = r"""
+run_in() {
+  while [ $# -gt 0 ]; do case $1 in -v|--cpus|--memory) shift 2 ;; *) break ;; esac; done
+  shift
+  case "$1 $2" in
+    "python3 /pgp-bin/copy_number.py") shift 2; python3 "${REPO}/bin/copy_number.py" "$@" ;;
+    "samtools bedcov") cat "${FIX}/CYP21A2_${CYP_CASE}.bedcov.tsv" ;;
+    "samtools mpileup") [ -z "${MPILEUP_FAILS:-}" ] && cat "${FIX}/CYP21A2_${CYP_CASE}.pileup.tsv" ;;
+    *) return 1 ;;
+  esac
+}
+cpath() { printf '%s' "$1"; }
+"""
+
+
+def psv(cat, read):
+    import couple_report
+    r = cat["CYP21A2"]
+    names = [n for n, *_ in r["_psv"]]
+    check("CYP21A2: six PSV sites, In2G and I172N among them, a call psv row with a reading per finding",
+          names == ["PSV_In2G", "PSV_I172N", "PSV_V237E", "PSV_V281L", "PSV_Q318X", "PSV_R356W"]
+          and r["_call"][0] == "psv" and set(cn.PSV_FINDINGS) <= set(r["_readings"]), (names, r["_call"]))
+    check("CYP21A2: two targets (CYP21A2 and CYP21A1P), expected module total 4",
+          [n for n, *_ in r["_targets"]] == ["CYP21A2_BODY", "CYP21A1P_BODY"])
+    # The CYP21A2 sites lie 32.7 kb after their CYP21A1P matches, inside both targets.
+    tg = {n: (s, e) for n, s, e, _ in r["_targets"]}
+    check("CYP21A2: each site in the CYP21A2 target, its pseudogene position in CYP21A1P's, 32.7 to 32.8 kb apart",
+          all(tg["CYP21A2_BODY"][0] <= g < tg["CYP21A2_BODY"][1] and tg["CYP21A1P_BODY"][0] <= p < tg["CYP21A1P_BODY"][1]
+              and 32700 < g - p < 32800 for _, g, p, *_ in r["_psv"]), r["_psv"])
+    check("CYP21A2: In2G's CYP21A2 base is A or C, its CYP21A1P base G (c.293-13A/C>G)",
+          r["_psv"][0][3:5] == ({"A", "C"}, {"G"}), r["_psv"][0])
+    with tempfile.TemporaryDirectory() as t:
+        p = os.path.join(t, "c.tsv")
+        base = {k: v for k, v in r.items() if not k.startswith("_")}
+        for desc, kw, err in (("a PSV site of two bases", {"details": base["details"].replace(
+                                  "PSV_In2G:32039080-32039081", "PSV_In2G:32039080-32039082")}, "must be one base"),
+                              ("a site with the same base on both genes", {"details": base["details"].replace(
+                                  "32006352 AC>G", "32006352 AC>C")}, "distinct gene and pseudogene"),
+                              ("a site label without its pseudogene position", {"details": base["details"].replace(
+                                  "32006352 AC>G", "here AC>G")}, "is not 'PSEUDO_POS"),
+                              ("a psv row without a conversion reading", {"readings": "|".join(
+                                  x for x in base["readings"].split("|") if not x.startswith("conversion="))},
+                               "a reading for each")):
+            write_catalog(p, [dict(base, **kw)])
+            try:
+                cn.load_catalog(p)
+                got = "loaded"
+            except cn.CatalogError as e:
+                got = str(e)
+            check(f"CYP21A2: {desc} is refused", err in got, got)
+
+    got = cn.count_bases("^]C.,c$+2AGg-1tG*<>N", "C")
+    check("pileup: read starts, ends and indels are not bases; '.' and ',' are the reference base",
+          got == {"A": 0, "C": 4, "G": 2, "T": 0}, got)
+
+    out = subprocess.run([sys.executable, SCRIPT, "bed", "--psv", "--locus", "CYP21A2"], capture_output=True, text=True)
+    lines = out.stdout.splitlines()
+    check("bed --psv: twelve one-base positions (each site on CYP21A2 and on CYP21A1P), sorted",
+          out.returncode == 0 and len(lines) == 12 and all(int(x.split("\t")[2]) - int(x.split("\t")[1]) == 1 for x in lines)
+          and [int(x.split("\t")[1]) for x in lines] == sorted(int(x.split("\t")[1]) for x in lines), out)
+    out = subprocess.run([sys.executable, SCRIPT, "bed", "--psv", "--locus", "HBA"], capture_output=True, text=True)
+    check("bed --psv on a row without PSV sites is refused", out.returncode == 2 and "no psv locus" in out.stderr, out)
+
+    # The committed fixtures are cyp_fixture's, so a change to either shows.
+    blocks = {}
+    for case, (total, a2) in CYP_CASES.items():
+        bed, pile = cyp_fixture(r, total, a2)
+        fb, fp = (os.path.join(CYP_FIX, f"CYP21A2_{case}.{x}.tsv") for x in ("bedcov", "pileup"))
+        same = os.path.exists(fb) and os.path.exists(fp) and open(fb).read() == bed and open(fp).read() == pile
+        check(f"tests/fixtures/cn/CYP21A2_{case}: the tables cyp_fixture makes", same)
+        blocks[case] = cyp_call(r, bed, pile)
+    b = blocks["normal"]
+    check("CYP21A2 unmodified: called, 2 copies, module total 4, no finding (the red control: no call)",
+          (b["status"], b["copies"], b["module_total"], b["finding"]) == ("called", 2, 4, "none")
+          and b["reading"] == cn.reading(r, "none"), b)
+    b = blocks["deletion"]
+    check("CYP21A2 planted chimeric deletion: 1 copy, module total down by one (3), finding deletion",
+          (b["status"], b["copies"], b["module_total"], b["finding"]) == ("called", 1, 3, "deletion"), b)
+    b = blocks["conversion"]
+    ratio = (b.get("sites") or {}).get("PSV_In2G", {}).get("ratio")
+    check("CYP21A2 planted In2G conversion on one copy: In2G ratio 0.5 +/- 0.1, a possible conversion there only",
+          ratio is not None and abs(ratio - 0.5) <= 0.1 and b["finding"] == "conversion"
+          and b["conversion_sites"] == ["PSV_In2G"] and b["module_total"] == 4, b)
+    check("CYP21A2 conversion: the reading names the site and says possible conversion",
+          "c.293-13A/C>G (In2G" in b["reading"] and "possible conversion" in b["reading"], b["reading"])
+    # The same depths with the PSV reads ignored (every site even) give no finding.
+    total, a2 = CYP_CASES["conversion"]
+    bed, _ = cyp_fixture(r, total, a2)
+    _, even = cyp_fixture(r, total, {})
+    b = cyp_call(r, bed, even)
+    check("CYP21A2: the conversion's depths with the PSV ratios ignored give no finding",
+          b["finding"] == "none", b)
+    bed, pile = cyp_fixture(r, 3, {})
+    b = cyp_call(r, bed, pile)
+    check("CYP21A2: a module fewer with CYP21A2 kept at every site is a pseudogene deletion, 2 copies",
+          (b["copies"], b["finding"]) == (2, "pseudogene_deletion"), b)
+    # One noisy 3' site (V281L at 1.47, rounds to 1) is inside the 0.6 margin: it never
+    # makes a deletion of a pseudogene deletion, nor a lower count than the finding says.
+    for total, want in ((3, "pseudogene_deletion"), (4, "none")):
+        bed, pile = cyp_fixture(r, total, {"PSV_V281L": 1.47})
+        b = cyp_call(r, bed, pile)
+        est = b["sites"]["PSV_V281L"]["estimate"]
+        check(f"CYP21A2: module total {total}, one site at {est:.2f} (inside the margin): {want}, 2 copies",
+              1.4 < est < 1.5 and (b["copies"], b["finding"]) == (2, want), b)
+    bed, pile = cyp_fixture(r, 4, {n: 1 for n in names})
+    b = cyp_call(r, bed, pile)
+    check("CYP21A2: one copy converted at every site, the module total kept: a conversion at all six",
+          b["finding"] == "conversion" and b["conversion_sites"] == names and b["copies"] == 1, b)
+    bed, _ = cyp_fixture(r, 4, {})
+    thin = "".join(ln.split("\t")[0] + "\t" + ln.split("\t")[1] + "\tN\t1\tC\tI\n" for ln in even.splitlines())
+    b = cyp_call(r, bed, thin)
+    check("CYP21A2: sites with under 30 reads: not assessed (psv_low_depth)",
+          (b["status"], b["reason"]) == ("not assessed", "psv_low_depth"), b)
+    bed, pile = cyp_fixture(r, 4, {})
+    b = cyp_call(r, bed.replace("CYP21A1P_BODY\t", "CYP21A1P_BODY\t").replace(
+        f"\t{round(30.0 * 2689)}\n", f"\t{round(37.5 * 2689)}\n"), pile)
+    check("CYP21A2: a module total between counts (4.5) is not assessed, no finding",
+          (b["status"], b["reason"], b["finding"]) == ("not assessed", "between_counts", None), b)
+
+    step, module = read("scripts/35-paralogs.sh"), read("modules/local/parascopy/main.nf")
+    blk = re.search(r'\n(CYP21_OUT=.*?\nrm -rf "\$CYP21_WORK"\n)', step, re.S)
+    check("step 35 holds the CYP21A2 block", blk is not None)
+    tabs = {}
+    with tempfile.TemporaryDirectory() as t:
+        for case in list(CYP_CASES) + ["fail"]:
+            env = dict(os.environ, REPO=REPO, FIX=CYP_FIX, OUTDIR=t, SAMPLE="S", PGP_ROOT=REPO, PARASCOPY_IMAGE="img",
+                       BAM=os.path.join(t, "S.bam"), CYP_CASE="normal" if case == "fail" else case)
+            if case == "fail":
+                env["MPILEUP_FAILS"] = "1"
+            out = subprocess.run(["bash", "-euo", "pipefail", "-c", STUB_CYP + (blk.group(1) if blk else "false\n")],
+                                 capture_output=True, text=True, env=env)
+            tab = os.path.join(t, "S_cyp21a2_psv.tsv")
+            rows = dict(x.split("\t", 1) for x in open(tab).read().splitlines()[1:]) if os.path.exists(tab) else {}
+            check(f"step 35 CYP21A2 block ({case}): exit 0, a table", out.returncode == 0 and rows,
+                  (out.returncode, out.stderr[-600:]))
+            tabs[case] = os.path.join(t, f"{case}.tsv")
+            if os.path.exists(tab):
+                os.replace(tab, tabs[case])
+            want = {"normal": ("called", "2", "4", "none"), "deletion": ("called", "1", "3", "deletion"),
+                    "conversion": ("called", "1", "4", "conversion"), "fail": ("not assessed", ".", ".", ".")}[case]
+            check(f"step 35 CYP21A2 block ({case}): status, copies, module total, finding {want}",
+                  tuple(rows.get(k) for k in ("status", "cyp21a2_copies", "module_total", "finding")) == want, rows)
+        check("step 35 CYP21A2 block with a failed mpileup: reason check_failed",
+              open(tabs["fail"]).read().count("reason\tcheck_failed") == 1 if os.path.exists(tabs["fail"]) else False)
+        for path, text, q in (("scripts/35-paralogs.sh", step, True), ("modules/local/parascopy/main.nf", module, False)):
+            for cmd in ("copy_number.py bed --locus CYP21A2", "copy_number.py bed --psv --locus CYP21A2",
+                        "samtools mpileup -A -B -q 0 -Q 13 -d 100000", "copy_number.py call --locus CYP21A2 --bedcov",
+                        "--pileup", "_cyp21a2_psv.tsv"):
+                check(f"{path}: {cmd}", cmd in text)
+        check("PARASCOPY module: its CYP21A2 table is an output", 'path("${meta.id}_cyp21a2_psv.tsv"),     emit: cyp21a2'
+              in module)
+
+        # the couple screen
+        genes = {"CYP21A2": {"gene": "CYP21A2"}}
+        got = {c: couple_report.cyp21a2_finding(p, genes) for c, p in tabs.items() if os.path.exists(p)}
+        f = got.get("deletion", ([], ""))[0]
+        check("couple screen: the deletion table is a CYP21A2 finding on one copy (the chimeric deletion)",
+              len(f) == 1 and f[0]["gene"] == "CYP21A2" and f[0]["copies"] == 1 and "chimeric deletion" in f[0]["text"], f)
+        f = got.get("conversion", ([], ""))[0]
+        check("couple screen: the conversion table is a possible conversion at In2G",
+              len(f) == 1 and "possible CYP21A2 conversion at In2G" in f[0]["text"], f)
+        check("couple screen: the unmodified table is no finding, 2 copies read",
+              got.get("normal", (["x"], ""))[0] == [] and "CYP21A2 2 copies" in got.get("normal", ([], ""))[1],
+              got.get("normal"))
+        check("couple screen: the failed table is no finding and says not assessed",
+              got.get("fail", (["x"], ""))[0] == [] and got.get("fail", ([], ""))[1].startswith("CYP21A2 not assessed"),
+              got.get("fail"))
+        if os.path.exists(tabs["normal"]):
+            bad = os.path.join(t, "bad.tsv")
+            open(bad, "w").write(open(tabs["normal"]).read().replace("finding\tnone", "finding\tlost"))
+            try:
+                couple_report.cyp21a2_finding(bad, genes)
+                got = "read"
+            except SystemExit as e:
+                got = f"exit {e.code}"
+            check("couple screen: a called table with an unknown finding stops the screen (exit 2)", got == "exit 2", got)
+        check("couple screen: a CYP21A2 finding needs CYP21A2 in the carrier list",
+              couple_report.cyp21a2_finding(tabs["deletion"], {})[0] == [] if os.path.exists(tabs["deletion"]) else False)
+        # A partner without a CYP21A2 table gets a gap line, also when no partner has one (step 39).
+        ped = os.path.join(t, "ped.tsv")
+        open(ped, "w").write("sample\tsex\tfather\tmother\tpartner\nA\tfemale\t.\t.\tB\nB\tmale\t.\t.\tA\n")
+        vcf = os.path.join(t, "none.vcf")
+        open(vcf, "w").write("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n")
+        for desc, extra, want in (("no partner has one", [], {"A", "B"}),
+                                  ("one partner has one", ["--cyp21a2", f"A={tabs['normal']}"], {"B"})):
+            od = os.path.join(t, "couple-" + str(len(extra)))
+            out = subprocess.run([sys.executable, os.path.join(REPO, "bin", "couple_report.py"), "screen",
+                                  "--pedigree", ped, "--genes", os.path.join(REPO, "assets", "carrier_genes.tsv"),
+                                  "--clinvar", f"A={vcf}", "--clinvar", f"B={vcf}", "--out-dir", od] + extra,
+                                 capture_output=True, text=True)
+            md = open(os.path.join(od, "couple_A_B.md")).read() if out.returncode == 0 else out.stderr
+            got = {s for s in "AB" if (f"CYP21A2 deletion and conversions of {s}: step 35's CYP21A2 table was not passed "
+                                         "to the couple screen (--cyp21a2).") in md}
+            check(f"couple screen, {desc}: a gap line for each partner without a CYP21A2 table", got == want, (got, md[-600:]))
+
+        # collect_summary: step 35's section carries the CYP21A2 table
+        import collect_summary as cs
+        sd = os.path.join(t, "sample")
+        os.makedirs(os.path.join(sd, "paralogs"))
+        with open(os.path.join(sd, "paralogs", "S_smn_copy_number.tsv"), "w") as f:
+            f.write("chrom\tstart\tend\tlocus\tagCN_filter\tagCN\tagCN_qual\tpsCN_filter\tpsCN\tpsCN_qual\t"
+                    "homologous_regions\n")
+        if os.path.exists(tabs["deletion"]):
+            os.replace(tabs["deletion"], os.path.join(sd, "paralogs", "S_cyp21a2_psv.tsv"))
+        _, data = cs.sec_parascopy(sd, "S")
+        c = data.get("cyp21a2") or {}
+        check("collect_summary: step 35's section carries the CYP21A2 table (deletion, 1 copy)",
+              (c.get("finding"), c.get("cyp21a2_copies")) == ("deletion", "1"), c)
 
 
 if __name__ == "__main__":
