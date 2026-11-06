@@ -244,15 +244,20 @@ def bash_paths(src):
         assign.setdefault(v, []).append(val.strip("\"'"))
     fixed = {"SAMPLE": "{sample}", "GENOME_DIR": "G", "1": "{sample}"}
 
+    # depth counts every variable filled in on the line, not the nesting: a line with
+    # ${WORK}, ${P} and P's own chain of OUTDIR, S, GENOME_DIR and SAMPLE needs seven.
+    # The search stops at 64 expansions of a line, so a deep line stays cheap.
     def expand(s, depth=0):
         m = VAR.search(s)
-        if not m or depth > 6:
+        if not m or depth > 24:
             return [s]
         name = m.group(1) or m.group(2)
         vals = [fixed[name]] if name in fixed else assign.get(name) or ["\0"]
         out = []
         for val in vals[:4]:
             out.extend(expand(s[:m.start()] + val + s[m.end():], depth + 1))
+            if len(out) >= 64:
+                break
         return out[:64]
 
     return {e for line in src.split("\n") if not line.lstrip().startswith("#") for e in expand(line)}

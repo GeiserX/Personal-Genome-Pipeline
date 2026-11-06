@@ -10,7 +10,8 @@
      nextflow.config's are each refused, and the stable ones are named
      BREAKING; so are, on a copy of the contract, a file row in the folder of
      a publishDir whose saveAs drops it and a nextflow row whose step script
-     writes the same path; --pedigree is a declared param;
+     writes the same path (also on a line of seven shell variables);
+     --pedigree is a declared param;
   3. the run check on a planted results folder made from the contract's own
      e2e rows passes for both legs; then a dropped column, a dropped VCF
      field, a dropped JSON key and a renamed file are each refused, naming the
@@ -147,6 +148,9 @@ def static_controls():
         ("legs nextflow on a file step 49 writes under the same name",
          "{sample}/chip/{sample}_chip.tsv", to_nextflow,
          [r"\{sample\}/chip/\{sample\}_chip\.tsv .* has legs nextflow, but scripts/49-chip\.sh writes it"]),
+        ("legs nextflow on a file step 50 writes on a line of seven shell variables",
+         "{sample}/mei/{sample}_megane.log", to_nextflow,
+         [r"\{sample\}/mei/\{sample\}_megane\.log .* has legs nextflow, but scripts/50-mei\.sh writes it"]),
     ]
     for desc, name, change, want in contract_cases:
         tmp = tempfile.mkdtemp()
