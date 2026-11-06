@@ -1743,9 +1743,12 @@ def cn_interval_summary(iv):
         return f"{CN_INTERVALS_LABEL}: not assessed (step 35's <id>_cn_intervals.tsv is not in this run's output)"
     counts = ", ".join(f"{n} {k}" for k, n in sorted((iv.get("by_status") or {}).items())) or "no row"
     n = len(iv.get("changes") or [])
-    return (f"{CN_INTERVALS_LABEL}: {iv.get('rows', 0)} rows ({counts}); "
-            f"{n} with a deletion or a duplication" if n else
-            f"{CN_INTERVALS_LABEL}: {iv.get('rows', 0)} rows ({counts}); no deletion or duplication")
+    k = (iv.get("by_status") or {}).get("called", 0)
+    # Rows that were not called are no negative result: with none called the
+    # line says so instead of "no deletion or duplication".
+    end = (f"{n} with a deletion or a duplication" if n else
+           f"no deletion or duplication among the {k} called rows" if k else "none called")
+    return f"{CN_INTERVALS_LABEL}: {iv.get('rows', 0)} rows ({counts}); {end}"
 
 
 def cn_interval_place(r):

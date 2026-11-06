@@ -1486,7 +1486,15 @@ def cn_report_section(work, schema):
         + "CFTR_dele2_3\tCFTRdele2,3\tchr7\t117479000\t117481000\tcalled\t2\t2\tno change\t1.97\t.\n")
     _, txt, _ = render(d)
     check("cn report: an interval table without a change says so",
-          "from depth): 1 rows (1 called); no deletion or duplication\n" in txt, txt)
+          "from depth): 1 rows (1 called); no deletion or duplication among the 1 called rows\n" in txt, txt)
+    put(f"{d}/paralogs/S_cn_intervals.tsv", IV_COLS
+        + "CFTR_dele2_3\tCFTRdele2,3\tchr7\t117479000\t117481000\tnot assessed\t.\t2\t.\t.\tcheck_failed\n"
+        + "AZFc\tAZFc\tchrY\t24000000\t26000000\tnot assessed\t.\t1\t.\t.\tcheck_failed\n")
+    _, txt, html = render(d)
+    check("cn report: an interval table with no row called says none called, never no deletion",
+          "from depth): 2 rows (2 not assessed); none called\n" in txt
+          and "2 rows (2 not assessed); none called" in card(html)
+          and "no deletion or duplication" not in txt, txt)
 
     # A header without the copy-number columns is unreadable, also with no row under it.
     put(f"{d}/paralogs/S_cn_dosage.tsv", "locus\tstatus\n")
