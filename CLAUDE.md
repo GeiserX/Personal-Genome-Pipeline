@@ -77,7 +77,7 @@ owngenome/
     nextflow.yml               # Nextflow config, lint, schema and stub runs on the pinned release and the newest 26.10.x
     renovate-dry-run.yml       # Renovate lookups without an app, and their checks
     freshness.yml              # Monthly issue of pins that fell behind upstream
-    docs.yml                   # mkdocs build
+    docs.yml                   # Zensical build + site check
     release.yml, stale.yml     # Releases, stale issues
 ```
 
@@ -119,7 +119,7 @@ User's FASTQ/BAM/VCF
 ### Documentation Conventions
 - Each pipeline step has a matching doc in `docs/XX-name.md` and script in `scripts/XX-name.sh`
 - Docs must include: What it does, Why, Tool name, Docker image, Command, Output, Runtime estimate, Notes
-- The category table in `docs/pipeline-overview.md` and the `nav:` of `mkdocs.yml` must stay in sync with actual docs and scripts
+- The category table in `docs/pipeline-overview.md` and the `nav` of `zensical.toml` must stay in sync with actual docs and scripts
 - All Docker images must include the exact tag (not floating)
 
 ### Lessons Learned
@@ -131,7 +131,7 @@ User's FASTQ/BAM/VCF
 1. Add the image as one line in `versions.env` (`setup.sh` and `validate-setup.sh` read their list from it)
 2. Create `scripts/NN-tool-name.sh` following script conventions
 3. Create `modules/local/<tool>/main.nf` with no `container` line, add its process to the table in `scripts/ci/gen-containers-config.sh` and run it; or note in `docs/nextflow.md` why the step stays bash-only. Adding a step means a module plus, optionally, its script
-4. Create `docs/NN-tool-name.md` following existing template, and add it to `nav:` in `mkdocs.yml`
+4. Create `docs/NN-tool-name.md` following existing template, and add it to `nav` in `zensical.toml`
 5. Add the step to the category table in `docs/pipeline-overview.md`
 6. Add the module to the step list (a `plan` call) in `scripts/run-all.sh` (its `--tools` name and database parameter), so a default run includes it
 7. Add a row for the image to `tests/smoke/commands.tsv`: a real command on the fixture and a check on what it wrote (an image with no row fails `container-test.yml`)

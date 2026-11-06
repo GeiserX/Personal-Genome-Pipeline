@@ -51,7 +51,7 @@ jobs:
               run=false
               while IFS= read -r f; do
                 case "$f" in
-                  docs/*|*.md|mkdocs.yml|LICENSE) ;;
+                  docs/*|*.md|zensical.toml|LICENSE) ;;
                   *) run=true ;;
                 esac
               done <<<"$changed"
