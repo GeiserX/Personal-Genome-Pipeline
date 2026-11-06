@@ -25,7 +25,8 @@
     5 rows are written to their own table, found by column name, and
     bin/annotsv_postfilter.py writes each of them with its caller, whether a
     deletion sits on the exon edges of one transcript of AnnotSV's genes
-    file, its benign-set frequency, its read-depth support and the class
+    file, its benign-set frequency, its read-depth support (a Delly RDCN
+    against the same sex- and PAR-aware normal copies) and the class
     after the rule table assets/sv_rule_regions.tsv, which moves to class 3
     a call inside a coding tandem repeat, the IG and TR loci or the MHC,
     one the depth contradicts, and one whose gene symbol is a pseudogene's
@@ -101,7 +102,7 @@ process ANNOTSV {
     genes_arg=()
     if [ -s "\$genes" ]; then genes_arg=(--genes "\$genes"); fi
     annotsv_postfilter.py --class45 ${meta.id}_sv_class4_5.tsv \${genes_arg[@]+"\${genes_arg[@]}"} \\
-        --rules ${sv_rules} --out ${meta.id}_sv_class4_5_checked.tsv
+        --rules ${sv_rules} --sex '${meta.sex ?: ''}' --par-bed ${par_bed} --out ${meta.id}_sv_class4_5_checked.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
