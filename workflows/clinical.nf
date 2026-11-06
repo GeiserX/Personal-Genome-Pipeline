@@ -2,7 +2,8 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     CLINICAL — Clinical Screening & Population Genetics Workflow
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Runs cancer predisposition (CPSR), runs of homozygosity, polygenic scores
+    Runs cancer predisposition (CPSR, with step 17's cDNA read check of its
+    P/LP rows), runs of homozygosity, polygenic scores
     (pgsc_calc; with an ancestry panel also the sample's projection onto it,
     step 26), fine-grained ancestry against the panel of setup.sh
     --ancestry-fine-panel (step 26b), and the mitochondrial haplogroup (from MITO_VARIANTS' Mutect2
@@ -15,6 +16,7 @@
 */
 
 include { CPSR               } from '../modules/local/cpsr/main'
+include { CLINVAR_CDNA_CHECK } from '../modules/local/clinvar_screen/main'
 include { ROH                } from '../modules/local/roh/main'
 include { PRS_PREPARE        } from '../modules/local/prs/main'
 include { PRS_SCORE_SITES    } from '../modules/local/prs/main'
@@ -46,12 +48,16 @@ workflow CLINICAL {
     ch_reference_fai    // channel: val(path) — reference .fai
     ch_mito_vcf         // channel: [meta, chrM VCF] — MITO_VARIANTS' Mutect2 calls, for the samples it ran for
     ch_ancestry_fine_panel // channel: path — the folder setup.sh --ancestry-fine-panel writes, or []
+    ch_bam              // channel: [meta, bam, bai] — every sample with a BAM (CPSR's cDNA read check)
+    ch_gencode_exons    // channel: path — GENCODE's exons (--gencode_exons), or []
 
     main:
     ch_versions = Channel.empty()
 
     // Initialise output channels with empty defaults
     ch_cpsr_html          = Channel.empty()
+    ch_cpsr_tsv           = Channel.empty()
+    ch_cpsr_cdna          = Channel.empty()
     ch_roh_regions        = Channel.empty()
     ch_prs_scores         = Channel.empty()
     ch_ancestry_results   = Channel.empty()
@@ -67,7 +73,23 @@ workflow CLINICAL {
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('cpsr')) {
         CPSR(ch_vcf, ch_pcgr_data, ch_vep_cache_cpsr)
         ch_cpsr_html = CPSR.out.html_report
+        ch_cpsr_tsv  = CPSR.out.tsv_report
         ch_versions  = ch_versions.mix(CPSR.out.versions)
+        // Step 17's cDNA read check of CPSR's P/LP rows, with the BAM and
+        // exons of step 06's check, or [] for a sample without a BAM, so its
+        // table says "not checked" and why. No construct catalog, as step 17.
+        CLINVAR_CDNA_CHECK(
+            CPSR.out.tsv_report
+                .map { meta, tsv -> [meta.id, meta, tsv] }
+                .join(ch_bam.map { meta, bam, bai -> [meta.id, [bam, bai]] }, remainder: true)
+                .filter { row -> row[1] != null }
+                .map { row -> tuple(row[1], row[2], row[3] ? row[3][0] : [], row[3] ? row[3][1] : []) },
+            ch_gencode_exons,
+            [],
+            'cpsr'
+        )
+        ch_cpsr_cdna = CLINVAR_CDNA_CHECK.out.cdna_check
+        ch_versions  = ch_versions.mix(CLINVAR_CDNA_CHECK.out.versions)
     }
 
     //
@@ -250,6 +272,8 @@ workflow CLINICAL {
 
     emit:
     cpsr_html         = ch_cpsr_html
+    cpsr_tsv          = ch_cpsr_tsv       // [meta, <id>.cpsr.grch38.classification.tsv.gz]
+    cpsr_cdna         = ch_cpsr_cdna      // [meta, <id>_cpsr_cdna_check.tsv]
     roh_regions       = ch_roh_regions
     prs_scores        = ch_prs_scores
     ancestry_results  = ch_ancestry_results

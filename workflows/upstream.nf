@@ -113,6 +113,7 @@ workflow UPSTREAM {
     emit:
     bam        = ch_bam                  // [meta, bam, bai]: every BAM, after the sex check
     indexcov   = INDEXCOV.out.indexcov   // [meta, indexcov/]: goleft's folder, for the report's sex check
+    read_count = ALIGN_MINIMAP2.out.read_count // [meta, <id>_read_count.tsv]: the FASTQ rows only, for the report
     vcf        = DEEPVARIANT.out.vcf     // [meta, vcf, tbi]
     gvcf       = DEEPVARIANT.out.gvcf    // [meta, g.vcf.gz, tbi]
     versions   = ch_versions

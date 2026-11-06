@@ -635,8 +635,8 @@ workflow {
     ch_parascopy_bed  = Channel.value(params.parascopy_depth_bed ? file(params.parascopy_depth_bed, checkIfExists: true) : [])
     ch_yleaf_data     = Channel.value(params.yleaf_data ? file(params.yleaf_data, checkIfExists: true) : [])
     // GENCODE's exons (setup.sh: reference/gencode.v<release>.basic.exons.bed):
-    // the cDNA read check of CLINVAR_SCREEN's hits, and the couple screen's
-    // deletions over an exon
+    // the cDNA read check of CLINVAR_SCREEN's hits and of CPSR's P/LP rows,
+    // and the couple screen's deletions over an exon
     ch_gencode_exons  = Channel.value(params.gencode_exons ? file(params.gencode_exons, checkIfExists: true) : [])
     // Step 20's annotation of the chrM calls (MITO_VARIANTS_ANNOTATE): the
     // whole ClinVar VCF with chr names, its .tbi beside it (setup.sh installs
@@ -747,7 +747,9 @@ workflow {
         ch_reference,
         ch_reference_fai,
         BAM_ANALYSIS.out.mito_vcf,
-        ch_ancestry_fine_panel
+        ch_ancestry_fine_panel,
+        ch_bam,
+        ch_gencode_exons
     )
 
     // ─── Traits panel (traits, step 42) ─────────────────────────────────
@@ -1118,10 +1120,17 @@ workflow {
         .join(PGX.out.pharmcat_html.map           { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.cpic_phenotypes.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(PGX.out.cpic_recommendations.map    { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ANNOTATION.out.vep_vcf.map          { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ANNOTATION.out.vep_vcf_index.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(ANNOTATION.out.clinical_vcf.map     { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ANNOTATION.out.clinical_summary.map { meta, f -> [meta.id, f] }, remainder: true)
         .join(ANNOTATION.out.slivar_vcf.map       { meta, f -> [meta.id, f] }, remainder: true)
+        .join(ANNOTATION.out.slivar_summary.map   { meta, f -> [meta.id, f] }, remainder: true)
         .join(ANNOTATION.out.comphet_pairs.map    { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.cpsr_html.map          { meta, f -> [meta.id, f] }, remainder: true)
+        .join(CLINICAL.out.cpsr_tsv.map           { meta, f -> [meta.id, f] }, remainder: true)
+        .join(CLINICAL.out.cpsr_cdna.map          { meta, f -> [meta.id, f] }, remainder: true)
+        .join(UPSTREAM.out.read_count.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.roh_regions.map        { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.haplogroup.map         { meta, f -> [meta.id, f] }, remainder: true)
         .join(CLINICAL.out.haplocheck.map         { meta, f -> [meta.id, f] }, remainder: true)

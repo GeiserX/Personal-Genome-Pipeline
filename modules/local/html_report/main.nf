@@ -10,7 +10,9 @@
     The inputs are the outputs of the steps that ran for this sample, as one
     list (main.nf joins them, so the report waits for each). They are linked
     into the folder layout collect_summary.py reads (clinvar/, pharmcat/,
-    cpic/, roh/, mito/, telomere/, hla_t1k/, hla_optitype/, kir/, pypgx/, annotsv/, traits/, chip/, couple/, ...); a step that did
+    cpic/, vep/, clinical/, slivar/, cpsr/, qc/, roh/, mito/, telomere/,
+    hla_t1k/, hla_optitype/, kir/, pypgx/, annotsv/, traits/, chip/, couple/,
+    ...); a step that did
     not run, or whose task failed and was ignored, has no file, and its card
     says "Not run". The called or given VCF comes separately, because its
     name is the user's. indexcov's folder becomes indexcov/ itself (the
@@ -65,16 +67,17 @@ process HTML_REPORT {
             ${id}_clinvar_hits.vcf|${id}_clinvar_cdna_check.tsv|${id}_clinvar_cdna_scan.tsv|${id}_clinvar_deep_intronic.tsv) place clinvar "\$f" ;;
             ${id}.report.json|${id}.report.html)          place pharmcat "\$f" ;;
             ${id}_phenotypes.tsv|${id}_cpic_recommendations.txt) place cpic "\$f" ;;
-            ${id}_clinical.vcf.gz)                        place clinical "\$f" ;;
-            ${id}.cpsr.grch38.html)                       place cpsr "\$f" ;;
-            ${id}_prioritized.vcf.gz|${id}_compound_het_pairs.tsv) place slivar "\$f" ;;
+            ${id}_vep.vcf.gz|${id}_vep.vcf.gz.tbi)        place vep "\$f" ;;
+            ${id}_clinical.vcf.gz|${id}_clinical_summary.tsv) place clinical "\$f" ;;
+            ${id}.cpsr.grch38.html|${id}.cpsr.grch38.classification.tsv.gz|${id}_cpsr_cdna_check.tsv) place cpsr "\$f" ;;
+            ${id}_prioritized.vcf.gz|${id}_compound_het_pairs.tsv|${id}_slivar_summary.tsv) place slivar "\$f" ;;
             ${id}_roh.txt)                                place roh "\$f" ;;
             ${id}_haplogroup.txt|${id}_haplocheck.txt)    place mito "\$f" ;;
             ${id}_y_haplogroup.txt|${id}_y_tree.txt|${id}_y_tree_path.tsv) place y_haplogroup "\$f" ;;
             ${id}_y_str.tsv)                              place y_str "\$f" ;;
             ${id}_paraphase_copy_number.tsv|${id}_paraphase_variants.tsv|${id}_*_copy_number.tsv) place paralogs "\$f" ;;
             ${id}.mosdepth.summary.txt|${id}_callability.bed.gz) place coverage "\$f" ;;
-            ${id}_sample_qc.tsv)                          place qc "\$f" ;;
+            ${id}_sample_qc.tsv|${id}_read_count.tsv)     place qc "\$f" ;;
             ${id}_cn_intervals.tsv)                       place paralogs "\$f" ;;
             ${id}_prs_summary.tsv)                        place prs "\$f" ;;
             ${id}_ancestry.tsv)                           place ancestry "\$f" ;;
