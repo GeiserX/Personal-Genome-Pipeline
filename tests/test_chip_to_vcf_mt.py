@@ -20,7 +20,12 @@ Checks:
      3241. The script before this fix lifted chrM with the chain: m.1555
      landed on 1553 (the same base there, so Picard kept it) and m.3243 went
      to the reject file.
-  3. The same rows as a 23andMe file give the same chrM records.
+  3. The same rows as a 23andMe file, its MT sites numbered on hg19's chrM
+     as 23andMe numbers them (1557 and 3245 under this chain, plus 301
+     inside the chain's gap), give the same chrM records: each MT position
+     moves to the rCRS through the chrM chain and the gap site is dropped
+     with its count printed. Without that move 23andMe's
+     sites would stay at chrM:1557 and 3245, with no call at 1555 or 3243.
 
 Needs docker. Run: python3 tests/test_chip_to_vcf_mt.py
 """
@@ -40,6 +45,9 @@ SHORT = 3000
 # rCRS-like bases the checks rely on: 1553 and 1555 the same base (so the
 # shifted record passes Picard's REF check), 3241 and 3243 different ones.
 FIXED = {73: "A", 1553: "A", 1555: "A", 3241: "G", 3243: "A"}
+# 23andMe's MT numbering under the test chain: rCRS position to hg19 chrM
+# (two bases more past the gap at 301-302, as m.3243 is 3244 or 3245 there).
+HG19_MT = {1555: 1557, 3243: 3245}
 
 FAILS = []
 
@@ -181,15 +189,26 @@ def main():
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and not line.startswith("RSID"):
-                    o.write("\t".join(x.strip('"') for x in line.split(",")) + "\n")
+                    f4 = [x.strip('"') for x in line.split(",")]
+                    if f4[1] == "MT":
+                        # rCRS to hg19 chrM numbering under the test chain
+                        f4[2] = str(HG19_MT.get(int(f4[2]), int(f4[2])))
+                    o.write("\t".join(f4) + "\n")
+            # a site inside the chain's gap: no rCRS position, dropped
+            o.write("rs9000099\tMT\t301\tA\n")
         print("--- 23andme: chip-to-vcf.sh S1 23andme")
         rc, log = run(g, "23andme")
         check("23andme: chip-to-vcf.sh exits 0 (exit %d)" % rc, rc == 0, log[-400:])
+        check("23andme: the MT move and the gap drop are printed",
+              "3 site(s) moved from hg19 chrM to rCRS positions, 1 in a chain gap dropped" in log, log[-600:])
         rows, err = records(g, img) if rc == 0 else (None, "no run")
         if rows is None:
             check("23andme: the VCF reads back", False, err)
         else:
             check_mt("23andme", rows, mt)
+            mpos = sorted(int(r[1]) for r in rows if r[0] == "chrM")
+            check("23andme: chrM holds 73, 1555 and 3243 only (nothing left at 301, 1557 or 3245)",
+                  mpos == [73, 1555, 3243], str(mpos))
 
     if FAILS:
         print("%d check(s) failed" % len(FAILS))

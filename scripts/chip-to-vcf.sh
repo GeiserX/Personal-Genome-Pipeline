@@ -89,6 +89,31 @@ case "$FORMAT" in
     fi
     # rsid, chromosome, position, genotype already; drop the comment header.
     grep -v '^#' "$RAW_TSV" | tr -d '\r' > "$CHIP_TSV"
+    # 23andMe numbers its MT sites on hg19's chrM (the Yoruba sequence,
+    # 16,571 bases), not on the rCRS that stage 1 reads REF from: its v5 site
+    # list puts m.3243 at 3244. Each MT position moves to the rCRS through the
+    # chrM chain of the hg19ToHg38 chain file (hg38's chrM is the rCRS). A
+    # site inside one of that chain's gaps has no rCRS position and is
+    # dropped, with its count printed.
+    MT_BLOCKS="${RAW_DIR}/${SAMPLE}_chrM_blocks.tsv"
+    gzip -dc "$CHAIN" | awk -v OFS='\t' '
+      $1 == "chain" { inm = ($3 == "chrM" && $8 == "chrM" && $5 == "+" && $10 == "+"); t = $6; q = $11; next }
+      inm && $1 ~ /^[0-9]+$/ { print t, q, $1; t += $1 + $2; q += $1 + $3 }' > "$MT_BLOCKS"
+    awk -F'\t' -v OFS='\t' -v blocks="$MT_BLOCKS" '
+      BEGIN { while ((getline l < blocks) > 0) { split(l, b, "\t"); n++; T[n] = b[1]; Q[n] = b[2]; S[n] = b[3] } }
+      $2 == "MT" {
+        mt++
+        p = $3 + 0; to = 0
+        for (i = 1; i <= n; i++) if (p > T[i] && p <= T[i] + S[i]) { to = Q[i] + p - T[i]; break }
+        if (!to) { gap++; next }
+        $3 = to
+      }
+      { print }
+      END {
+        if (mt && !n) printf "  23andMe MT: no chrM chain in the chain file; %d MT site(s) dropped\n", mt > "/dev/stderr"
+        else if (mt) printf "  23andMe MT: %d site(s) moved from hg19 chrM to rCRS positions, %d in a chain gap dropped\n", mt - gap, gap > "/dev/stderr"
+      }' "$CHIP_TSV" > "${CHIP_TSV}.rcrs"
+    mv -f "${CHIP_TSV}.rcrs" "$CHIP_TSV"
     ;;
   ancestrydna)
     if [ ! -f "$RAW_TSV" ]; then

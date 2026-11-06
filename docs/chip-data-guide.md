@@ -103,8 +103,10 @@ RAW="${GENOME_DIR}/${SAMPLE}/raw"
 TSV="${RAW}/${SAMPLE}_tsv2vcf.tsv"
 
 # --- Pre-step: one TSV of rsid, chromosome, position, genotype ---
-# 23andMe: drop the comment header.
-grep -v '^#' "${RAW}/${SAMPLE}_raw.txt" > "$TSV"
+# 23andMe: drop the comment header. Its MT positions are on hg19's chrM, not
+# the rCRS: chip-to-vcf.sh moves them through the chain's chrM block; here,
+# simply drop them (the awk filter below).
+grep -v '^#' "${RAW}/${SAMPLE}_raw.txt" | awk -F'\t' '$2 != "MT"' > "$TSV"
 
 # MyHeritage instead: quoted CSV fields, its own header and often Windows
 # (CRLF) line endings; drop the carriage returns first.
@@ -210,7 +212,7 @@ echo "Done. VCF at: ${GENOME_DIR}/${SAMPLE}/vcf/${SAMPLE}.vcf.gz"
 
 **Expected output:** A bgzipped, tabix-indexed VCF on GRCh38 coordinates with ~600,000 SNPs. Typical breakdown: ~430K hom-ref, ~107K het, ~66K hom-alt, ~1K missing. Some variants (~0.3%) are rejected during liftover; ~900 have swapped REF/ALT between builds.
 
-> **X/Y/MT chromosomes:** All chromosomes are converted. MT is renamed to chrM to match GRCh38 convention and keeps its positions: GRCh37's MT and GRCh38's chrM are both the rCRS, so it is not lifted (the hg19 chain maps hg19's own chrM, the Yoruba sequence, and would move m.1555 to 1553). This reads every chip file's MT positions as rCRS positions, as the GRCh37 build the providers name; a file that numbered MT on hg19's chrM instead would have its sites one or two bases off. Chip arrays cover very few mtDNA positions, so for mitochondrial haplogroup estimation, dedicated tools like [HaploGrep](https://haplogrep.i-med.ac.at/) that accept raw 23andMe files directly will give better results.
+> **X/Y/MT chromosomes:** All chromosomes are converted. MT is renamed to chrM to match GRCh38 convention and keeps its positions: GRCh37's MT and GRCh38's chrM are both the rCRS, so it is not lifted (the hg19 chain maps hg19's own chrM, the Yoruba sequence, and would move m.1555 to 1553). MyHeritage and AncestryDNA MT positions are read as rCRS positions, as the GRCh37 build they name. 23andMe numbers its MT sites on hg19's chrM instead (its v5 site list puts m.3243 at 3244), so for a 23andMe file `chip-to-vcf.sh` first moves each MT position to the rCRS through the chrM block of `hg19ToHg38.over.chain.gz`, and drops a site that falls in one of that chain's gaps, printing how many it moved and dropped. The 23andMe-layout file of [step 40](40-export-consumer.md) writes rCRS MT positions, unlike 23andMe, so its MT sites read back through this script land one or two bases off; the round trip there leaves chrM out. Chip arrays cover very few mtDNA positions, so for mitochondrial haplogroup estimation, dedicated tools like [HaploGrep](https://haplogrep.i-med.ac.at/) that accept raw 23andMe files directly will give better results.
 
 > **23andMe / AncestryDNA:** Place your file at `${GENOME_DIR}/${SAMPLE}/raw/${SAMPLE}_raw.txt`. Both are tab-separated but not in the same layout: AncestryDNA needs its own pre-step above (two allele columns, numeric chromosome codes), which `chip-to-vcf.sh` runs for you. AncestryDNA reports two alleles on X, Y and MT, so its genotypes there are diploid; 23andMe reports one allele there for a male.
 
