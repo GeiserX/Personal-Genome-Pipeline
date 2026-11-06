@@ -266,7 +266,8 @@ def depth_support(row, caller, sex="", par=None):
             start = int(row["SV_start"])
         except (KeyError, ValueError):
             start = 0
-        no = cnvpytor_to_vcf.delly_depth_contradicts(t, chrom, start, start + length, ["RDCN"], [f"{rdcn:g}"], sex,
+        cn = str(int(rdcn)) if rdcn.is_integer() else f"{rdcn:g}"
+        no = cnvpytor_to_vcf.delly_depth_contradicts(t, chrom, start, start + length, ["RDCN"], [cn], sex,
                                                      family_report.in_par(par or {}, chrom, start))
         return ("no" if no else "yes"), f"Delly RDCN {rdcn:g}"
     if caller == "delly" and rdcn is None and length > DELLY_DEPTH_BP:
