@@ -88,7 +88,7 @@ workflow CLINICAL {
             [],
             'cpsr'
         )
-        ch_cpsr_cdna = CLINVAR_CDNA_CHECK.out.cdna_check
+        ch_cpsr_cdna = CLINVAR_CDNA_CHECK.out.cpsr_cdna_check
         ch_versions  = ch_versions.mix(CLINVAR_CDNA_CHECK.out.versions)
     }
 

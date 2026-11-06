@@ -276,8 +276,9 @@ process CLINVAR_CDNA_CHECK {
     tag "$meta.id"
     label 'process_single'
 
-    // The tables only: CLINVAR_SCREEN's (or CPSR's) versions.yml is the one in clinvar/ (cpsr/).
-    publishDir { "${params.outdir}/${meta.id}/${source}" }, mode: params.publish_dir_mode, pattern: "*_${source}_cdna_*.tsv"
+    // The tables only: CLINVAR_SCREEN's (CPSR's) versions.yml is the one in clinvar/ (cpsr/).
+    publishDir { "${params.outdir}/${meta.id}/clinvar" }, mode: params.publish_dir_mode, pattern: '*_clinvar_cdna_*.tsv'
+    publishDir { "${params.outdir}/${meta.id}/cpsr" }, mode: params.publish_dir_mode, pattern: '*_cpsr_cdna_check.tsv'
 
     input:
     // Fixed names: a samplesheet path may hold any character, and these go on a command line.
@@ -287,9 +288,11 @@ process CLINVAR_CDNA_CHECK {
     val(source)   // 'clinvar' (step 06's hits) or 'cpsr' (step 17's classification table)
 
     output:
-    tuple val(meta), path("${meta.id}_${source}_cdna_check.tsv"), emit: cdna_check
-    tuple val(meta), path("${meta.id}_clinvar_cdna_scan.tsv"),    emit: cdna_scan, optional: true
-    path "versions.yml",                                           emit: versions
+    // One source per task: the clinvar tables, or the cpsr one.
+    tuple val(meta), path("${meta.id}_clinvar_cdna_check.tsv"), emit: cdna_check,      optional: true
+    tuple val(meta), path("${meta.id}_clinvar_cdna_scan.tsv"),  emit: cdna_scan,       optional: true
+    tuple val(meta), path("${meta.id}_cpsr_cdna_check.tsv"),    emit: cpsr_cdna_check, optional: true
+    path "versions.yml",                                         emit: versions
 
     when:
     task.ext.when == null || task.ext.when
