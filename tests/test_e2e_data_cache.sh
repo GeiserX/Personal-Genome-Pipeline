@@ -59,4 +59,20 @@ if [ -n "$other" ] && [ -n "$pin" ] && [ -n "$gencode" ] \
 else echo "FAIL: the hla key does not match its inputs (${other:-?} ${pin:-?} ${gencode:-?}): ${key}"; failed=1; fi
 if "$RUN" --data-key pgs | grep -qE '^e2e-data-pgs-[0-9a-f]{16}$'; then echo "PASS: the pgs key is a hash"
 else echo "FAIL: the pgs key"; failed=1; fi
+# The network-block control: curl's error must name the closed proxy, in
+# either wording curl uses, and an error that never reached the proxy must
+# not pass for it (a host that is down, a name that does not resolve).
+fn=$(sed -n '/^offline_blocked() {/,/^}/p' "$RUN")
+[ -n "$fn" ] || { echo "FAIL: no offline_blocked function in e2e-run.sh"; exit 1; }
+eval "$fn"
+blocked() {
+  local rc=0
+  offline_blocked "$3" || rc=1
+  if [ "$rc" = "$2" ]; then echo "PASS: $1"; else echo "FAIL: $1 (got ${rc}, want $2)"; failed=1; fi
+}
+blocked "the block: older curl wording" 0 "curl: (7) Failed to connect to 127.0.0.1 port 9 after 0 ms: Couldn't connect to server"
+blocked "the block: newer curl wording (via the proxy)" 0 "curl: (7) Failed to connect to raw.githubusercontent.com port 443 via 127.0.0.1 after 0 ms: Could not connect to server"
+blocked "not the block: the host refused, no proxy" 1 "curl: (7) Failed to connect to raw.githubusercontent.com port 443 after 12 ms: Connection refused"
+blocked "not the block: the name did not resolve" 1 "curl: (6) Could not resolve host: raw.githubusercontent.com"
+blocked "not the block: no error at all" 1 ""
 exit "$failed"
