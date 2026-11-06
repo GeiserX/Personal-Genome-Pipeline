@@ -866,6 +866,7 @@ def sec_parascopy(d, s):
     others = {n: t for n, t in tables.items() if n != "smn"}
     catalog = {r["table"]: r for r in asset_rows("paralog_loci.tsv")} if others else {}
     ip = os.path.join(d, "paralogs", f"{s}_cn_intervals.tsv")
+    cp = os.path.join(d, "paralogs", f"{s}_cyp21a2_psv.tsv")
     return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
                "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
                "rows": len(rows),
@@ -875,6 +876,9 @@ def sec_parascopy(d, s):
                # the interval rows of bin/cn_loci.tsv (recurrent CNV regions,
                # carrier deletions, AZF); None without step 35's table
                "cn_intervals": read_cn_intervals(ip) if os.path.isfile(ip) else None,
+               # CYP21A2 from depth and PSV sites (bin/copy_number.py, the
+               # CYP21A2 row): copies, module total, finding; None without it
+               "cyp21a2": read_hba(cp) if os.path.isfile(cp) else None,
                "reading": reading,
                # every other catalog table, in the catalog's order (a table the
                # catalog does not name, from a PARALOG_LOCI of the user's, last)
@@ -898,8 +902,9 @@ def read_cn_intervals(path):
 
 
 def read_hba(path):
-    """Step 35's HBA table (metric, value) as a dict; a table without a
-    status row reads as not assessed, with that reason."""
+    """Step 35's HBA table (metric, value) as a dict, and its CYP21A2 table
+    the same way; a table without a status row reads as not assessed, with
+    that reason."""
     out = {}
     with open(path, errors="replace") as f:
         for line in f:

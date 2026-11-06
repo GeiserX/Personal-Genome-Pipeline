@@ -29,6 +29,13 @@
 # pinned caller models) are counted the same way, total copies only, one
 # line per locus in ${SAMPLE}_cn_dosage.tsv (docs/cn-loci.md).
 #
+# CYP21A2 (21-hydroxylase deficiency) has no Parascopy model either: the
+# depth over CYP21A2 and its pseudogene CYP21A1P gives the RCCX module total,
+# and the reads at six sites where the two differ (In2G, I172N, the exon 6
+# cluster, V281L, Q318X, R356W) give the CYP21A2 copies at each, so the 30 kb
+# chimeric deletion and a possible conversion show; ${SAMPLE}_cyp21a2_psv.tsv
+# (docs/cn-loci.md).
+#
 # The interval rows of that catalog (ClinGen's recurrent CNV regions such as
 # 22q11.2 and 1q21.1, the carrier deletion alleles and the Y chromosome AZF
 # regions) come from one more bedcov pass over all their segments, one line
@@ -53,6 +60,7 @@
 #           (one per catalog row; the SMN1 row's is ${SAMPLE}_smn_copy_number.tsv)
 #         ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_hba_copy_number.tsv
 #         ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_cn_dosage.tsv
+#         ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_cyp21a2_psv.tsv
 #         ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_cn_intervals.tsv
 #         ${GENOME_DIR}/${SAMPLE}/paralogs/${SAMPLE}_parascopy/<table>/ (Parascopy's own files)
 set -euo pipefail
@@ -281,6 +289,39 @@ done
 mv "${DOSAGE_WORK}/table.tsv" "$DOSAGE_OUT"
 rm -rf "$DOSAGE_WORK"
 
+# CYP21A2 from depth and PSVs (as the PARASCOPY module): samtools bedcov over
+# the CYP21A2 row of bin/cn_loci.tsv (CYP21A2 and CYP21A1P added up against
+# single-copy flanks: the RCCX module total), samtools mpileup without a
+# reference at its paralogous sequence variant sites (each on CYP21A2 and on
+# CYP21A1P, every read whatever its MAPQ), then copy_number.py call: the
+# CYP21A2 copies at each site, and a deletion or a possible conversion. A
+# failure writes a table that says not assessed, and the step goes on.
+CYP21_OUT="${OUTDIR}/${SAMPLE}_cyp21a2_psv.tsv"
+CYP21_WORK="${OUTDIR}/CYP21A2.part"
+rm -rf "$CYP21_OUT" "$CYP21_WORK"
+mkdir -p "$CYP21_WORK"
+if run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
+     python3 /pgp-bin/copy_number.py bed --locus CYP21A2 > "${CYP21_WORK}/regions.bed" \
+   && run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
+     python3 /pgp-bin/copy_number.py bed --psv --locus CYP21A2 > "${CYP21_WORK}/psv.bed" \
+   && run_in --cpus 2 --memory 2g "${PARASCOPY_IMAGE}" \
+     samtools bedcov "$(cpath "${CYP21_WORK}/regions.bed")" "$(cpath "$BAM")" > "${CYP21_WORK}/bedcov.tsv" \
+   && run_in --cpus 2 --memory 2g "${PARASCOPY_IMAGE}" \
+     samtools mpileup -A -B -q 0 -Q 13 -d 100000 \
+       -r "$(awk 'NR == 1 {c = $1; s = $2 + 1} {e = $3} END {print c ":" s "-" e}' "${CYP21_WORK}/psv.bed")" \
+       -l "$(cpath "${CYP21_WORK}/psv.bed")" "$(cpath "$BAM")" > "${CYP21_WORK}/pileup.tsv" \
+   && run_in -v "${PGP_ROOT}/bin:/pgp-bin:ro" "${PARASCOPY_IMAGE}" \
+     python3 /pgp-bin/copy_number.py call --locus CYP21A2 --bedcov "$(cpath "${CYP21_WORK}/bedcov.tsv")" \
+       --pileup "$(cpath "${CYP21_WORK}/pileup.tsv")" --table "$(cpath "${CYP21_OUT}.tmp")"; then
+  mv "${CYP21_OUT}.tmp" "$CYP21_OUT"
+else
+  rm -f "${CYP21_OUT}.tmp"
+  echo "WARNING: the CYP21A2 depth and PSV check failed; ${CYP21_OUT##*/} says not assessed." >&2
+  printf 'metric\tvalue\nstatus\tnot assessed\ncyp21a2_copies\t.\nmodule_total\t.\nexpected_total\t.\nestimate\t.\nfinding\t.\nconversion_sites\t.\ntarget_depth\t.\ncontrol_depth\t.\nreason\tcheck_failed\nreading\t%s\n' \
+    'the CYP21A2 depth and PSV check failed; see the log of step 35' > "$CYP21_OUT"
+fi
+rm -rf "$CYP21_WORK"
+
 # Interval rows of bin/cn_loci.tsv (as the PARASCOPY module): one samtools
 # bedcov over the segments of every row, then copy_number.py intervals; one
 # line per row in <sample>_cn_intervals.tsv. A failed pass writes every row as
@@ -309,6 +350,9 @@ echo "=== Parascopy complete ==="
 echo "HBA1/HBA2:   ${HBA_OUT}"
 echo "Dosage:      ${DOSAGE_OUT}"
 column -t -s $'\t' "$DOSAGE_OUT" 2>/dev/null || cat "$DOSAGE_OUT"
+echo "CYP21A2:     ${CYP21_OUT}: $(awk -F'\t' '$1 == "status" {st = $2} $1 == "cyp21a2_copies" {c = $2}
+  $1 == "module_total" {t = $2} $1 == "finding" {f = $2} $1 == "reason" {r = $2}
+  END {print st ", " c " CYP21A2 copies, module total " t ", finding " f (r != "." ? " (" r ")" : "")}' "$CYP21_OUT")"
 echo "Intervals:   ${INTERVAL_OUT} (sex ${SEX}); rows with a change:"
 awk -F'\t' 'NR > 1 && ($9 == "deletion" || $9 == "duplication") {print "  " $1 ": " $9 " (" $7 " copies, " $8 " expected)"; n++}
   END {if (NR <= 1) print "  none assessed: the table lists no row"; else if (!n) print "  none"}' "$INTERVAL_OUT"
