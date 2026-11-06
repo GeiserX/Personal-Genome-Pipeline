@@ -638,3 +638,11 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Failed:** in November 2026, fork runs and a cache-seeding run with no Actions cache for the two data entries had shards 2 and 5 cancelled at the 240-minute leg limit, still downloading. An Actions cache belongs to one repository, so a fork starts with none, and an evicted entry leaves main in the same place.
 - **Why:** both EBI hosts for 1000 Genomes (`ftp.1000genomes.ebi.ac.uk` and `ftp.ebi.ac.uk/1000g`) swung between a few KB/s and about 3 MB/s from one request to the next in the same hour. No other copy of the pinned v5c sites file exists: AWS's `1000genomes` bucket holds only v5b, and NCBI's 1000 Genomes path answers 404.
 - **Fix:** the pinned files are kept as assets of the GitHub release `e2e-data-1`, and `data_fetch` in `scripts/ci/e2e-run.sh` tries `E2E_DATA_MIRROR` once before the source. The pin checks both copies, so the mirror changes only where the bytes come from. A file missing from the release falls back to EBI.
+
+### A data fill with no time cap could still eat a leg's limit
+- **Failed:** with the mirror in place, a data fill that falls back to EBI had no bound on its total time. `fetch` cuts only a stall (under 1 KB/s for two minutes), so a transfer that moves slowly runs on, and two shard legs reached their 240-minute limit on the 1000 Genomes sites VCF (fork run 41957608395). The PGS Catalog score files and the HAPNEST panel had no mirror copy at all.
+- **Fix:** `data_fill` in `scripts/ci/e2e-run.sh` runs each fill within `E2E_DATA_BUDGET` seconds (2400 in `e2e.yml`) and stops it after that, with a message; its case then fails without running. The four score files and the HAPNEST panel are in `e2e-data-1` too, pinned by md5 (`PGS_MD5`) and sha256 (`HAPNEST_SHA256`), and tried there before EBI.
+
+### free-disk hid a cleanup that failed
+- **Failed:** `.github/actions/free-disk` ran its deletions and the image prune in the background and never read their exit codes, so a failed part showed only as fewer GB freed.
+- **Fix:** each part is waited for; a failure is a warning and a line in the job summary, and the step still passes. `tests/test_e2e_data_cache.sh` plants a failing `rm` and a failing prune.

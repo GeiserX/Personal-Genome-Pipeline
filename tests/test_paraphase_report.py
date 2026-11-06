@@ -29,7 +29,10 @@ Checks:
      (a one-field change in the JSON goes red), a synthetic JSON of every new
      entry (F8 intron 22, OPN1LW/OPN1MW, IKBKG, the NEB repeat, CYP11B1,
      TPSAB1, AMY1A, the CFH cluster) parses into its rows, and a region
-     without the field its row reads is "not assessed";
+     without the field its row reads is "not assessed", except HBA's
+     genotype and RCCX's annotated_alleles, whose rows keep their copy
+     number; a catalog row reading either field on another region stops
+     the table;
   6. the region count: docs/35-paralogs.md and scripts/35b-paraphase.sh state
      PARAPHASE_REGIONS, the number of regions of the pinned Paraphase
      4.1.0's data/38/config.yaml (the e2e case paralog-rows-1 counts them in
@@ -346,6 +349,32 @@ def main():
             f.write("region\tgene\tfield\n")
         rc, out = run("table", "--sample", "S", "--json", j, "--out-cn", cn, "--out-variants", var, "--genes", bad)
         check("a catalog with the wrong columns stops the table (exit 1)", rc == 1 and "header" in out, (rc, out))
+        # genotype is read by HBA's code and annotated_alleles by RCCX's: on another region the row
+        # would count no hba1hap haplotype, or show RCCX's detail, so the catalog is refused.
+        head = "\t".join(pr.GENES_COLUMNS) + "\n"
+        for region, field in (("smn1", "genotype"), ("pms2", "annotated_alleles")):
+            moved_row = os.path.join(work, f"genes-{field}.tsv")
+            with open(moved_row, "w") as f:
+                f.write(head + f"{region}\tX\t{field}\tr\ts\n")
+            rc, out = run("table", "--sample", "S", "--json", j, "--out-cn", cn, "--out-variants", var,
+                          "--genes", moved_row)
+            check(f"a catalog row reading {field} on region {region} stops the table (exit 1)",
+                  rc == 1 and f"field {field} on region {region}" in out, (rc, out))
+        own = os.path.join(work, "genes-own.tsv")
+        with open(own, "w") as f:
+            f.write(head + "hba\tHBA1\tgenotype\tr\ts\nrccx\tCYP21A2 (RCCX)\tannotated_alleles\tr\ts\n")
+        check("control: the same fields on their own regions load", list(pr.load_genes(own)) == ["hba", "rccx"])
+        # The two exceptions to "a field Paraphase did not write is not assessed": the copy number
+        # does not come from the field, so the rows keep it.
+        bare = {"hba": dict(PARAPHASE_JSON["hba"], region_specific_info={}),
+                "rccx": dict(PARAPHASE_JSON["rccx"], region_specific_info={})}
+        got = {x[1]: (x[2], x[3], x[4]) for x in pr.cn_table(bare)}
+        check("HBA without a genotype keeps its gene counts and is no call, not not assessed",
+              got.get("HBA1", ("",))[:2] == ("2", "no call") and got.get("HBA2", ("",))[:2] == ("1", "no call")
+              and "could not resolve the alleles" in got["HBA1"][2], got)
+        check("RCCX without annotated_alleles keeps the module's copies and lists no allele",
+              got.get("CYP21A2 (RCCX)", ("",))[:2] == ("4", "called") and "alleles:" not in got["CYP21A2 (RCCX)"][2],
+              got)
 
         # 6. the region count in the docs and the step
         for path in (os.path.join(REPO, "docs", "35-paralogs.md"), os.path.join(REPO, "scripts", "35b-paraphase.sh")):

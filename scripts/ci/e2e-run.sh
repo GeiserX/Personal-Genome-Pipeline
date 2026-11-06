@@ -17,6 +17,8 @@
 #   --data-key NAME  prints the Actions cache key of data entry NAME (hla, pgs).
 #   --data-check NAME  exits 0 when entry NAME in E2E_DATA_CACHE is whole and
 #            matches its checksums (the e2e workflow saves only such an entry).
+#   --data-fill NAME  fills entry NAME in E2E_DATA_CACHE as a case's run does,
+#            within E2E_DATA_BUDGET, and exits (124 when the budget ran out).
 #
 # Env: E2E_WORK  work area (default ${RUNNER_TEMP:-/tmp}/e2e-work), about 25 GB
 #      GH_TOKEN  token for `gh release download` (the job's GITHUB_TOKEN)
@@ -38,6 +40,13 @@
 #                $E2E_WORK/report/trace.tsv for `e2e-shards.sh times`
 #      E2E_DATA_CACHE  a folder of downloads kept between runs (see "Downloads
 #                kept between runs" below); E2E_DATA_KEEP=true keeps it whole
+#      E2E_DATA_MIRROR  a folder URL holding copies of the pinned downloads,
+#                tried before their sources
+#      E2E_DATA_BUDGET  the most seconds one data cache fill may take
+#                (default 2400); a fill still running then fails its case
+#      E2E_MIRROR_BUDGET  the most seconds one file may take on the mirror
+#                before its source is tried (default 900, or half of
+#                E2E_DATA_BUDGET when that is less)
 #
 # Every run writes $E2E_WORK/report/results.tsv ("CASE RESULT SECONDS JOB",
 # tab-separated) and report/extra.md (failed checks and notes), which the
@@ -171,6 +180,13 @@ fi
 DATA_CACHE=${E2E_DATA_CACHE:-}
 HLA_CASE="${REPO}/tests/e2e/bash-step-08-hla.sh"
 PGS_CASE="${REPO}/tests/e2e/prs-scores-and-run-options-1-strand-sex.sh"
+# PGS_MD5: "ID MD5" of the score files the e2e-data-1 release holds, the md5
+# the PGS Catalog served beside each on 2026-11-06 (its .md5 file).
+# E2E_PGS_MD5 replaces the list (tests/test_e2e_data_cache.sh).
+PGS_MD5=${E2E_PGS_MD5-"PGS002257 bb1b2b11a499c5930e8c835647e48296
+PGS000065 90ac7aabbbde9bdaa681dbdb66c0ebd8
+PGS000064 43b39c4450f423f0772bbd8779dd640f
+PGS000066 b34f31b8b3a7dbbbb58882a70e14649d"}
 # hla_releases: the IPD-IMGT/HLA releases bash-step-08-hla installs (the
 # release before the pin, then the pin), from the case and scripts/lib/common.sh.
 hla_releases() {
@@ -203,23 +219,190 @@ data_key() {
 # downloads passed their md5 checks, matches. pgs: each score of the case is
 # there with the md5 file the PGS Catalog serves beside it, and matches it.
 data_ok() {
-  local d="${DATA_CACHE:?}/$1" id
+  local d="${DATA_CACHE:?}/$1" id pin sum
   case "$1" in
     hla)
       [ -s "${d}/SHA256SUMS" ] && [ "$(wc -l < "${d}/SHA256SUMS")" -eq 4 ] \
         && (cd "$d" && sha256sum --quiet -c SHA256SUMS) ;;
     pgs)
+      # A score pinned in PGS_MD5 must match its pin as well as its .md5.
       for id in $(sed -n 's/^NEW_IDS="\(.*\)"$/\1/p' "$PGS_CASE"); do
+        pin=$(awk -v i="$id" '$1 == i {print $2}' <<< "$PGS_MD5")
+        sum=$(md5sum "${d}/${id}.txt.gz" 2> /dev/null | cut -d' ' -f1)
         [ -s "${d}/${id}.txt.gz" ] && [ -s "${d}/${id}.txt.gz.md5" ] \
-          && [ "$(md5sum "${d}/${id}.txt.gz" | cut -d' ' -f1)" = "$(awk '{print $1; exit}' "${d}/${id}.txt.gz.md5")" ] \
+          && [ "$sum" = "$(awk '{print $1; exit}' "${d}/${id}.txt.gz.md5")" ] \
+          && { [ -z "$pin" ] || [ "$sum" = "$pin" ]; } \
           || return 1
       done ;;
     *) return 1 ;;
   esac
 }
+# --- Downloads kept between runs ----------------------------------------------
+# The two largest downloads of the cases come from EBI's 1000 Genomes server,
+# which is slow and stalls at times: MoChA's chr20 panel (mocha-1, about
+# 655 MB, with its manifest) and the 1000 Genomes phase 3 sites VCF
+# (archaic-ancestry-1, about 1.5 GB). With E2E_DATA_CACHE set (the e2e
+# workflow restores it from the Actions cache), the runner gives each of
+# these cases its files before it starts, at the paths setup.sh reads them
+# from, so setup.sh finds them and downloads nothing. A file missing from
+# E2E_DATA_CACHE is downloaded there first, checked against its pin. The
+# files are hard links where they can be (setup.sh deletes its copy, the
+# cache keeps its own). Without E2E_DATA_KEEP=true (the workflow sets it on
+# a run that saves the cache) a case's cached files are deleted after it,
+# to give the disk back.
+# E2E_DATA_MIRROR, when set, is a folder URL (a GitHub release) holding copies
+# of these pinned files under their own names. Each file is tried there once
+# first, then at its source. EBI's 1000 Genomes hosts swing between a few KB/s
+# and MB/s from one request to the next, and a leg with no Actions cache could
+# spend its whole time limit on one download. The pin checks both copies the
+# same way, so the mirror can only save time, never change what a case reads.
+# kill_tree PID: PID and every process under it (data_fetch's subshells and
+# their curl).
+kill_tree() {
+  local c
+  for c in $(pgrep -P "$1" 2> /dev/null); do kill_tree "$c"; done
+  kill -TERM "$1" 2> /dev/null || true
+}
+# within SECS CMD...: runs CMD (a function too) and stops it with everything
+# under it after SECS seconds; returns CMD's status, or 124 when it was stopped.
+within() {
+  local secs=$1 pid wd rc=0 over
+  shift
+  over=$(mktemp)
+  "$@" & pid=$!
+  ( sleep "$secs"; echo over > "$over"; kill_tree "$pid" ) & wd=$!
+  wait "$pid" || rc=$?
+  kill_tree "$wd"
+  wait "$wd" 2> /dev/null || true
+  if [ -s "$over" ]; then rm -f "$over"; return 124; fi
+  rm -f "$over"
+  return "$rc"
+}
+# mfetch URL DEST KIND SUM: fetch from the mirror, then from URL. Called
+# inside data_fetch, after it sources scripts/lib/common.sh for fetch. The
+# mirror try gets E2E_MIRROR_BUDGET seconds (default 900, or half of
+# E2E_DATA_BUDGET when that is less), so a mirror that trickles leaves the
+# source its turn within the fill's budget.
+mfetch() {
+  local secs=${E2E_MIRROR_BUDGET:-} rc=0
+  if [ -n "${E2E_DATA_MIRROR:-}" ]; then
+    if [ -z "$secs" ]; then
+      secs=$(( ${E2E_DATA_BUDGET:-2400} / 2 ))
+      [ "$secs" -le 900 ] || secs=900
+      [ "$secs" -ge 1 ] || secs=1
+    fi
+    FETCH_TRIES=1 within "$secs" fetch "${E2E_DATA_MIRROR%/}/${1##*/}" "$2" "$3" "$4" 2> /dev/null || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      echo "Data cache: ${1##*/} from the mirror"
+      return 0
+    fi
+    if [ "$rc" -eq 124 ]; then
+      echo "Data cache: ${1##*/} took more than ${secs} s on the mirror; downloading it from its source"
+    else
+      echo "Data cache: ${1##*/} not on the mirror; downloading it from its source"
+    fi
+  fi
+  fetch "$@"
+}
+# data_fetch NAME: fills E2E_DATA_CACHE/NAME with what is missing, in a
+# subshell that sources scripts/lib/common.sh for fetch and the pins.
+data_fetch() (
+  d="${DATA_CACHE}/$1"
+  # shellcheck source=../lib/common.sh
+  . "${REPO}/scripts/lib/common.sh" || exit 1
+  # More and longer-spaced tries than a user's run: EBI and GitHub's raw host
+  # stayed down for minutes at a time on 2026-11-04 (curl exit 7 and 28).
+  FETCH_TRIES=${E2E_FETCH_TRIES:-6} FETCH_WAIT=${E2E_FETCH_WAIT:-30}
+  case "$1" in
+    mocha)
+      m="${d}/manifest.txt"
+      { [ -s "$m" ] && [ "$(_digest sha256 "$m")" = "$MOCHA_PANEL_MANIFEST_SHA256" ]; } \
+        || mfetch "${MOCHA_PANEL_URL}/20220804_manifest.txt" "$m" sha256 "$MOCHA_PANEL_MANIFEST_SHA256" || exit 1
+      # mocha-1 cuts the panel to the fixture's chr20 slice.
+      f=1kGP_high_coverage_Illumina.chr20.filtered.SNV_INDEL_SV_phased_panel.vcf.gz
+      for e in "" .tbi; do
+        md5=$(awk -v n="${f}${e}" '$1 == n {print $2}' "$m")
+        [ -n "$md5" ] || { echo "ERROR: ${f}${e} is not in the panel manifest" >&2; exit 1; }
+        [ -s "${d}/raw/${f}${e}" ] && [ "$(_digest md5 "${d}/raw/${f}${e}")" = "$md5" ] && continue
+        mfetch "${MOCHA_PANEL_URL}/${f}${e}" "${d}/raw/${f}${e}" md5 "$md5" || exit 1
+      done ;;
+    archaic)
+      url=$(sed -n 's/^ARCHAIC_1KG_SITES_URL=//p' "${REPO}/scripts/setup.sh")
+      [ -n "$url" ] || { echo "ERROR: no ARCHAIC_1KG_SITES_URL line in scripts/setup.sh" >&2; exit 1; }
+      s="${d}/1kg_sites.vcf.gz"
+      [ -s "$s" ] && [ "$(_digest md5 "$s")" = "$ARCHAIC_1KG_SITES_MD5" ] && exit 0
+      mfetch "$url" "$s" md5 "$ARCHAIC_1KG_SITES_MD5" || exit 1 ;;
+    hla)
+      # The files install_data_file writes, made by install_data_file itself
+      # with the entry as GENOME_DIR: hla.dat of both releases (md5 from
+      # IPD-IMGT/HLA's md5checksum.txt) and GENCODE's genes and exons (md5
+      # from its MD5SUMS). Their sha256 go to SHA256SUMS, which data_ok checks.
+      data_ok hla && exit 0
+      rm -rf "$d" && mkdir -p "$d" || exit 1
+      read -r other pin <<< "$(hla_releases)"
+      [ -n "$pin" ] || exit 1
+      # Each install is tried again as a whole: install_data_file reads
+      # hla.dat.zip's md5 from md5checksum.txt in one request, outside fetch's
+      # tries. What an earlier try installed is kept.
+      ( GENOME_DIR=$d
+        unset SAMPLE
+        for job in "$other hla_dat" "$pin hla_dat" "$pin gencode_genes" "$pin gencode_exons"; do
+          read -r rel name <<< "$job"
+          for ((t = 1; ; t++)); do
+            HLA_DB_RELEASE=$rel install_data_file "$name" && break
+            [ "$t" -lt 3 ] || exit 1
+            echo "Data cache: installing ${name} (${rel}) failed, try ${t} of 3; again in ${FETCH_WAIT} s" >&2
+            sleep "$FETCH_WAIT"
+          done
+        done ) || exit 1
+      (cd "$d" && find . -type f ! -name 'SHA256SUMS*' ! -name '*.part' | LC_ALL=C sort | xargs sha256sum) > "${d}/SHA256SUMS.tmp" \
+        && mv "${d}/SHA256SUMS.tmp" "${d}/SHA256SUMS" && data_ok hla || exit 1 ;;
+    pgs)
+      # The four real PGS Catalog files of prs-scores-and-run-options-1, each
+      # with the .md5 file the PGS Catalog serves beside it. A score pinned
+      # in PGS_MD5 is tried on the mirror first, checked against the pin, and
+      # its .md5 file is written from the pin; any other score comes from
+      # the PGS Catalog with its served .md5, as before.
+      base=$(sed -n 's/^PGS_BASE=//p' "$PGS_CASE")
+      [ -n "$base" ] || { echo "ERROR: no PGS_BASE= line in ${PGS_CASE}" >&2; exit 1; }
+      for id in $(sed -n 's/^NEW_IDS="\(.*\)"$/\1/p' "$PGS_CASE"); do
+        f="${d}/${id}.txt.gz" url="${base}/${id}/ScoringFiles/Harmonized/${id}_hmPOS_GRCh38.txt.gz"
+        pin=$(awk -v i="$id" '$1 == i {print $2}' <<< "$PGS_MD5")
+        [ -s "$f" ] && [ -s "${f}.md5" ] && [ "$(_digest md5 "$f")" = "$(awk '{print $1; exit}' "${f}.md5")" ] \
+          && { [ -z "$pin" ] || [ "$(_digest md5 "$f")" = "$pin" ]; } && continue
+        rm -f "$f" "${f}.md5"
+        if [ -n "$pin" ]; then
+          mfetch "$url" "$f" md5 "$pin" || exit 1
+          echo "${pin}  ${url##*/}" > "${f}.md5"
+        else
+          fetch "${url}.md5" "${f}.md5" || exit 1
+          fetch "$url" "$f" md5 "$(awk '{print $1; exit}' "${f}.md5")" || exit 1
+        fi
+      done
+      data_ok pgs || exit 1 ;;
+    *) echo "ERROR: no data cache entry ${1}" >&2; exit 1 ;;
+  esac
+)
+# data_fill NAME: data_fetch NAME within E2E_DATA_BUDGET seconds (default
+# 2400). A fill that is still running then is stopped, its partial files
+# kept for the next try, and data_fill returns 124 with a message that says
+# so. Each try of fetch has its own stall limit, but a source that trickles
+# without stalling is never cut by it: on 2026-11-05 EBI served the 1000
+# Genomes sites VCF slowly enough that two shard legs reached their 240-minute
+# limit on that one download (fork run 41957608395).
+data_fill() {
+  local budget=${E2E_DATA_BUDGET:-2400} rc=0
+  case "$budget" in ''|*[!0-9]*) echo "ERROR: E2E_DATA_BUDGET must be a whole number of seconds, got '${budget}'" >&2; return 1 ;; esac
+  within "$budget" data_fetch "$1" || rc=$?
+  if [ "$rc" -eq 124 ]; then
+    echo "ERROR: Data cache: filling ${1} took more than E2E_DATA_BUDGET=${budget} s and was stopped; a source this slow would eat the job's time limit" >&2
+  fi
+  return "$rc"
+}
 case "${1:-}" in
   --data-key) data_key "${2:?--data-key NAME}"; exit ;;
   --data-check) data_ok "${2:?--data-check NAME}"; exit ;;
+  --data-fill) data_fill "${2:?--data-fill NAME}"; exit ;;
 esac
 
 # pull_all: pull every image of case_images that is not here yet, but the
@@ -485,104 +668,6 @@ df --output=avail -k "$E2E_WORK" | tail -1 > "$LOW_FILE"
 LOW_PID=$!
 trap 'kill "$LOW_PID" 2> /dev/null || true' EXIT
 
-# --- Downloads kept between runs ----------------------------------------------
-# The two largest downloads of the cases come from EBI's 1000 Genomes server,
-# which is slow and stalls at times: MoChA's chr20 panel (mocha-1, about
-# 655 MB, with its manifest) and the 1000 Genomes phase 3 sites VCF
-# (archaic-ancestry-1, about 1.5 GB). With E2E_DATA_CACHE set (the e2e
-# workflow restores it from the Actions cache), the runner gives each of
-# these cases its files before it starts, at the paths setup.sh reads them
-# from, so setup.sh finds them and downloads nothing. A file missing from
-# E2E_DATA_CACHE is downloaded there first, checked against its pin. The
-# files are hard links where they can be (setup.sh deletes its copy, the
-# cache keeps its own). Without E2E_DATA_KEEP=true (the workflow sets it on
-# a run that saves the cache) a case's cached files are deleted after it,
-# to give the disk back.
-DATA_CACHE=${E2E_DATA_CACHE:-}
-# E2E_DATA_MIRROR, when set, is a folder URL (a GitHub release) holding copies
-# of these pinned files under their own names. Each file is tried there once
-# first, then at its source. EBI's 1000 Genomes hosts swing between a few KB/s
-# and MB/s from one request to the next, and a leg with no Actions cache could
-# spend its whole time limit on one download. The pin checks both copies the
-# same way, so the mirror can only save time, never change what a case reads.
-# mfetch URL DEST KIND SUM: fetch from the mirror, then from URL. Called
-# inside data_fetch, after it sources scripts/lib/common.sh for fetch.
-mfetch() {
-  if [ -n "${E2E_DATA_MIRROR:-}" ]; then
-    FETCH_TRIES=1 fetch "${E2E_DATA_MIRROR%/}/${1##*/}" "$2" "$3" "$4" 2> /dev/null && return 0
-    echo "Data cache: ${1##*/} not on the mirror; downloading it from its source"
-  fi
-  fetch "$@"
-}
-# data_fetch NAME: fills E2E_DATA_CACHE/NAME with what is missing, in a
-# subshell that sources scripts/lib/common.sh for fetch and the pins.
-data_fetch() (
-  d="${DATA_CACHE}/$1"
-  # shellcheck source=../lib/common.sh
-  . "${REPO}/scripts/lib/common.sh" || exit 1
-  # More and longer-spaced tries than a user's run: EBI and GitHub's raw host
-  # stayed down for minutes at a time on 2026-11-04 (curl exit 7 and 28).
-  FETCH_TRIES=${E2E_FETCH_TRIES:-6} FETCH_WAIT=${E2E_FETCH_WAIT:-30}
-  case "$1" in
-    mocha)
-      m="${d}/manifest.txt"
-      { [ -s "$m" ] && [ "$(_digest sha256 "$m")" = "$MOCHA_PANEL_MANIFEST_SHA256" ]; } \
-        || mfetch "${MOCHA_PANEL_URL}/20220804_manifest.txt" "$m" sha256 "$MOCHA_PANEL_MANIFEST_SHA256" || exit 1
-      # mocha-1 cuts the panel to the fixture's chr20 slice.
-      f=1kGP_high_coverage_Illumina.chr20.filtered.SNV_INDEL_SV_phased_panel.vcf.gz
-      for e in "" .tbi; do
-        md5=$(awk -v n="${f}${e}" '$1 == n {print $2}' "$m")
-        [ -n "$md5" ] || { echo "ERROR: ${f}${e} is not in the panel manifest" >&2; exit 1; }
-        [ -s "${d}/raw/${f}${e}" ] && [ "$(_digest md5 "${d}/raw/${f}${e}")" = "$md5" ] && continue
-        mfetch "${MOCHA_PANEL_URL}/${f}${e}" "${d}/raw/${f}${e}" md5 "$md5" || exit 1
-      done ;;
-    archaic)
-      url=$(sed -n 's/^ARCHAIC_1KG_SITES_URL=//p' "${REPO}/scripts/setup.sh")
-      [ -n "$url" ] || { echo "ERROR: no ARCHAIC_1KG_SITES_URL line in scripts/setup.sh" >&2; exit 1; }
-      s="${d}/1kg_sites.vcf.gz"
-      [ -s "$s" ] && [ "$(_digest md5 "$s")" = "$ARCHAIC_1KG_SITES_MD5" ] && exit 0
-      mfetch "$url" "$s" md5 "$ARCHAIC_1KG_SITES_MD5" || exit 1 ;;
-    hla)
-      # The files install_data_file writes, made by install_data_file itself
-      # with the entry as GENOME_DIR: hla.dat of both releases (md5 from
-      # IPD-IMGT/HLA's md5checksum.txt) and GENCODE's genes and exons (md5
-      # from its MD5SUMS). Their sha256 go to SHA256SUMS, which data_ok checks.
-      data_ok hla && exit 0
-      rm -rf "$d" && mkdir -p "$d" || exit 1
-      read -r other pin <<< "$(hla_releases)"
-      [ -n "$pin" ] || exit 1
-      # Each install is tried again as a whole: install_data_file reads
-      # hla.dat.zip's md5 from md5checksum.txt in one request, outside fetch's
-      # tries. What an earlier try installed is kept.
-      ( GENOME_DIR=$d
-        unset SAMPLE
-        for job in "$other hla_dat" "$pin hla_dat" "$pin gencode_genes" "$pin gencode_exons"; do
-          read -r rel name <<< "$job"
-          for ((t = 1; ; t++)); do
-            HLA_DB_RELEASE=$rel install_data_file "$name" && break
-            [ "$t" -lt 3 ] || exit 1
-            echo "Data cache: installing ${name} (${rel}) failed, try ${t} of 3; again in ${FETCH_WAIT} s" >&2
-            sleep "$FETCH_WAIT"
-          done
-        done ) || exit 1
-      (cd "$d" && find . -type f ! -name 'SHA256SUMS*' ! -name '*.part' | LC_ALL=C sort | xargs sha256sum) > "${d}/SHA256SUMS.tmp" \
-        && mv "${d}/SHA256SUMS.tmp" "${d}/SHA256SUMS" && data_ok hla || exit 1 ;;
-    pgs)
-      # The four real PGS Catalog files of prs-scores-and-run-options-1, each
-      # with the .md5 file served beside it, checked against it.
-      base=$(sed -n 's/^PGS_BASE=//p' "$PGS_CASE")
-      [ -n "$base" ] || { echo "ERROR: no PGS_BASE= line in ${PGS_CASE}" >&2; exit 1; }
-      for id in $(sed -n 's/^NEW_IDS="\(.*\)"$/\1/p' "$PGS_CASE"); do
-        f="${d}/${id}.txt.gz" url="${base}/${id}/ScoringFiles/Harmonized/${id}_hmPOS_GRCh38.txt.gz"
-        [ -s "$f" ] && [ -s "${f}.md5" ] && [ "$(_digest md5 "$f")" = "$(awk '{print $1; exit}' "${f}.md5")" ] && continue
-        rm -f "$f" "${f}.md5"
-        fetch "${url}.md5" "${f}.md5" || exit 1
-        fetch "$url" "$f" md5 "$(awk '{print $1; exit}' "${f}.md5")" || exit 1
-      done
-      data_ok pgs || exit 1 ;;
-    *) echo "ERROR: no data cache entry ${1}" >&2; exit 1 ;;
-  esac
-)
 # data_name CASE: the E2E_DATA_CACHE entry CASE reads, and where setup.sh
 # wants it ("-": the case reads the entry itself), then "offline" when the
 # case runs with the network blocked once its files are in place.
@@ -611,11 +696,13 @@ offline_blocked() {
 }
 # data_seed CASE: before CASE, its files from E2E_DATA_CACHE. A failure here
 # only warns and costs the download: setup.sh in the case fetches what is
-# not there. Sets CASE_ENV to OFFLINE when the case's entry says "offline"
+# not there. A fill that runs past E2E_DATA_BUDGET sets CASE_DATA_FAILED
+# instead: the case does not run (its own download would be as slow) and
+# counts as failed. Sets CASE_ENV to OFFLINE when the case's entry says "offline"
 # and every file is in place, after a control shows the block holds.
 data_seed() {
   local n dest flag f t placed=true
-  CASE_ENV=() CASE_CONTROL_FAILED=false
+  CASE_ENV=() CASE_CONTROL_FAILED=false CASE_DATA_FAILED=false
   [ -n "$DATA_CACHE" ] || return 0
   read -r n dest flag <<< "$(data_name "$1")"
   [ -n "$n" ] || return 0
@@ -624,7 +711,14 @@ data_seed() {
   else
     echo "Data cache: ${n} not in the Actions cache; downloading it"
   fi
-  data_fetch "$n" || { echo "::warning::Data cache: could not fill ${n}; ${1%.sh} downloads it itself"; return 0; }
+  local rc=0
+  data_fill "$n" || rc=$?
+  if [ "$rc" -eq 124 ]; then
+    echo "::error::Data cache: filling ${n} took more than E2E_DATA_BUDGET=${E2E_DATA_BUDGET:-2400} s; ${1%.sh} does not run and counts as failed"
+    CASE_DATA_FAILED=true
+    return 0
+  fi
+  [ "$rc" -eq 0 ] || { echo "::warning::Data cache: could not fill ${n}; ${1%.sh} downloads it itself"; return 0; }
   [ "$dest" = - ] && { echo "Data cache: ${n} is whole; ${1%.sh} reads it from ${DATA_CACHE}/${n}"; return 0; }
   while IFS= read -r f; do
     t="${dest}/${f#./}"
@@ -730,10 +824,15 @@ for c in "${CASES[@]}"; do
   tstart=$(date +%s.%N)
   echo "::group::${name}"
   data_seed "$c"
-  set +e
-  timeout -k 30 "$CASE_TIMEOUT" "${CASE_ENV[@]}" bash "${REPO}/tests/e2e/${c}" 2>&1 | tee "$log"
-  rc=${PIPESTATUS[0]}
-  set -e
+  if $CASE_DATA_FAILED; then
+    echo "${name}: not run: its data fill ran past E2E_DATA_BUDGET" | tee "$log"
+    rc=-2
+  else
+    set +e
+    timeout -k 30 "$CASE_TIMEOUT" "${CASE_ENV[@]}" bash "${REPO}/tests/e2e/${c}" 2>&1 | tee "$log"
+    rc=${PIPESTATUS[0]}
+    set -e
+  fi
   data_drop "$c"
   # A lazy image goes when its case ends, so a leg holds one at a time; a
   # later case that runs it pulls it again (DeepVariant's and PharmCAT's images
@@ -747,6 +846,7 @@ for c in "${CASES[@]}"; do
   case "$rc" in
     0)   result=pass ;;
     -1)  result="FAIL (network-block control)"; failed=$((failed + 1)) ;;
+    -2)  result="FAIL (data fill over ${E2E_DATA_BUDGET:-2400}s)"; failed=$((failed + 1)) ;;
     124) result="FAIL (timeout ${CASE_TIMEOUT}s)"; failed=$((failed + 1)) ;;
     *)   result="FAIL (exit ${rc})"; failed=$((failed + 1)) ;;
   esac

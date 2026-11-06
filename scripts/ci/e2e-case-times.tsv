@@ -8,7 +8,9 @@
 #   needs    the shard-stage cases whose outputs it reads, comma-separated, or -
 #            for none; a case runs in the same shard as every case it needs,
 #            after them (name order)
-# A case with no row runs as a shard case of 300 seconds that needs nothing.
+# Every case needs a row (e2e-shards.sh check, run by tests/test_e2e_shards.sh);
+# the split still runs a case with no row, as a shard case of 300 seconds that
+# needs nothing.
 # Stage base holds the numbered cases and bash-step-08-hla: most other cases
 # read what they wrote. The needs come from what each case says it reads (its
 # header and its checks) and from the cases that failed when a need was
@@ -78,11 +80,14 @@ containers-software-versions	shard	0	-
 couple-carrier-1	shard	101	-
 couple-common-sv-1	shard	46	-
 cpic-phenoconversion-1-medications	shard	36	-
+cyp21a2-short-reads-1-hg002	shard	11	-
 exomiser-1	shard	300	-
 expansions-and-rfc1-1-motif	shard	9	-
 families-file-1	shard	76	-
 family-joint-1	shard	515	-
 fixitfelix-chr21-1	shard	98	-
+followups-clinvar-traits-1-rules-html	shard	2	-
+followups-cn-1-couple-report	shard	69	-
 genome-lookup-1	shard	7	-
 genotype-rule-rows-1-str-extra	shard	8	-
 genotype-rules-1-phase	shard	37	-
@@ -141,6 +146,7 @@ setup-gencode-exons-and-nextflow-clip-check-1	shard	57	clinvar-clip-check-1
 short-sample-id-stub	shard	48	-
 single-source-lib-ownership	shard	1	-
 str-catalog-1-strchive	shard	12	-
+str-extra-repeats-1-readings	shard	16	-
 sv-mito-telomere-steps-1-sv-merge	shard	5	-
 sv-mito-telomere-steps-2-mito	shard	6	bash-step-20-numt
 sv-mito-telomere-steps-3-y-haplogroup	shard	13	-

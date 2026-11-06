@@ -698,9 +698,10 @@ jobs:
       # prs-scores-and-run-options-2, 268 MB), from EBI's FTP server, keyed
       # on the sha256 tests/e2e/lib.sh pins. The cases take it from
       # E2E_DATA_CACHE/hapnest, check it and then run setup.sh with EBI
-      # unreachable; on a miss the first one downloads it and puts it there
-      # (setup_ancestry_panel in lib.sh). Saved like the entries above: on
-      # main, or a run by hand with save_images, on a miss.
+      # unreachable; on a miss the first one takes it from E2E_DATA_MIRROR
+      # (else EBI, through setup.sh) and puts it there (setup_ancestry_panel
+      # in lib.sh). Saved like the entries above: on main, or a run by hand
+      # with save_images, on a miss.
       - name: Data cache, HAPNEST panel
         id: hapnest
         env:
@@ -730,8 +731,12 @@ jobs:
           E2E_TRACE: ${{ needs.e2e-plan.outputs.trace }}
           # The free disk a leg needs before its first case (e2e-run.sh).
           E2E_MIN_FREE_GB: 10
-          # Copies of the pinned e2e data, tried before EBI (data_fetch in e2e-run.sh).
+          # Copies of the pinned e2e data, tried before EBI (data_fetch in
+          # e2e-run.sh, setup_ancestry_panel in tests/e2e/lib.sh).
           E2E_DATA_MIRROR: https://github.com/GeiserX/OwnGenome/releases/download/e2e-data-1
+          # The most seconds one data cache fill may take; a fill still
+          # running then fails its case instead of the leg's time limit.
+          E2E_DATA_BUDGET: 2400
           E2E_BASE_OUT: ${{ matrix.job == 'base' && format('{0}/base.tar.zst', runner.temp) || '' }}
           E2E_BASE_IN: ${{ matrix.job != 'base' && format('{0}/e2e-base/base.tar.zst', runner.temp) || '' }}
           # Keep the downloads to the end of the job only when a save step uses them.
