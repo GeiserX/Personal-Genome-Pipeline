@@ -75,6 +75,7 @@ workflow BAM_ANALYSIS {
     ch_mito_annotated   = Channel.empty()   // [meta, <id>_chrM_annotated.tsv]
     ch_mito_deletions   = Channel.empty()   // [meta, <id>_chrM_deletions.tsv]
     ch_mito_copies      = Channel.empty()   // [meta, <id>_mtdna_copies.tsv]
+    ch_cn_intervals     = Channel.empty()   // [meta, <id>_cn_intervals.tsv] when Parascopy runs
     ch_kir_genotype     = Channel.empty()
     ch_hla_optitype     = Channel.empty()   // [meta, <id>_optitype_result.tsv] with --hla_qc
     ch_hla_concordance  = Channel.empty()   // [meta, <id>_hla_concordance.tsv] when OptiType typed reads
@@ -237,6 +238,7 @@ workflow BAM_ANALYSIS {
     //
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('parascopy')) {
         PARASCOPY(ch_bam, ch_reference, ch_reference_fai, ch_parascopy_data, ch_parascopy_bed)
+        ch_cn_intervals    = PARASCOPY.out.intervals
         ch_smn_copy_number = PARASCOPY.out.copy_number
         ch_hba_copy_number = PARASCOPY.out.hba
         // every other catalog row's table: SMN1's and HBA's come apart, above
@@ -394,6 +396,7 @@ workflow BAM_ANALYSIS {
     telomere_results = ch_telomere_results
     coverage         = ch_coverage
     callability      = ch_callability     // [meta, <id>_callability.bed.gz]
+    cn_intervals     = ch_cn_intervals    // [meta, <id>_cn_intervals.tsv]: bin/cn_loci.tsv's interval rows
     mito_vcf         = ch_mito_vcf
     mito_annotated   = ch_mito_annotated  // [meta, <id>_chrM_annotated.tsv]
     mito_deletions   = ch_mito_deletions  // [meta, <id>_chrM_deletions.tsv]

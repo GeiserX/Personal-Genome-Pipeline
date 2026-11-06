@@ -107,7 +107,7 @@ check "step 35 ran the 37-row catalog in 30 minutes or less (${ELAPSED} s)" test
 table_state() {
   awk -F'\t' 'NR == 1 {next}
     NF != 11 {b = 1; next}
-    $6 ~ /^[<>]?[0-9]+$/ && $7 ~ /^[0-9.]+$/ {c = 1; next}
+    $6 ~ /^[<>]?[0-9]+$/ && $7 ~ /^[0-9]+(\.[0-9]+)?$/ {c = 1; next}
     $5 ~ /^not assessed: ./ {n = 1; next}
     $6 == "." && $5 != "" && $5 != "." {r = 1; next}
     {b = 1}
@@ -144,6 +144,9 @@ check_eq "red control: a called row beside a malformed one fails the row check" 
 LOWQ="${CASE_TMP}/lowqual.tsv"
 awk -F'\t' -v OFS='\t' 'NR > 1 {$5 = "LowQual"; $7 = 12} 1' "${OUTD}/${P}_gba1_copy_number.tsv" > "$LOWQ"
 check_eq "red control: a LowQual quality-12 GBA table is no PASS call" "$(pass_call "$LOWQ")" no
+DOTQ="${CASE_TMP}/dot_quality.tsv"
+awk -F'\t' -v OFS='\t' 'NR > 1 {$7 = "."} 1' "${OUTD}/${P}_gba1_copy_number.tsv" > "$DOTQ"
+check_eq "red control: a GBA row with an integer agCN and quality '.' fails the row check" "$(table_state "$DOTQ")" bad
 echo "paralog-rows: step 35 on 37 rows in ${ELAPSED} s, ${called} called, ${nassessed} not assessed" >> "$E2E_NOTES"
 
 # The reports read every table: both, on this sample

@@ -778,7 +778,9 @@ def smn_reading(smn1):
 
 # Tables in paralogs/ that other parts of steps 35 and 35b write, not catalog rows.
 NOT_CATALOG_TABLES = ("hba", "paraphase")
-PARASCOPY_COLUMNS = {"chrom", "start", "end", "agCN", "psCN", "psCN_qual", "psCN_filter"}
+# agCN_filter and agCN_qual too: without them a catalog locus would read as
+# "not resolved" instead of unreadable.
+PARASCOPY_COLUMNS = {"chrom", "start", "end", "agCN", "agCN_filter", "agCN_qual", "psCN", "psCN_qual", "psCN_filter"}
 
 
 def parascopy_tables(d, s):
@@ -842,14 +844,17 @@ def sec_parascopy(d, s):
     the other loci."""
     tables = parascopy_tables(d, s)
     hp = os.path.join(d, "paralogs", f"{s}_hba_copy_number.tsv")
-    p = tables.get("smn") or next(iter(tables.values()), None) or (hp if os.path.isfile(hp) else None)
+    ip = os.path.join(d, "paralogs", f"{s}_cn_intervals.tsv")
+    cp = os.path.join(d, "paralogs", f"{s}_cyp21a2_psv.tsv")
+    p = (tables.get("smn") or next(iter(tables.values()), None) or (hp if os.path.isfile(hp) else None)
+         or (ip if os.path.isfile(ip) else None) or (cp if os.path.isfile(cp) else None))
     if not p:
         return None, {}
     if "smn" in tables:
         rows = read_tsv(tables["smn"])
         if rows and not PARASCOPY_COLUMNS <= set(rows[0]):
-            raise Unreadable(f"{os.path.basename(tables['smn'])} lacks the chrom, start, end, agCN, psCN, psCN_qual or "
-                             "psCN_filter column")
+            raise Unreadable(f"{os.path.basename(tables['smn'])} lacks the chrom, start, end, agCN, agCN_filter, "
+                             "agCN_qual, psCN, psCN_qual or psCN_filter column")
         smn1 = parascopy_cn_at(rows, *paraphase_report.SMN1_EXON7)
         smn2 = parascopy_cn_at(rows, *SMN2_EXON7)
         # Step 35 writes one row whose agCN_filter is "not assessed: <reason>"
@@ -865,8 +870,6 @@ def sec_parascopy(d, s):
         reading = f"{NO_SMN_TABLE}: no carrier reading"
     others = {n: t for n, t in tables.items() if n != "smn"}
     catalog = {r["table"]: r for r in asset_rows("paralog_loci.tsv")} if others else {}
-    ip = os.path.join(d, "paralogs", f"{s}_cn_intervals.tsv")
-    cp = os.path.join(d, "paralogs", f"{s}_cyp21a2_psv.tsv")
     return p, {"smn1": smn1, "smn2": {"cn": smn2["cn"], "text": smn2["text"]},
                "agcn": smn1["agcn"], "agcn_qual": smn1["agcn_qual"], "agcn_filter": smn1["agcn_filter"],
                "rows": len(rows),
@@ -3793,6 +3796,9 @@ def gene_deletions(d, s, spans):
             chrom, _, span = x["sv"].partition(":")
             a, _, b = span.partition("-")
             if x["type"] != "DEL" or x["common"] or not (a.isdigit() and b.isdigit()):
+                continue
+            # A call genotyped 0/0 (or 0|0) is no deletion in this sample: it pairs with nothing.
+            if x.get("gt") and set(x["gt"].replace("|", "/").split("/")) == {"0"}:
                 continue
             chrom = chrom if chrom.startswith("chr") else "chr" + chrom
             # SV_start is the base before the deleted bases (annotsv_postfilter.sv_span):
