@@ -8,24 +8,36 @@ name: Public evidence
 #                      downloaded once (its md5 checked) and indexed, for
 #                      every chromosome job.
 #   archaic-hg002      setup.sh --archaic and step 43 on HG002's GIAB v4.2.1
-#                      genotypes, one job per autosome (about 150 GB of
-#                      archaic downloads in all; each job fetches its three
-#                      files side by side first, and setup.sh resumes them
-#                      and checks their md5), then archaic-share joins the
-#                      22 into one report per population and prints HG002's
-#                      Neanderthal and Denisovan shares, and how many of
-#                      HG002's positions carry two records, one an SNV.
+#                      genotypes, one job per autosome of the chromosomes
+#                      input (all 22 by default: about 150 GB of archaic
+#                      downloads in all; each job fetches its three files
+#                      side by side first, and setup.sh resumes them and
+#                      checks their md5), then archaic-share joins them into
+#                      one report per population and prints HG002's
+#                      Neanderthal and Denisovan shares, the Neanderthal
+#                      total against the published range when all 22 ran,
+#                      and how many of HG002's positions carry two records,
+#                      one an SNV.
 #                      The job "empty" is the red control: an empty region
 #                      list must make it fail.
 #   ancient-footprint  setup.sh --ancient-panel on the full AADR 1240K files,
 #                      then step 44 on HG002, each with the peak memory of
 #                      its containers (the cgroup's memory.peak), the peak
-#                      disk use and the time.
+#                      disk use and the time. The ancient input off skips it.
 #
 # It runs by hand only (workflow_dispatch). Public repo: the GitHub-hosted
 # runner is free here.
 on:
   workflow_dispatch:
+    inputs:
+      chromosomes:
+        description: "Autosomes for the archaic jobs, separated by spaces or commas (for example 22), or all"
+        type: string
+        default: all
+      ancient:
+        description: "Run the ancient-footprint job too"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -42,10 +54,30 @@ jobs:
   archaic-sites:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    outputs:
+      parts: ${{ steps.plan.outputs.parts }}
+      count: ${{ steps.plan.outputs.count }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: The chromosomes to run
+        id: plan
+        env:
+          CHROMOSOMES: ${{ inputs.chromosomes }}
+        run: |
+          set -euo pipefail
+          read -ra want <<< "$(printf '%s' "$CHROMOSOMES" | tr ',\r\n' '   ')"
+          [ "${want[*]:-all}" != all ] || mapfile -t want < <(seq 1 22)
+          for c in "${want[@]}"; do
+            [[ "$c" =~ ^([1-9]|1[0-9]|2[0-2])$ ]] || { echo "chromosomes: '${c}' is not an autosome 1 to 22"; exit 1; }
+          done
+          list=$(printf '%s\n' "${want[@]}" | sort -nu)
+          # The empty part is the red control and always runs.
+          parts=$(printf '%s\n' empty "$list" | jq -Rnc '[inputs]')
+          echo "parts=${parts}" >> "$GITHUB_OUTPUT"
+          echo "count=$(grep -c . <<< "$list")" >> "$GITHUB_OUTPUT"
+          echo "archaic parts: ${parts}"
       - name: The 1000 Genomes phase 3 sites file and its index
         run: |
           set -euo pipefail
@@ -74,8 +106,8 @@ jobs:
       # Eight at a time, so the other pull requests keep runners.
       max-parallel: 8
       matrix:
-        part: [empty, '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17',
-               '18', '19', '20', '21', '22']
+        # empty, then the autosomes of the chromosomes input (archaic-sites' plan step).
+        part: ${{ fromJSON(needs.archaic-sites.outputs.parts) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -245,7 +277,7 @@ jobs:
           if-no-files-found: error
 
   archaic-share:
-    needs: archaic-hg002
+    needs: [archaic-sites, archaic-hg002]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -256,11 +288,27 @@ jobs:
         with:
           pattern: archaic-part-*
           path: parts
-      - name: One report per population, over the 22 autosomes
+      - name: Give a lone part its own folder
+        env:
+          PARTS: ${{ needs.archaic-sites.outputs.parts }}
         run: |
           set -euo pipefail
+          # download-artifact puts a single matching artifact straight into
+          # parts/, without the archaic-part-<chromosome> folder the steps
+          # below read.
+          if ! compgen -G 'parts/archaic-part-*' > /dev/null; then
+            c=$(jq -r '.[1]' <<< "$PARTS")
+            mv parts "lone-${c}" && mkdir parts && mv "lone-${c}" "parts/archaic-part-${c}"
+          fi
+          ls parts
+      - name: One report per population, over the autosomes that ran
+        env:
+          WANT: ${{ needs.archaic-sites.outputs.count }}
+        run: |
+          set -euo pipefail
+          if [ "$WANT" -eq 22 ]; then what="whole genome"; else what="${WANT} of the 22 autosomes"; fi
           {
-            echo "### Step 43 on HG002, whole genome (GIAB v4.2.1 genotypes)"
+            echo "### Step 43 on HG002, ${what} (GIAB v4.2.1 genotypes)"
             echo ""
             echo "| chromosome | archaic download GB | download seconds | setup seconds | table GB | table rows |"
             echo "|---|---|---|---|---|---|"
@@ -281,11 +329,21 @@ jobs:
             python3 bin/archaic_report.py report --sample HG002 --ibdmix-dir "${d}/ibdmix" --spans "${d}/spans.tsv" \
               --pop "$pop" --out-dir "${d}/out"
             kv() { awk -F'\t' -v k="$1" '$1 == k {print $2}' "${d}/out/HG002_archaic.tsv"; }
-            [ "$(kv analysed_chromosomes)" -eq 22 ] || { echo "${pop}: $(kv analysed_chromosomes) chromosomes, want 22"; exit 1; }
+            [ "$(kv analysed_chromosomes)" -eq "$WANT" ] || { echo "${pop}: $(kv analysed_chromosomes) chromosomes, want ${WANT}"; exit 1; }
             [ "$(kv analysed_sites)" -gt 0 ] || { echo "${pop}: no site analysed"; exit 1; }
             nea=$(kv neanderthal_percent)
+            mb=$(awk -v b="$(kv neanderthal_bp)" 'BEGIN {printf "%.1f", b / 1e6}')
+            # Chen et al. 2020 (Cell 180:677), released per-person calls for
+            # Europeans: the union of the Altai and Vindija segments, LOD 4,
+            # 50 kb or longer, the cutoffs of step 43 (docs/43-archaic.md).
+            if [ "$WANT" -eq 22 ]; then
+              where=$(awk -v b="$(kv neanderthal_bp)" 'BEGIN {print (b < 49.9e6 ? "below" : (b > 82.9e6 ? "above" : "inside"))}')
+              cmp="HG002's ${mb} Mb of Neanderthal sequence is ${where} the published range: Chen et al. 2020 released per-person calls with the same method and cutoffs (Altai and Vindija union, LOD 4, 50 kb or longer), and Europeans carry 49.9 to 82.9 Mb in them (see docs/43-archaic.md)."
+            else
+              cmp="HG002 has ${mb} Mb of Neanderthal sequence on these ${WANT} autosomes. The published range of 49.9 to 82.9 Mb (Chen et al. 2020, Europeans, Altai and Vindija union, LOD 4, 50 kb or longer) is for the 22 autosomes, so it is not compared here."
+            fi
             {
-              echo "**1000 Genomes ${pop} frequencies:** Neanderthal ${nea}% ($(kv neanderthal_segments) segments, longest $(kv neanderthal_longest_bp) bp), Denisovan $(kv denisovan_percent)% ($(kv denisovan_segments) segments), over $(kv analysed_chromosomes) autosomes, $(kv analysed_bp) bp, $(kv analysed_sites) sites. Compare this share only with other shares from this step, not with published figures (see docs/43-archaic.md)."
+              echo "**1000 Genomes ${pop} frequencies:** Neanderthal ${nea}% ($(kv neanderthal_segments) segments, longest $(kv neanderthal_longest_bp) bp), Denisovan $(kv denisovan_percent)% ($(kv denisovan_segments) segments), over $(kv analysed_chromosomes) autosomes, $(kv analysed_bp) bp, $(kv analysed_sites) sites. ${cmp}"
               echo ""
             } >> "$GITHUB_STEP_SUMMARY"
           done
@@ -304,6 +362,7 @@ jobs:
           cat "$GITHUB_STEP_SUMMARY"
 
   ancient-footprint:
+    if: inputs.ancient
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:

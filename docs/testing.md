@@ -155,7 +155,7 @@ This is every step script that no e2e case runs, plus the full-size index build 
 | Step | Why no e2e case runs it | What checks it instead |
 |---|---|---|
 | 26b (fine-grained ancestry) on the full panel | the install reads about 19 GB from gnomAD's bucket | case `ancestry-fine-grained-1` runs it on a reduced panel of the fixture's regions plus chr22:20-35 Mb |
-| 43 (archaic ancestry) on the whole genome | `setup.sh --archaic` reads 150 GB of archaic genomes | case `archaic-ancestry-1` runs it on a slice; the `archaic-hg002` jobs of `public-evidence.yml` run setup and step 43 on HG002's 22 autosomes, by hand |
+| 43 (archaic ancestry) on the whole genome | `setup.sh --archaic` reads 150 GB of archaic genomes | case `archaic-ancestry-1` runs it on the whole of chr22; the `archaic-hg002` jobs of `public-evidence.yml` run setup and step 43 on HG002's 22 autosomes, by hand |
 | 44 (ancient populations) on the full AADR panel | the install reads the 7.1 GB AADR release and runs smartpca on it for an hour | case `ancient-similarity-1` runs it on a planted panel; the `ancient-footprint` job of `public-evidence.yml` runs setup and step 44 on HG002, by hand |
 | 13 (VEP, offline) | the cache is 26 GB; the fixture's VEP subset was annotated once with `--database` instead | the image's smoke test, which annotates 50 records with `--database` |
 | 17 (CPSR) | the PCGR bundle (about 8 GB) plus a second VEP cache. CI never runs real CPSR | the image's smoke test, and the fake-docker cases for the command line |
@@ -182,10 +182,14 @@ The Nextflow ExpansionHunter module is only stub-run (`-profile test_all -stub` 
 
 ## The public-evidence workflow
 
-`.github/workflows/public-evidence.yml` runs two opt-in steps whole, on public data only, and writes what they measured to the job summary. It is not a gate; it runs by hand only (`workflow_dispatch`).
+`.github/workflows/public-evidence.yml` runs two opt-in steps whole, on public data only, and writes what they measured to the job summary. It is not a gate; it runs by hand only (`workflow_dispatch`). Two inputs pick what runs: `chromosomes` (default `all`) names the autosomes for the archaic jobs, for example `22` for one chromosome job (plus the `empty` red control) and that chromosome's three archaic files instead of 22 chromosome jobs and 150 GB, and `ancient` (default on) runs the ancient-footprint job:
+
+```bash
+gh workflow run public-evidence.yml -f chromosomes=22 -f ancient=false
+```
 
 - `ancient-footprint`: `setup.sh --ancient-panel` on the full AADR release, then step 44 on a gVCF built from GIAB's HG002 v4.2.1 genotypes, with the peak memory of each step's containers (one maximum per step, not per container), the peak disk growth and the time. It fails if a command fails, if the sampler saw no container memory, or if step 44 used no site. What it measured is in [step 44, Runtime](44-ancient.md#runtime).
-- `archaic-hg002`: `setup.sh --archaic` and step 43 on HG002, one job per autosome; `archaic-share` joins them into one report per population. A job fails if a command fails or step 43 analysed no site, and the job `empty` is its red control: an empty region list must make setup fail. What it measured is in [step 43, Runtime](43-archaic.md#runtime).
+- `archaic-hg002`: `setup.sh --archaic` and step 43 on HG002, one job per autosome; `archaic-share` joins them into one report per population. When all 22 autosomes ran, the summary says whether HG002's Neanderthal total lies inside the 49.9 to 82.9 Mb that Chen et al.'s released per-person calls give Europeans with the same method and cutoffs; it prints the comparison and does not gate on it. A job fails if a command fails or step 43 analysed no site, and the job `empty` is its red control: an empty region list must make setup fail. What it measured is in [step 43, Runtime](43-archaic.md#runtime).
 
 ## The prs-memory job
 
