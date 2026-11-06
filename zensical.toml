@@ -1,5 +1,10 @@
-# Generated from mkdocs.yml by mkdocs-to-zensical.py; the why of every block is in
-# new-repo/templates/zensical.toml. Edit this file, not mkdocs.yml, which is gone.
+# The docs site, built with Zensical and published at the site_url below.
+# Build: `python -m zensical build --clean --strict`, then
+# `python -I .github/scripts/site-check.py site` (the Docs workflow runs both).
+# The strict build fails on a broken link or anchor. site-check.py fails on what
+# the build does not check: a page in no nav entry, a nav entry for a missing
+# file, a missing image, a link rooted at /. exclude_docs lists what under docs/
+# is not a page; the nav title of each page equals its H1.
 
 [project]
 site_name = "OwnGenome"
