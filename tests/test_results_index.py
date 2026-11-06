@@ -171,8 +171,8 @@ def main():
         # (flagged, key loci, the CFTR and UGT1A1 readings) and Locityper.
         loc = copy.deepcopy(s_tsv)
         loc["sections"]["expansions"].update(state="ok", data={
-            "flagged": [{"locus": "HTT", "repeat_count": "41/19"}],
-            "key_loci": [{"locus": "FMR1", "repeat_count": "30/30"}],
+            "flagged": [{"locus": "HTT", "status": "pathogenic"}],
+            "key_loci": [{"locus": "FMR1", "repeat_count": "."}],
             "readings": [{"locus": "UGT1A1", "repeat": "promoter TA repeat"}]})
         loc["sections"]["locityper"].update(state="ok", data={
             "loci": [{"locus": "FCGR", "region": "chr1:161505430-161678654", "status": "called"},
