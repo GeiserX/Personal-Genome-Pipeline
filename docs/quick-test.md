@@ -65,6 +65,7 @@ docker run --rm --user root \
 
 If you extracted chr22 above, back up the original and symlink the chr22 extract:
 ```bash
+(  # a subshell, so the shell stays in the repository root
 # Preserve the original full VCF (idempotent — skips if already backed up)
 cd ${GENOME_DIR}/${SAMPLE}/vcf
 if [ ! -f ${SAMPLE}_full.vcf.gz ]; then
@@ -80,6 +81,7 @@ ln -sfn ${SAMPLE}_chr22.vcf.gz.tbi ${SAMPLE}.vcf.gz.tbi
 #   rm ${SAMPLE}.vcf.gz ${SAMPLE}.vcf.gz.tbi
 #   mv ${SAMPLE}_full.vcf.gz ${SAMPLE}.vcf.gz
 #   mv ${SAMPLE}_full.vcf.gz.tbi ${SAMPLE}.vcf.gz.tbi
+)
 ```
 
 Then run the VCF-only steps (they expect `${SAMPLE}.vcf.gz`):
@@ -148,6 +150,7 @@ docker run --rm --user root \
 **Alternative: extract chr22 from a full BAM you already have** and that was aligned to the pipeline's reference (a BAM from another reference needs a [realignment](realignment.md) first). Put it at `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai` first; the commands below move it aside before the link step replaces that name:
 ```bash
 source versions.env   # from the repository root
+(  # a subshell, so the shell stays in the repository root
 cd ${GENOME_DIR}/${SAMPLE}/aligned
 # Skipped on a rerun, when _sorted.bam already is the chr22 BAM (-ef follows links)
 if [ ! -e ${SAMPLE}_full.bam ] && [ ! ${SAMPLE}_sorted.bam -ef ${SAMPLE}_chr22.bam ]; then
@@ -163,14 +166,17 @@ docker run --rm --user root \
     samtools view -b -o /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam \
       /genome/${SAMPLE}/aligned/${SAMPLE}_full.bam chr22
     samtools index /genome/${SAMPLE}/aligned/${SAMPLE}_chr22.bam"
+)
 ```
 
 Either way, point the pipeline at the chr22 BAM, as Option A does for the VCF:
 ```bash
+(  # a subshell, so the shell stays in the repository root
 cd ${GENOME_DIR}/${SAMPLE}/aligned
 ln -sfn ${SAMPLE}_chr22.bam     ${SAMPLE}_sorted.bam
 ln -sfn ${SAMPLE}_chr22.bam.bai ${SAMPLE}_sorted.bam.bai
 ls -lL ${SAMPLE}_sorted.bam ${SAMPLE}_sorted.bam.bai
+)
 ```
 
 Then test BAM-dependent steps:
