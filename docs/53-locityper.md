@@ -87,7 +87,7 @@ Both reports carry a section "Locityper Second Opinion at Hard Loci" in the medi
 
 ## How it was checked
 
-The image test (`tests/smoke/locityper.sh`, the `LOCITYPER_IMAGE` row of `tests/smoke/commands.tsv`) runs the database build and the step on the fixture's GIAB HG002 reads at HLA-DRB1, HLA-DQB1 and CYP2D6. The panel holds HG002's own two assembled haplotypes, which are the truth. Both called haplotypes at each locus must match them at QV 20 or more (one difference per 100 bases or fewer), aligned with `locityper align`.
+The image test (`tests/smoke/locityper.sh`, the `LOCITYPER_IMAGE` row of `tests/smoke/commands.tsv`) runs the database build and the step on the fixture's GIAB HG002 reads at HLA-DRB1, HLA-DQB1 and CYP2D6. The panel holds HG002's own two assembled haplotypes, which are the truth. Both called haplotypes at each locus must match them at QV 20 or more (one difference per 100 bases or fewer), aligned with `locityper align`. That QV measures how close each called haplotype is to HG002's true one; it is not the `quality` column, Locityper's own genotype quality.
 
 The red control takes out of the panel HG002's haplotypes and every other haplotype within QV 20 of them, rebuilds the database and genotypes again; the same check must then fail at every locus. Leaving HG002 out with `--leave-out` is not enough: other people in the panel carry near copies of HG002's haplotypes, and the call stays close.
 

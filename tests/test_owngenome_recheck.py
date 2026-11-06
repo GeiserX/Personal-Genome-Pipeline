@@ -21,6 +21,9 @@ Checks:
  10. the live-site plugin (bin/owngenome_live_recheck.py) lets the browser fetch
      recheck/state.json, and its state hook gives each step its badges ("newer
      ClinVar available", "redone <date>") and {} when there is no check.
+ 11. a bumped pin of the opt-in steps 50 to 53 (LOCITYPER_PANEL_VERSION and
+     LOCITYPER_IMAGE for 53, MOCHA_PANEL_VERSION and MOCHA_IMAGE for 51,
+     VNTYPER_IMAGE for 52, MEGANE_IMAGE for 50) marks its step.
 Each check is then run against a planted mistake and must fail there.
 
 Run: python3 tests/test_owngenome_recheck.py
@@ -518,7 +521,27 @@ def plugin_from_source(src, name):
     return mod
 
 
+# Steps 50-53 read pins of versions.env that change what they find: the data
+# setup.sh builds or downloads with them, or the reference data inside the
+# image. A bump of each must mark its step (steps.tsv's reads column).
+OPT_IN_PINS = [("MEGANE_IMAGE", "50"), ("MOCHA_PANEL_VERSION", "51"), ("MOCHA_IMAGE", "51"),
+               ("VNTYPER_IMAGE", "52"), ("LOCITYPER_PANEL_VERSION", "53"), ("LOCITYPER_IMAGE", "53")]
+
+
+def pins_ok(m, steps):
+    """Each pin of OPT_IN_PINS, bumped alone, makes affected_steps list its step."""
+    missed = [(k, n, m.affected_steps(steps, [k])) for k, n in OPT_IN_PINS if n not in m.affected_steps(steps, [k])]
+    return not missed, missed
+
+
 def main():
+    m = load()
+    steps = m.run_state.read_steps(m.STEPS_TSV)
+    ok, detail = pins_ok(m, steps)
+    check("a bumped pin of steps 50-53 (LOCITYPER_PANEL_VERSION and the rest) marks its step", ok, detail)
+    blank = [dict(st, reads="") if st["step"] == "53" else st for st in steps]
+    check("fails on a planted mistake: a bumped pin of steps 50-53 marks its step (row 53 with no reads)",
+          not pins_ok(m, blank)[0], "passed on the mutant")
     ok, detail = plugin_ok(load_plugin())
     check("the live-site plugin serves the check and gives each step its badges", ok, detail)
     bad = load_plugin()
