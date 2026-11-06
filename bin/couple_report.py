@@ -20,7 +20,8 @@ same command. Standard library only, so it runs in the plain python image.
       and FXN repeats (ExpansionHunter, step 09). With --cn-intervals (step
       35's <id>_cn_intervals.tsv) the report lists, for each partner, every
       carrier deletion allele of that table (del(GJB6-D13S1830), CFTRdele2,3,
-      the HBB exon 3 deletion) as present, absent or not assessable, and
+      the HBB exon 3 deletion, the HBB 619 bp deletion, the Sicilian
+      (delta-beta)0 deletion) as present, absent or not assessable, and
       a male partner's AZF deletions the same way; with --cnvpytor (step 18's
       <id>_cnvs.vcf.gz) a CNVpytor call that disagrees is printed beside it.
       With --cyp21a2 (step 35's <id>_cyp21a2_psv.tsv, short reads) a
@@ -448,12 +449,16 @@ def cyp21a2_finding(path, genes):
 
 # The rows of bin/cn_loci.tsv the couple report reads, with their names here.
 CN_ALLELES = (("GJB6_D13S1830", "del(GJB6-D13S1830)"), ("CFTR_dele2_3", "CFTRdele2,3"),
-              ("HBB_exon3_del", "HBB exon 3 deletion"))
+              ("HBB_exon3_del", "HBB exon 3 deletion"), ("HBB_619bp_del", "HBB 619 bp deletion"),
+              ("HBD_HBB_Sicilian_del", "Sicilian (delta-beta)0 deletion"))
 # Named as deletions, so present reads as "the deletion is there" (as for CN_ALLELES).
 CN_AZF = (("AZFa", "AZFa deletion"), ("AZFb", "AZFb deletion"),
           ("AZFc_DAZ", "AZFc deletion (DAZ copies; gr/gr and b2/b3 leave two of four)"))
 # A CNVpytor deletion counts for a row when it covers half of the row's span or more.
 CNV_COVER = 0.5
+# Step 18 calls on 1 kb bins, so a deletion shorter than two bins (the 619 bp
+# and 621 bp HBB rows) is one it cannot see: its silence there is no evidence.
+CNV_MIN_SPAN = 2000
 
 
 def read_cn_intervals(path):
@@ -502,7 +507,7 @@ def cnv_note(row, dels):
     s, e = int(row["start"]), int(row["end"])
     hit = any(c == row["chrom"] and min(e, de) - max(s, ds) >= CNV_COVER * (e - s) for c, ds, de in dels)
     state, _ = cn_state(row)
-    if state == "present" and not hit:
+    if state == "present" and not hit and e - s >= CNV_MIN_SPAN:
         return "CNVpytor (step 18) calls no deletion here"
     if state == "absent" and hit:
         return "CNVpytor (step 18) calls a deletion here"
@@ -672,7 +677,10 @@ def write_markdown(path, a, b, sexes, rows, assessed, gaps, ngenes, common, cn=N
     if cn:
         out.extend(["## Carrier deletion alleles and AZF regions (read depth, step 35)", "",
                     "Each allele is present, absent or not assessable from the read depth over it. A present "
-                    "deletion needs a clinical test. The AZF regions are read on a male partner only.", ""])
+                    "deletion needs a clinical test. The AZF regions are read on a male partner only. The three "
+                    "beta-globin rows overlap: the Sicilian deletion covers both HBB rows, and the 619 bp and "
+                    "exon 3 rows share 487 bp, so one deletion can read as present on two or three of them; "
+                    "only a clinical test tells which allele it is.", ""])
         out.extend(cn)
         out.append("")
     out.extend(["## What was assessed", "", "| Partner | ClinVar hits (in listed genes / all) | Deletions | SMN1 | FMR1 and FXN repeats |",
