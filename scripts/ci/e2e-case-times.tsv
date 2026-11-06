@@ -73,6 +73,7 @@ clinvar-cpsr-quality-1	shard	5	clinvar-clip-check-1
 cn-engine-1-parity	shard	33	-
 cn-intervals-1-catalog	shard	0	-
 cn-intervals-2-hg002	shard	19	-
+cn-report-1-tables	shard	60	-
 comphet-phasing-1-reads	shard	16	clinical-filter-mane-and-quality-1-tiers
 construct-scan-1-both	shard	42	-
 consumer-export-1	shard	59	-
