@@ -783,6 +783,13 @@ NOT_CATALOG_TABLES = ("hba", "paraphase")
 PARASCOPY_COLUMNS = {"chrom", "start", "end", "agCN", "agCN_filter", "agCN_qual", "psCN", "psCN_qual", "psCN_filter"}
 
 
+def tsv_columns(path):
+    """The header of a tab-separated table as a set ({} for an empty file), so
+    a table with a header and no row is checked for its columns too."""
+    with open_text(path) as f:
+        return set(next(csv.reader(f, delimiter="\t"), []))
+
+
 def parascopy_tables(d, s):
     """{table: path} of step 35's catalog tables (<s>_<table>_copy_number.tsv)."""
     out = {}
@@ -800,7 +807,7 @@ def parascopy_locus(name, path, row):
     out = {"table": name, "genes": (row or {}).get("genes") or name, "tag": (row or {}).get("tag") or ".",
            "reading": (row or {}).get("reading") or "."}
     rows = read_tsv(path)
-    if rows and not PARASCOPY_COLUMNS <= set(rows[0]):
+    if not PARASCOPY_COLUMNS <= tsv_columns(path):
         return dict(out, status="unreadable", cn=None,
                     text=f"unreadable: {os.path.basename(path)} lacks the copy-number columns")
     na = next((r["agCN_filter"] for r in rows if (r.get("agCN_filter") or "").startswith("not assessed")), None)
@@ -846,13 +853,14 @@ def sec_parascopy(d, s):
     hp = os.path.join(d, "paralogs", f"{s}_hba_copy_number.tsv")
     ip = os.path.join(d, "paralogs", f"{s}_cn_intervals.tsv")
     cp = os.path.join(d, "paralogs", f"{s}_cyp21a2_psv.tsv")
-    p = (tables.get("smn") or next(iter(tables.values()), None) or (hp if os.path.isfile(hp) else None)
-         or (ip if os.path.isfile(ip) else None) or (cp if os.path.isfile(cp) else None))
+    dp = os.path.join(d, "paralogs", f"{s}_cn_dosage.tsv")
+    p = (tables.get("smn") or next(iter(tables.values()), None)
+         or next((x for x in (hp, ip, cp, dp) if os.path.isfile(x)), None))
     if not p:
         return None, {}
     if "smn" in tables:
         rows = read_tsv(tables["smn"])
-        if rows and not PARASCOPY_COLUMNS <= set(rows[0]):
+        if not PARASCOPY_COLUMNS <= tsv_columns(tables["smn"]):
             raise Unreadable(f"{os.path.basename(tables['smn'])} lacks the chrom, start, end, agCN, agCN_filter, "
                              "agCN_qual, psCN, psCN_qual or psCN_filter column")
         smn1 = parascopy_cn_at(rows, *paraphase_report.SMN1_EXON7)
@@ -882,6 +890,9 @@ def sec_parascopy(d, s):
                # CYP21A2 from depth and PSV sites (bin/copy_number.py, the
                # CYP21A2 row): copies, module total, finding; None without it
                "cyp21a2": read_hba(cp) if os.path.isfile(cp) else None,
+               # the gene-dosage rows (HP, LCE3BC, CCL3L1): total copies from
+               # depth, one entry per locus; None without step 35's table
+               "dosage": read_cn_dosage(dp) if os.path.isfile(dp) else None,
                "reading": reading,
                # every other catalog table, in the catalog's order (a table the
                # catalog does not name, from a PARALOG_LOCI of the user's, last)
@@ -894,7 +905,7 @@ def read_cn_intervals(path):
     """Step 35's interval table (bin/copy_number.py intervals): the rows with
     a deletion or a duplication, and a count of the rows by status."""
     rows = read_tsv(path)
-    if rows and not {"locus", "name", "status", "copies", "expected", "change"} <= set(rows[0]):
+    if not {"locus", "name", "chrom", "start", "end", "status", "copies", "expected", "change"} <= tsv_columns(path):
         raise Unreadable(f"{os.path.basename(path)} lacks the locus, name, status, copies, expected or change column")
     counts = {}
     for r in rows:
@@ -902,6 +913,17 @@ def read_cn_intervals(path):
     return {"rows": len(rows), "by_status": counts,
             "changes": [{k: r[k] for k in ("locus", "name", "chrom", "start", "end", "copies", "expected", "change")}
                         for r in rows if r["change"] in ("deletion", "duplication")]}
+
+
+DOSAGE_COLUMNS = ("locus", "status", "copies", "estimate", "reason", "reading")
+
+
+def read_cn_dosage(path):
+    """Step 35's gene-dosage table (HP, LCE3BC, CCL3L1): one entry per locus,
+    in the table's order."""
+    if not set(DOSAGE_COLUMNS) <= tsv_columns(path):
+        raise Unreadable(f"{os.path.basename(path)} lacks the {', '.join(DOSAGE_COLUMNS[:-1])} or reading column")
+    return [{k: r.get(k) or "." for k in DOSAGE_COLUMNS} for r in read_tsv(path)]
 
 
 def read_hba(path):

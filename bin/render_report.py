@@ -1110,6 +1110,8 @@ def text_report(s):
             w(f"  {line}")
         for line in parascopy_locus_lines(S["parascopy"]["data"]):
             w(f"  {line}")
+        for line in cn_interval_lines(S["parascopy"]["data"].get("cn_intervals")):
+            w(f"  {line}")
         w(f"  {PARASCOPY_NOTE}")
         w("")
     at("paralogs")
@@ -1670,10 +1672,12 @@ def paralog_lines(d):
     return out
 
 
-PARASCOPY_NOTE = ("Parascopy reads short reads at SMN1 and SMN2 and at the other loci of its catalog; CYP21A2 has "
-                  "no Parascopy model and is not assessed. A quality under 20 or a filter other than PASS leaves a copy unresolved. HBA1 and "
-                  "HBA2 have no Parascopy model either: step 35 counts the alpha-globin genes together from read "
-                  "depth against flanking sequence, which cannot say which gene or which chromosome lost a copy. "
+PARASCOPY_NOTE = ("Parascopy reads short reads at SMN1 and SMN2 and at the other loci of its catalog. A quality "
+                  "under 20 or a filter other than PASS leaves a copy unresolved. HBA1 and HBA2, CYP21A2 and the "
+                  "gene-dosage loci have no Parascopy model: step 35 counts them from read depth against flanking "
+                  "sequence (CYP21A2 also from six sites where it differs from its pseudogene CYP21A1P), which "
+                  "cannot say which chromosome lost or gained a copy. The copy-number intervals (ClinGen's "
+                  "recurrent CNV regions, carrier deletion alleles, the AZF regions) are read from depth too. "
                   "A research estimate, not a diagnostic test: confirm a result with a clinical laboratory (MLPA "
                   "or qPCR; gap-PCR for alpha-thalassaemia).")
 
@@ -1685,7 +1689,92 @@ def parascopy_lines(d):
             f"SMN2 copies: {smn2.get('text', '.')}",
             f"SMN1 and SMN2 together (agCN) at exon 7: {d.get('agcn', '.')} (quality {d.get('agcn_qual', '.')}, "
             f"filter {d.get('agcn_filter', '.')})",
-            f"Reading: {d.get('reading', '.')}"] + ([hba_line(d["hba"])] if d.get("hba") else [])
+            f"Reading: {d.get('reading', '.')}"] + ([hba_line(d["hba"])] if d.get("hba") else []) \
+        + [cyp21a2_line(d.get("cyp21a2"))] + dosage_lines(d.get("dosage"))
+
+
+def cyp21a2_line(c):
+    """Step 35's CYP21A2 call from depth and PSV sites, one line; not
+    assessed only when the table says so or is not there."""
+    label = "CYP21A2 (RCCX module, from depth and six PSV sites)"
+    if not c:
+        return f"{label}: not assessed (step 35's <id>_cyp21a2_psv.tsv is not in this run's output)"
+    if c.get("status") != "called":
+        why = c.get("message") or c.get("reason") or "."
+        return f"{label}: not assessed ({why.removeprefix('not assessed: ')})"
+    value = (f"{c.get('cyp21a2_copies', '.')} CYP21A2 copies, module total {c.get('module_total', '.')} of "
+             f"{c.get('expected_total', '.')}, finding {c.get('finding', '.')}")
+    if c.get("conversion_sites", ".") != ".":
+        value += f" at {c['conversion_sites']}"
+    if c.get("reading", ".") != ".":
+        value += f". Reading: {c['reading']}"
+    return f"{label}: {value}"
+
+
+DOSAGE_NAMES = {"HP": "HP (haptoglobin)", "LCE3BC": "LCE3B/LCE3C", "CCL3L1": "CCL3L1/CCL3L3"}
+
+
+def dosage_lines(rows):
+    """Step 35's gene-dosage loci (HP, LCE3BC, CCL3L1), one line each."""
+    if rows is None:
+        return ["Gene-dosage loci (HP, LCE3B/LCE3C, CCL3L1): not assessed (step 35's <id>_cn_dosage.tsv is not "
+                "in this run's output)"]
+    if not rows:
+        return ["Gene-dosage loci (HP, LCE3B/LCE3C, CCL3L1): not assessed (step 35's dosage table has no row)"]
+    out = []
+    for r in rows:
+        label = f"{DOSAGE_NAMES.get(r['locus'], r['locus'])} copies (from depth)"
+        if r["status"] == "called":
+            value = f"{r['copies']} (estimate {r['estimate']})"
+            if r["reading"] != ".":
+                value += f". Reading: {r['reading']}"
+        else:
+            value = f"{r['status']} ({r['reason']})"
+        out.append(f"{label}: {value}")
+    return out
+
+
+CN_INTERVALS_LABEL = "Copy-number intervals (ClinGen recurrent regions, carrier deletions, AZF; from depth)"
+
+
+def cn_interval_summary(iv):
+    """The interval table in one line: rows by status and how many changed."""
+    if iv is None:
+        return f"{CN_INTERVALS_LABEL}: not assessed (step 35's <id>_cn_intervals.tsv is not in this run's output)"
+    counts = ", ".join(f"{n} {k}" for k, n in sorted((iv.get("by_status") or {}).items())) or "no row"
+    n = len(iv.get("changes") or [])
+    return (f"{CN_INTERVALS_LABEL}: {iv.get('rows', 0)} rows ({counts}); "
+            f"{n} with a deletion or a duplication" if n else
+            f"{CN_INTERVALS_LABEL}: {iv.get('rows', 0)} rows ({counts}); no deletion or duplication")
+
+
+def cn_interval_place(r):
+    """chrom:start-end (1-based) of an interval row of the table (BED)."""
+    b = r.get("start", ".")
+    return f"{r.get('chrom', '.')}:{int(b) + 1 if str(b).isdigit() else b}-{r.get('end', '.')}"
+
+
+def cn_interval_lines(iv):
+    """The interval table for the text report: the summary, then one line per
+    row with a deletion or a duplication."""
+    return [cn_interval_summary(iv)] + [
+        f"  {r['change'].capitalize()}: {r['name']} ({r['locus']}, {cn_interval_place(r)}), "
+        f"{r['copies']} of {r['expected']} copies" for r in (iv or {}).get("changes") or []]
+
+
+def cn_intervals_html(iv):
+    """The interval table for the HTML card: the summary, then a table of the
+    rows with a deletion or a duplication."""
+    label, value = cn_interval_summary(iv).split(": ", 1)
+    out = [stat(label, E(value))]
+    changes = (iv or {}).get("changes") or []
+    if changes:
+        rows = "".join(f"<tr><td>{E(r['name'])}</td><td>{E(r['locus'])}</td><td>{E(cn_interval_place(r))}</td>"
+                       f"<td>{E(r['copies'])} of {E(r['expected'])}</td><td>{E(r['change'])}</td></tr>"
+                       for r in changes)
+        out.append("    <table><tr><th>Region</th><th>Row</th><th>Place</th><th>Copies</th><th>Change</th></tr>"
+                   + rows + "</table>")
+    return out
 
 
 PARASCOPY_LOCI_NOTE = ("The other loci of step 35's catalog (assets/paralog_loci.tsv): agCN is the copies of the "
@@ -2685,6 +2774,7 @@ def html_report(s, index=None):
                [stat("Status", done_badge(S["parascopy"]))]
                + [stat(*(E(x) for x in line.split(": ", 1))) for line in parascopy_lines(S["parascopy"]["data"])]
                + parascopy_loci_html(S["parascopy"]["data"])
+               + cn_intervals_html(S["parascopy"]["data"].get("cn_intervals"))
                + [small_note(PARASCOPY_NOTE)]))
     unchecked = paralogs_unchecked(S)
     if unchecked:
