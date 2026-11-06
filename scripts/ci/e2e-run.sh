@@ -604,6 +604,11 @@ data_name() {
 # Every HTTP(S) request of a process run under it goes to a closed port.
 OFFLINE=(env http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9
          HTTPS_PROXY=http://127.0.0.1:9 no_proxy= NO_PROXY= FETCH_TRIES=1 FETCH_WAIT=0)
+# offline_blocked CURL_ERROR: true when curl's error says the request went to
+# the closed proxy of OFFLINE, in either wording curl uses.
+offline_blocked() {
+  grep -qE '127\.0\.0\.1( port |:)9\b|via 127\.0\.0\.1\b' <<< "$1"
+}
 # data_seed CASE: before CASE, its files from E2E_DATA_CACHE. A failure here
 # only warns and costs the download: setup.sh in the case fetches what is
 # not there. Sets CASE_ENV to OFFLINE when the case's entry says "offline"
@@ -631,11 +636,14 @@ data_seed() {
   [ "$flag" = offline ] && $placed || return 0
   # Control: under OFFLINE a request to a host that answers must fail, or
   # the offline run would prove nothing.
-  # Read from curl's own error, so a host that is down cannot pass for it.
+  # Read from curl's own error, so a host that is down cannot pass for it:
+  # the error must name the closed proxy. curl words it two ways: older
+  # releases "Failed to connect to 127.0.0.1 port 9", newer ones "Failed to
+  # connect to <host> port 443 via 127.0.0.1" (the 26.04 runners, 2026-11-05).
   # (A variable, not a pipe: under pipefail curl's own failure would fail it.)
   local out
   out=$("${OFFLINE[@]}" curl -fsS --max-time 20 -o /dev/null https://raw.githubusercontent.com/ 2>&1 || true)
-  if ! grep -q '127\.0\.0\.1.* 9\b' <<< "$out"; then
+  if ! offline_blocked "$out"; then
     echo "$out"
     echo "::error::Data cache: a request under the network block did not fail at the closed port; ${1%.sh} runs with the network and counts as failed"
     CASE_CONTROL_FAILED=true
