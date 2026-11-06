@@ -622,7 +622,8 @@ chr22\t21111384\t21562827\tBP-D\t0\t.\t21111384\t21562827\t0,0,0
 chrx\t6527561\t6537770\tXp22.31 distal breakpoint\t0\t.\t6527561\t6537770\t0,0,0
 chrx\t6537771\t8156913\tXp22.31 recurrent region (includes STS)\t0\t.\t6537771\t8156913\t255,111,0
 """
-HAND = ["1p36_terminal", "Xq28_MECP2", "GJB6_D13S1830", "CFTR_dele2_3", "HBB_exon3_del", "AZFa", "AZFb", "AZFc_DAZ"]
+HAND = ["1p36_terminal", "Xq28_MECP2", "GJB6_D13S1830", "CFTR_dele2_3", "HBB_exon3_del", "HBB_619bp_del",
+        "HBD_HBB_Sicilian_del", "AZFa", "AZFb", "AZFc_DAZ"]
 STUB_IV = r"""
 run_in() {
   while [ $# -gt 0 ]; do case $1 in -v|--cpus|--memory) shift 2 ;; *) break ;; esac; done
@@ -688,8 +689,13 @@ def intervals(cat, read):
 
     iv = [r for r in cat.values() if r["kind"] == "interval" and r["_passes"] == ["."]]
     names = [r["locus"] for r in iv]
-    check("interval rows: the ClinGen regions (over 70), then the hand rows", len(iv) > 78 and names[-8:] == HAND,
-          (len(iv), names[-8:]))
+    check("interval rows: the ClinGen regions (over 70), then the hand rows", len(iv) > 80 and names[-10:] == HAND,
+          (len(iv), names[-10:]))
+    # HbVar's GRCh38 spans (979, 1035), 0-based start: one target each, never cut
+    spans = {loc: [(s, e) for _, s, e, _ in cat[loc]["_targets"]] if loc in cat else None
+             for loc in ("HBB_619bp_del", "HBD_HBB_Sicilian_del")}
+    check("interval rows: the HBB 619 bp and Sicilian deletions at HbVar's GRCh38 spans",
+          spans == {"HBB_619bp_del": [(5225388, 5226007)], "HBD_HBB_Sicilian_del": [(5219877, 5233280)]}, spans)
     check("interval rows: each cross-checked by CNVpytor, step 18",
           all(r["cross_check"] == "cnvpytor:cnvs" for r in iv))
     check("interval rows: the 15q13.3 rows keep CHRNA7 (a Parascopy model) out of their targets",
@@ -808,6 +814,11 @@ def intervals(cat, read):
         _, data = cs.sec_parascopy(sd, "S")
         ci = data.get("cn_intervals") or {}
         check("collect_summary: step 35's section lists the interval rows with a change (AZFc) and counts the rest",
+              [c["locus"] for c in ci.get("changes", [])] == ["AZFc_DAZ"] and ci.get("rows") == len(iv), ci)
+        os.remove(os.path.join(sd, "paralogs", "S_smn_copy_number.tsv"))
+        _, data = cs.sec_parascopy(sd, "S")
+        ci = (data or {}).get("cn_intervals") or {}
+        check("collect_summary: the interval rows stay when step 35 wrote no other table",
               [c["locus"] for c in ci.get("changes", [])] == ["AZFc_DAZ"] and ci.get("rows") == len(iv), ci)
         check("PARASCOPY module: the samplesheet sex goes to the interval rows",
               "def sex = meta.sex in ['male', 'female'] ? meta.sex : 'unknown'" in module and "--sex ${sex}" in module)

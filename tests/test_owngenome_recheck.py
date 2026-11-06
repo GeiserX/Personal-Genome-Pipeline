@@ -21,6 +21,12 @@ Checks:
  10. the live-site plugin (bin/owngenome_live_recheck.py) lets the browser fetch
      recheck/state.json, and its state hook gives each step its badges ("newer
      ClinVar available", "redone <date>") and {} when there is no check.
+ 11. a bumped pin of the opt-in steps 50 to 53 (LOCITYPER_PANEL_VERSION and
+     LOCITYPER_IMAGE for 53, MOCHA_PANEL_VERSION and MOCHA_IMAGE for 51,
+     VNTYPER_IMAGE for 52, MEGANE_IMAGE for 50) marks its step.
+ 12. check() itself names step 53 rerun-ready when the run used an older
+     LOCITYPER_PANEL_VERSION than this checkout pins, and not when they match;
+     its action names setup.sh --locityper-data, which the main setup leaves out.
 Each check is then run against a planted mistake and must fail there.
 
 Run: python3 tests/test_owngenome_recheck.py
@@ -518,7 +524,55 @@ def plugin_from_source(src, name):
     return mod
 
 
+# Steps 50-53 read pins of versions.env that change what they find: the data
+# setup.sh builds or downloads with them, or the reference data inside the
+# image. A bump of each must mark its step (steps.tsv's reads column).
+OPT_IN_PINS = [("MEGANE_IMAGE", "50"), ("MOCHA_PANEL_VERSION", "51"), ("MOCHA_IMAGE", "51"),
+               ("VNTYPER_IMAGE", "52"), ("LOCITYPER_PANEL_VERSION", "53"), ("LOCITYPER_IMAGE", "53")]
+
+
+def pins_ok(m, steps):
+    """Each pin of OPT_IN_PINS, bumped alone, makes affected_steps list exactly its step and the
+    HTML report (no step reads the outputs of steps 50 to 53)."""
+    missed = [(k, n, got) for k, n in OPT_IN_PINS
+              for got in [m.affected_steps(steps, [k])] if sorted(got) != sorted([n, m.REPORT_STEP])]
+    return not missed, missed
+
+
+def check_marks_53(m, steps):
+    """check() on a run that used an older LOCITYPER_PANEL_VERSION than this checkout pins puts 53 in
+    rerun_ready_steps; the same pin on both sides puts nothing there."""
+    tmp = tempfile.mkdtemp(prefix="recheck.", dir=os.path.join(REPO, "tmp") if os.path.isdir(os.path.join(REPO, "tmp")) else None)
+    try:
+        g = genome(tmp, installed_clinvar="20260901")
+        with open(os.path.join(g, "S1", "run_manifest.tsv"), "a") as f:
+            f.write("version\tLOCITYPER_PANEL_VERSION\tpanel-1.0\n")
+        st = m.check("S1", g, answers(m, g), steps, dict(THIS_PINS, LOCITYPER_PANEL_VERSION="panel-2.0"), "3.66.0")
+        same = m.check("S1", g, answers(m, g), steps, dict(THIS_PINS, LOCITYPER_PANEL_VERSION="panel-1.0"), "3.66.0")
+        act = by_item(st).get("LOCITYPER_PANEL_VERSION", {}).get("action", "")
+        return ("53" in st["rerun_ready_steps"] and "53" not in same["rerun_ready_steps"]
+                and "./scripts/setup.sh --locityper-data $GENOME_DIR" in act,
+                (st["rerun_ready_steps"], same["rerun_ready_steps"], act))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
+    m = load()
+    steps = m.run_state.read_steps(m.STEPS_TSV)
+    ok, detail = check_marks_53(m, steps)
+    check("a run on an older LOCITYPER_PANEL_VERSION makes check() name step 53 rerun-ready, with setup.sh --locityper-data", ok, detail)
+    blank = [dict(st, reads="") if st["step"] == "53" else st for st in steps]
+    check("fails on a planted mistake: a run on an older LOCITYPER_PANEL_VERSION makes check() name step 53 "
+          "(row 53 with no reads)", not check_marks_53(m, blank)[0], "passed on the mutant")
+    ok, detail = pins_ok(m, steps)
+    check("a bumped pin of steps 50-53 (LOCITYPER_PANEL_VERSION and the rest) marks its step", ok, detail)
+    blank = [dict(st, reads="") if st["step"] == "53" else st for st in steps]
+    check("fails on a planted mistake: a bumped pin of steps 50-53 marks its step (row 53 with no reads)",
+          not pins_ok(m, blank)[0], "passed on the mutant")
+    no_report = [st for st in steps if st["step"] != m.REPORT_STEP]
+    check("fails on a planted mistake: a bumped pin of steps 50-53 marks its step (no report step in the catalogue)",
+          not pins_ok(m, no_report)[0], "passed on the mutant")
     ok, detail = plugin_ok(load_plugin())
     check("the live-site plugin serves the check and gives each step its badges", ok, detail)
     bad = load_plugin()

@@ -2,7 +2,7 @@
 
 ## What This Does
 
-Reads your genotype at a small set of well-replicated variants and prints what each genotype means in plain words: lactase persistence (digesting milk as an adult), caffeine metabolism and coffee intake, alcohol flush, bitter taste, earwax type, the photic sneeze reflex, smelling asparagus in urine, muscle fibre type, eye, hair and skin pigmentation, red hair, hair thickness, folate metabolism, secretor status, vitamin D level, bilirubin (the Gilbert syndrome genotype), nicotine breakdown, two variants linked to a high Lp(a) level, CFTR R117H (read with the CFTR poly-T tract of [step 9](09-str-expansions.md)), and the APOE ε2/ε3/ε4 alleles. A rule table reads several sites together: the APOE pair, the TAS2R38 bitter-taste haplotypes (PAV, AVI), phased from the reads when that is needed, the APOL1 G1 kidney risk variant, the alpha-1 antitrypsin Pi type (SERPINA1 M, S, Z), the HFE haemochromatosis genotype (C282Y, H63D), the vitamin D-binding protein type (GC), the chromosome 9p21 heart disease haplotype and the 17q21.31 H1/H2 lineage. Each row names the primary paper it comes from. On by default.
+Reads your genotype at a small set of well-replicated variants and prints what each genotype means in plain words: lactase persistence (digesting milk as an adult), caffeine metabolism and coffee intake, alcohol flush, bitter taste, earwax type, the photic sneeze reflex, smelling asparagus in urine, muscle fibre type, eye, hair and skin pigmentation, red hair, hair thickness, an enzyme note on MTHFR C677T (not health advice), secretor status, vitamin D level, bilirubin (the Gilbert syndrome genotype), nicotine breakdown, two variants linked to a high Lp(a) level, CFTR R117H (read with the CFTR poly-T tract of [step 9](09-str-expansions.md)), and the APOE ε2/ε3/ε4 alleles. A rule table reads several sites together: the APOE pair, the TAS2R38 bitter-taste haplotypes (PAV, AVI), phased from the reads when that is needed, the APOL1 G1 kidney risk variant, the alpha-1 antitrypsin Pi type (SERPINA1 M, S, Z), the HFE haemochromatosis genotype (C282Y, H63D), the vitamin D-binding protein type (GC), the chromosome 9p21 heart disease haplotype and the 17q21.31 H1/H2 lineage. Each row names the primary paper it comes from. On by default.
 
 ## Why
 
@@ -60,7 +60,7 @@ Both reports have a Traits section: every row with its genotype, reading, note a
 | Eye colour | rs12913832 (HERC2), rs1800407 (OCA2) | 18252222, 20457092 |
 | Pigmentation, freckles, red hair | rs16891982 (SLC45A2), rs1426654 (SLC24A5), rs12203592 (IRF4), rs1805007, rs1805008, rs1805009 (MC1R) | 15714523, 16357253, 18483556, 24267888, 9302268, 7581459 |
 | Hair thickness | rs3827760 (EDAR) | 18065779 |
-| Folate metabolism | rs1801133 (MTHFR C677T) | 7647779 |
+| MTHFR enzyme note, not health advice ([why](not-reported.md#not-reported-on-purpose)) | rs1801133 (MTHFR C677T) | 7647779, 23288205 |
 | Secretor status | rs601338 (FUT2) | 7876235, 12692541 |
 | Vitamin D level | rs2282679 in GC, the vitamin D binding protein gene | 20541252 |
 | Bilirubin, Gilbert syndrome genotype | rs887829 (UGT1A1) | 19414484, 37456363 |

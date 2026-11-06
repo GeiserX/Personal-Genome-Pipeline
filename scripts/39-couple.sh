@@ -10,7 +10,10 @@
 #        ($GENOME_DIR/<sample>/clinvar/<sample>_clinvar_hits.vcf). Read when
 #        they are there: Delly's calls (step 19, <sample>/delly/<sample>_sv.vcf.gz),
 #        ExpansionHunter's (step 09, <sample>/expansion_hunter/<sample>_eh.vcf),
-#        Parascopy's SMN1 table (step 35, <sample>/paralogs/<sample>_smn_copy_number.tsv)
+#        Parascopy's SMN1 table (step 35, <sample>/paralogs/<sample>_smn_copy_number.tsv),
+#        step 35's interval table (<sample>/paralogs/<sample>_cn_intervals.tsv:
+#        the carrier deletion alleles and a male partner's AZF regions) and
+#        CNVpytor's calls, its cross-check (step 18, <sample>/cnvpytor/<sample>_cnvs.vcf.gz),
 #        GENCODE's exons (setup.sh: reference/gencode.v<release>.basic.exons.bed)
 #        and AnnotSV's benign loss set (setup.sh --annotsv-data, with gnomAD-SV's
 #        common deletions): a Delly deletion matching a common one is set aside.
@@ -115,7 +118,8 @@ for s in ${NAMED[@]+"${NAMED[@]}"}; do
   fi
   [ -d "${GENOME_DIR}/${s}" ] || continue
   for kind in "clinvar:clinvar/${s}_clinvar_hits.vcf:06" "delly:delly/${s}_sv.vcf.gz:19" \
-              "eh:expansion_hunter/${s}_eh.vcf:09" "smn:paralogs/${s}_smn_copy_number.tsv:35"; do
+              "eh:expansion_hunter/${s}_eh.vcf:09" "smn:paralogs/${s}_smn_copy_number.tsv:35" \
+              "cn-intervals:paralogs/${s}_cn_intervals.tsv:35" "cnvpytor:cnvpytor/${s}_cnvs.vcf.gz:18"; do
     IFS=: read -r k rel step <<< "$kind"
     if [ -f "${GENOME_DIR}/${s}/${rel}" ]; then
       ARGS+=("--${k}" "${s}=/genome/${s}/${rel}")

@@ -17,23 +17,39 @@ runs:
         df -h / /mnt 2> /dev/null || df -h /
         before=$(df --output=avail -k / | tail -1)
         # The deletions run side by side: the Android SDK alone is about
-        # 100,000 files. A path that is not there is skipped.
-        for d in /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+        # 100,000 files. A path that is not there is skipped. The cleanup is
+        # best effort, but a part that fails is named in the log and the
+        # summary instead of showing only as a smaller number freed.
+        # FREE_DISK_PATHS replaces the list (tests/test_e2e_data_cache.sh).
+        paths=${FREE_DISK_PATHS:-/usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
                  /usr/local/share/boost /usr/share/swift /usr/local/share/powershell \
                  /usr/local/share/chromium /opt/microsoft /opt/google /opt/az \
                  /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/go /opt/hostedtoolcache/PyPy \
                  /opt/hostedtoolcache/Python \
-                 /opt/hostedtoolcache/Ruby /opt/hostedtoolcache/node; do
-          [ -e "$d" ] && sudo rm -rf "$d" &
+                 /opt/hostedtoolcache/Ruby /opt/hostedtoolcache/node}
+        pids=() what=()
+        for d in $paths; do
+          [ -e "$d" ] || continue
+          sudo rm -rf "$d" & pids+=($!); what+=("rm -rf ${d}")
         done
         # The images the runner image ships (none of them is ours).
         if command -v docker > /dev/null 2>&1; then
-          docker image prune -a -f > /dev/null 2>&1 &
+          docker image prune -a -f > /dev/null 2>&1 & pids+=($!); what+=("docker image prune -a")
         fi
-        wait
+        failed=()
+        for i in "${!pids[@]}"; do
+          rc=0
+          wait "${pids[$i]}" || rc=$?
+          [ "$rc" -eq 0 ] || failed+=("${what[$i]} (exit ${rc})")
+        done
         after=$(df --output=avail -k / | tail -1)
         echo "Free space after:"
         df -h / /mnt 2> /dev/null || df -h /
         msg="Free disk: $(( (after - before) / 1048576 )) GB freed on /, $(( after / 1048576 )) GB free now, in ${SECONDS} s"
+        if [ "${#failed[@]}" -gt 0 ]; then
+          msg="${msg}; cleanup failed (best effort, the job goes on): $(printf '%s; ' "${failed[@]}")"
+          msg=${msg%; }
+          echo "::warning::${msg}"
+        fi
         echo "$msg"
         echo "$msg" >> "$GITHUB_STEP_SUMMARY"
