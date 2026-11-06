@@ -11,7 +11,8 @@
      BREAKING; so are, on a copy of the contract, a file row in the folder of
      a publishDir whose saveAs drops it and a nextflow row whose step script
      writes the same path (also on a line of seven shell variables);
-     --pedigree is a declared param;
+     --pedigree is a declared param; a saveAs closure is read up to its own
+     brace and a script path counts only as a whole path;
   3. the run check on a planted results folder made from the contract's own
      e2e rows passes for both legs; then a dropped column, a dropped VCF
      field, a dropped JSON key and a renamed file are each refused, naming the
@@ -269,6 +270,29 @@ def run_controls():
         shutil.rmtree(tmp)
 
 
+def reader_controls():
+    """The two readers the static check is built on, on inputs the code does not have yet."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("contract_check", CHECK)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    stmt = "publishDir \"x\", saveAs: { fn -> fn.endsWith('.log') ? null : fn }, enabled: { true }"
+    body = m.closure_body(stmt)
+    check("a saveAs closure ends at its own brace (an option after it is not part of it)",
+          body is not None and "enabled" not in body and m.save_as(body, "a.log") == "drop", repr(body))
+    tmp = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmp, "scripts"))
+        open(os.path.join(tmp, "scripts", "11-roh.sh"), "w").write(
+            'S="${GENOME_DIR}/${SAMPLE}"\nbgzip -c x > "${S}/roh/${SAMPLE}_roh.txt.gz"\n')
+        short = m.bash_writes(tmp, "11", "{sample}/roh/{sample}_roh.txt", {})
+        full = m.bash_writes(tmp, "11", "{sample}/roh/{sample}_roh.txt.gz", {})
+        check("a step script writing x.txt.gz does not count as writing x.txt",
+              short is None and full == "scripts/11-roh.sh", f"{short!r} {full!r}")
+    finally:
+        shutil.rmtree(tmp)
+
+
 def malformed():
     tmp = tempfile.mkdtemp()
     try:
@@ -287,6 +311,7 @@ def malformed():
 
 
 static_controls()
+reader_controls()
 run_controls()
 malformed()
 print(f"{FAILS} failed")

@@ -117,6 +117,21 @@ SAVE_AS = re.compile(r"^\s*(\w+)\s*->\s*\1\s*(?:\.(endsWith|startsWith)\(\s*'([^
                      r"\s*\?\s*([^?:]+?)\s*:\s*([^?:]+?)\s*$", re.S)
 
 
+def closure_body(stmt):
+    """The body of a publishDir's saveAs closure, up to its own closing brace (an option
+    after it is not part of it), or None when the statement has no saveAs."""
+    m = re.search(r"saveAs:\s*\{", stmt)
+    if not m:
+        return None
+    depth, i = 1, m.end()
+    while i < len(stmt):
+        depth += {"{": 1, "}": -1}.get(stmt[i], 0)
+        if depth == 0:
+            return stmt[m.end():i]
+        i += 1
+    return stmt[m.end():]
+
+
 def save_as(closure, name):
     """What a publishDir's saveAs closure does to a task file name (an output glob):
     'keep' (published under its own name), 'drop' (returns null) or 'rename'.
@@ -162,10 +177,9 @@ def module_processes(repo):
                     stmt += "\n" + lines[k]
                 d = re.search(r'publishDir\s+\{?\s*"([^"]+)"', stmt)
                 pat = re.search(r"pattern:\s*[\"']([^\"']+)[\"']", stmt)
-                sa = re.search(r"saveAs:\s*\{(.*)\}", stmt, re.S)
                 pubs.append((concrete(d.group(1)) if d else "",
                              braces(pat.group(1)) if pat else None,
-                             sa.group(1) if sa else None))
+                             closure_body(stmt)))
             out = re.search(r"^\s*output:\s*$(.*?)(?:^\s*(?:when|topic):|\Z)", head, re.M | re.S)
             outputs = []
             if out:
@@ -271,7 +285,9 @@ def bash_writes(repo, step, name, cache):
         files = sorted(glob.glob(os.path.join(repo, "scripts", f"{step}-*.sh")))
         cache[step] = (files, "\n".join(bash_paths("".join(open(f).read() for f in files))) if files else "")
     files, text = cache[step]
-    return os.path.relpath(files[0], repo) if files and ("G/" + name) in text else None
+    # the whole path: a longer name that starts with it (x.tsv.gz for x.tsv) is not it
+    hit = files and re.search(re.escape("G/" + name) + r"(?![\w.-])", text)
+    return os.path.relpath(files[0], repo) if hit else None
 
 
 def known_tools(repo):
