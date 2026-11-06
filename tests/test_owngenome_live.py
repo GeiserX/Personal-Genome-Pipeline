@@ -109,9 +109,20 @@ def make_root(work):
     with open(outside, "w") as f:
         f.write("outside the root\n")
     os.symlink(outside, os.path.join(d, "clinvar", "escape.tsv"))
+    # The report links CPSR's folder, which holds its HTML report and its table
+    os.makedirs(os.path.join(d, "cpsr"))
+    with open(os.path.join(d, "cpsr", f"{RUN}.cpsr.grch38.html"), "w") as f:
+        f.write("<!doctype html><title>CPSR</title>\n")
+    with open(os.path.join(d, "cpsr", f"{RUN}.cpsr.grch38.classification.tsv.gz"), "w") as f:
+        f.write("not linked\n")
+    os.makedirs(os.path.join(d, "twopages"))
+    for n in ("a.html", "b.html"):
+        with open(os.path.join(d, "twopages", n), "w") as f:
+            f.write("<!doctype html>\n")
     with open(os.path.join(d, f"{RUN}_report.html"), "w") as f:
         f.write('<!doctype html><html><head><style>body{color:#eee}</style></head><body>'
                 '<a href="clinvar/hits.tsv">hits</a> <a href="clinvar/escape.tsv">escape</a> '
+                '<a href="cpsr/">the cpsr folder</a> <a href="twopages/">two pages</a> '
                 '<a href="https://example.org/x">outside</a></body></html>\n')
     return root
 
@@ -843,6 +854,17 @@ def main():
         c4, _, _ = request(port, "GET", f"/runs/{RUN}/..%2F..%2Foutside.txt", headers=auth)
         check("an unlinked file, a symlink out of the root and a path out of the run are 404",
               (c1, c2, c3, c4) == (404, 404, 404, 404), (c1, c2, c3, c4))
+        code, hd, _ = request(port, "GET", f"/runs/{RUN}/cpsr/", headers=auth)
+        page = f"/runs/{RUN}/cpsr/{RUN}.cpsr.grch38.html"
+        check("the report's cpsr/ folder link opens the CPSR HTML report in it",
+              code == 302 and hd.get("location") == page, (code, hd.get("location")))
+        code, _, body = request(port, "GET", page, headers=auth)
+        check("the CPSR HTML report in the linked folder is served", code == 200 and b"<title>CPSR" in body, code)
+        c1, _, _ = request(port, "GET", f"/runs/{RUN}/cpsr/{RUN}.cpsr.grch38.classification.tsv.gz", headers=auth)
+        c2, _, _ = request(port, "GET", f"/runs/{RUN}/twopages/", headers=auth)
+        c3, _, _ = request(port, "GET", f"/runs/{RUN}/clinvar/", headers=auth)
+        check("a linked folder serves only its HTML, a folder with two HTML files and an unlinked folder are 404",
+              (c1, c2, c3) == (404, 404, 404), (c1, c2, c3))
         code, _, body = request(port, "GET", "/", headers=auth)
         check("the index lists the run", code == 200 and f'/runs/{RUN}/'.encode() in body, code)
         log = open(os.path.join(state_dir, "access.log")).read()

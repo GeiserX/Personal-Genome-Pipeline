@@ -675,6 +675,12 @@ class Live:
                     rel = os.path.normpath(urllib.parse.unquote(h))
                     if not rel.startswith("..") and rel != ".":
                         out.add(rel)
+                        # A link to a folder (the report's cpsr/ when it holds CPSR's
+                        # HTML): the HTML files directly in it, which the folder
+                        # request redirects to (run_path).
+                        if h.endswith("/") and os.path.isdir(os.path.join(d, rel)):
+                            out.update(os.path.join(rel, f) for f in os.listdir(os.path.join(d, rel))
+                                       if f.lower().endswith(".html") and os.path.isfile(os.path.join(d, rel, f)))
         return out
 
     def run_file_allowed(self, run, rel):
@@ -952,6 +958,15 @@ class BrowserHandler(BaseHTTPRequestHandler):
             self.log("file", name, rel, 404)
             return self.deny(404)
         p = os.path.join(d, rel)
+        if os.path.isdir(p) and Live.inside(p, os.path.realpath(d)) and Live.inside(p, self.live.root):
+            # The site lists no folder: a linked folder with one HTML file in it
+            # (cpsr/ with CPSR's report) opens that file.
+            pages = sorted(f for f in os.listdir(p) if f.lower().endswith(".html")
+                           and os.path.isfile(os.path.join(p, f)) and self.live.run_file_allowed(run, os.path.join(rel, f)))
+            if len(pages) == 1:
+                self.log("file", name, rel, 302)
+                return self.send_body(302, "text/plain", "", [("Location", "/runs/" + urllib.parse.quote(name) + "/"
+                                                               + urllib.parse.quote(rel + "/" + pages[0]))])
         if not os.path.isfile(p) or not Live.inside(p, os.path.realpath(d)) or not Live.inside(p, self.live.root):
             self.log("file", name, rel, 404)
             return self.deny(404)
