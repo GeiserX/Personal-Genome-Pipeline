@@ -2,7 +2,8 @@
 # The data cache entries hla and pgs of scripts/ci/e2e-run.sh: --data-check
 # passes a whole entry and fails a changed, missing or partial one (the e2e
 # workflow saves and uses only an entry that passes), and --data-key names
-# the releases. No network, no docker.
+# the releases; and .github/actions/free-disk names a cleanup that failed in
+# its summary (fake sudo, docker and df). No network, no docker.
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 RUN="${REPO}/scripts/ci/e2e-run.sh"
@@ -59,4 +60,50 @@ if [ -n "$other" ] && [ -n "$pin" ] && [ -n "$gencode" ] \
 else echo "FAIL: the hla key does not match its inputs (${other:-?} ${pin:-?} ${gencode:-?}): ${key}"; failed=1; fi
 if "$RUN" --data-key pgs | grep -qE '^e2e-data-pgs-[0-9a-f]{16}$'; then echo "PASS: the pgs key is a hash"
 else echo "FAIL: the pgs key"; failed=1; fi
+
+# --- free-disk: a cleanup that fails is named in the summary -----------------
+# The action's script, run as GitHub runs a composite bash step, with sudo,
+# docker and df faked on PATH: sudo fails for the planted path, docker's prune
+# fails in the second run. The control run, with nothing failing, must not
+# name a failure.
+FD="${T}/free-disk"
+mkdir -p "${FD}/bin" "${FD}/ok" "${FD}/planted-fail"
+awk '/^      run: \|/ {on = 1; next} on && /^        / {sub(/^        /, ""); print; next} on && NF {exit}' \
+  "${REPO}/.github/actions/free-disk/action.yml" > "${FD}/run.sh"
+grep -q 'failed' "${FD}/run.sh" || { echo "FAIL: could not read the free-disk script"; failed=1; }
+cat > "${FD}/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *planted-fail*) echo "rm: cannot remove: Permission denied" >&2; exit 1 ;;
+  *"${FD_ROOT:?}"/*) exec "$@" ;;
+  *) echo "fake sudo: refused, outside the test folder: $*" >&2; exit 9 ;;
+esac
+EOF
+cat > "${FD}/bin/docker" <<'EOF'
+#!/usr/bin/env bash
+[ "${FAKE_PRUNE_FAILS:-false}" = true ] && exit 3
+exit 0
+EOF
+cat > "${FD}/bin/df" <<'EOF'
+#!/usr/bin/env bash
+printf 'Avail\n10485760\n'
+EOF
+chmod +x "${FD}/bin/"*
+freedisk() {  # freedisk PATHS [PRUNE_FAILS]: the summary the script wrote
+  : > "${FD}/summary"
+  FD_ROOT=$FD PATH="${FD}/bin:${PATH}" FREE_DISK_PATHS="$1" FAKE_PRUNE_FAILS="${2:-false}" GITHUB_STEP_SUMMARY="${FD}/summary" \
+    bash --noprofile --norc -eo pipefail "${FD}/run.sh" > "${FD}/log" 2>&1
+  echo "exit $?: $(cat "${FD}/summary")"
+}
+out=$(freedisk "${FD}/ok")
+if [[ "$out" == "exit 0: Free disk:"* ]] && [[ "$out" != *failed* ]] && [ ! -e "${FD}/ok" ]; then
+  echo "PASS: free-disk control: nothing failed, nothing named (${out})"
+else echo "FAIL: free-disk control: ${out}"; failed=1; fi
+mkdir -p "${FD}/ok"
+out=$(freedisk "${FD}/ok ${FD}/planted-fail" true)
+if [[ "$out" == "exit 0: "* ]] && [[ "$out" == *"cleanup failed"*"rm -rf ${FD}/planted-fail (exit 1)"* ]] \
+   && [[ "$out" == *"docker image prune -a (exit 3)"* ]] && [[ "$out" != *"rm -rf ${FD}/ok "* ]]; then
+  echo "PASS: free-disk names the planted failing rm and the failed prune, and still exits 0 (${out})"
+else echo "FAIL: free-disk did not name the planted failures: ${out}"; failed=1; fi
+
 exit "$failed"
