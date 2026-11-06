@@ -80,6 +80,7 @@ import annotsv_postfilter  # noqa: E402  step 05's class 4-5 checks and the step
 import chip_report  # noqa: E402  step 49's detection limit at the median depth
 import run_delta  # noqa: E402  the comparison with the previous run, for the "New since" badges
 import traits_report  # noqa: E402  step 42's genotype-rules columns and the rules the traits table holds
+import genotype_rules_indels  # noqa: E402  the APOL1 G2 deletion beside step 42's APOL1 rule
 
 # 2: cyp2d6.consensus, Cyrius's Filter applied, HLA quality per allele,
 # Stranger's status on the repeat loci, the CPIC unclassified count, and the
@@ -2951,7 +2952,76 @@ def genotype_rules(d, s):
     bad = next((i for i, r in enumerate(rows, 2) if None in r or any(r.get(k) is None for k in need)), None)
     if bad:
         raise Unreadable(f"{os.path.basename(p)} line {bad} does not have one field per column")
-    return [{k: r[k] for k in need} for r in rows if r["rule"] not in traits_report.TRAITS_TABLE_RULES]
+    out = [{k: r[k] for k in need} for r in rows if r["rule"] not in traits_report.TRAITS_TABLE_RULES]
+    for r in out:
+        if r["rule"] == genotype_rules_indels.G2["rule"]:
+            g2 = apol1_g2(d, s)
+            r["g2"] = dict(g2, **genotype_rules_indels.combine(r, g2))
+    return out
+
+
+def vcf_window(path, chrom, start, end):
+    """The split data lines of a VCF on chrom that can cover start..end: read
+    from the tabix linear index's offset for start when the .tbi is there,
+    else the whole file (stopping past the window)."""
+    out = []
+    if os.path.exists(path + ".tbi"):
+        ioff = tabix_linear_index(path).get(chrom)
+        if not ioff:
+            return out
+        voff = ioff[min((start - 1) >> 14, len(ioff) - 1)]
+        voff = 0 if voff == 0xFFFFFFFFFFFFFFFF else voff
+        with open(path, "rb") as raw:
+            raw.seek(voff >> 16)
+            g = gzip.GzipFile(fileobj=raw)
+            g.read(voff & 0xFFFF)
+            lines = (x.decode(errors="replace").rstrip("\n").split("\t") for x in g if not x.startswith(b"#"))
+            seen = False
+            for r in lines:
+                if len(r) < 2 or not r[1].isdigit():
+                    continue
+                if r[0] != chrom:
+                    if seen:
+                        break
+                    continue
+                seen = True
+                if int(r[1]) > end:
+                    break
+                out.append(r)
+        return out
+    seen = False
+    for r in vcf_records(path):
+        if len(r) < 2 or not r[1].isdigit():
+            continue
+        if r[0] != chrom:
+            if seen:
+                break
+            continue
+        seen = True
+        if int(r[1]) > end:
+            break
+        out.append(r)
+    return out
+
+
+def apol1_g2(d, s):
+    """APOL1 G2 (rs71785313, a 6-base deletion step 42's rule table cannot
+    read) from the sample's gVCF when it is there (vcf/<id>.g.vcf.gz, whose
+    reference blocks tell a reference base from no reads), else its VCF
+    (vcf/<id>.vcf.gz): bin/genotype_rules_indels.py's read_g2, plus source."""
+    m = genotype_rules_indels
+    for name, kind in ((f"vcf/{s}.g.vcf.gz", "gvcf"), (f"vcf/{s}.vcf.gz", "vcf")):
+        p = os.path.join(d, name)
+        if not os.path.isfile(p):
+            continue
+        try:
+            recs = vcf_window(p, m.G2["chrom"], m.CONTEXT_START, m.SPAN[1])
+        except (OSError, EOFError, ValueError, struct.error, gzip.BadGzipFile, zlib.error, Unreadable) as e:
+            return {"status": "not_read", "copies": None, "gq": ".", "source": name,
+                    "text": f"G2 (rs71785313) not read: {name} could not be read ({e})."}
+        return dict(m.read_g2(recs, kind), source=name)
+    return {"status": "not_read", "copies": None, "gq": ".", "source": None,
+            "text": "G2 (rs71785313) not read: no VCF of the sample in this folder."}
 
 
 def sec_carrier(d, s):

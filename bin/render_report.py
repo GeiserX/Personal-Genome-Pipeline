@@ -656,6 +656,8 @@ def traits_text(d, sample):
         for r in d["rules"]:
             out.append(f"    {r['trait']} ({r['gene']} {r['rsids'].replace(',', ', ')}): {rule_result(r)}. "
                        f"{r['reading']} (PMID {r['pmids']})")
+            if r.get("g2"):
+                out.append(f"      With G2 (rs71785313): {g2_result(r)}. {r['g2']['reading']} {r['g2']['text']}")
     if d.get("apoe"):
         out.append(f"  {APOE_WARNING}")
         for r in d["apoe"]:
@@ -674,6 +676,26 @@ def rule_result(r):
     return res + (f" ({ph})" if ph else "")
 
 
+def g2_result(r):
+    """The APOL1 rule's result with G2 (collect_summary's g2), or None for any other rule."""
+    g2 = r.get("g2")
+    if not g2:
+        return None
+    return g2["result"] if g2["result"] != "." else "G2 " + g2["status"].replace("_", " ")
+
+
+def g2_result_html(r):
+    res = g2_result(r)
+    return f"<br>With G2: {E(res)}" if res else ""
+
+
+def g2_reading_html(r):
+    g2 = r.get("g2")
+    if not g2:
+        return ""
+    return f"<br>With G2: {E(g2['reading'])}<br><span style=\"font-size:12px;color:#666\">{E(g2['text'])}</span>"
+
+
 def rules_html(d, sample):
     """The genotype rules table of the traits card."""
     rows = []
@@ -681,7 +703,8 @@ def rules_html(d, sample):
         anc = " " + badge("ancestry", "yellow") if r["ancestry"] == "yes" else ""
         rows.append(f"      <tr><td>{E(r['trait'])}</td><td>{E(r['gene'])}<br><span style=\"font-size:12px;color:#666\">"
                     f"{E(r['rsids'].replace(',', ', '))}</span></td><td>{E(r['genotypes'].replace(',', ', '))}</td>"
-                    f"<td>{E(rule_result(r))}{anc}</td><td>{E(r['reading'])}<br><span style=\"font-size:12px;color:#666\">"
+                    f"<td>{E(rule_result(r))}{anc}{g2_result_html(r)}</td><td>{E(r['reading'])}{g2_reading_html(r)}"
+                    f"<br><span style=\"font-size:12px;color:#666\">"
                     f"{E(r['note'])}</span></td><td>PMID {E(r['pmids'])}</td></tr>")
     if not rows:
         return []
