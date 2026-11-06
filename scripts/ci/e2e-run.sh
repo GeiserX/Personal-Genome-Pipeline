@@ -44,6 +44,9 @@
 #                tried before their sources
 #      E2E_DATA_BUDGET  the most seconds one data cache fill may take
 #                (default 2400); a fill still running then fails its case
+#      E2E_MIRROR_BUDGET  the most seconds one file may take on the mirror
+#                before its source is tried (default 900, or half of
+#                E2E_DATA_BUDGET when that is less)
 #
 # Every run writes $E2E_WORK/report/results.tsv ("CASE RESULT SECONDS JOB",
 # tab-separated) and report/extra.md (failed checks and notes), which the
@@ -179,10 +182,11 @@ HLA_CASE="${REPO}/tests/e2e/bash-step-08-hla.sh"
 PGS_CASE="${REPO}/tests/e2e/prs-scores-and-run-options-1-strand-sex.sh"
 # PGS_MD5: "ID MD5" of the score files the e2e-data-1 release holds, the md5
 # the PGS Catalog served beside each on 2026-11-06 (its .md5 file).
-PGS_MD5="PGS002257 bb1b2b11a499c5930e8c835647e48296
+# E2E_PGS_MD5 replaces the list (tests/test_e2e_data_cache.sh).
+PGS_MD5=${E2E_PGS_MD5-"PGS002257 bb1b2b11a499c5930e8c835647e48296
 PGS000065 90ac7aabbbde9bdaa681dbdb66c0ebd8
 PGS000064 43b39c4450f423f0772bbd8779dd640f
-PGS000066 b34f31b8b3a7dbbbb58882a70e14649d"
+PGS000066 b34f31b8b3a7dbbbb58882a70e14649d"}
 # hla_releases: the IPD-IMGT/HLA releases bash-step-08-hla installs (the
 # release before the pin, then the pin), from the case and scripts/lib/common.sh.
 hla_releases() {
@@ -215,15 +219,19 @@ data_key() {
 # downloads passed their md5 checks, matches. pgs: each score of the case is
 # there with the md5 file the PGS Catalog serves beside it, and matches it.
 data_ok() {
-  local d="${DATA_CACHE:?}/$1" id
+  local d="${DATA_CACHE:?}/$1" id pin sum
   case "$1" in
     hla)
       [ -s "${d}/SHA256SUMS" ] && [ "$(wc -l < "${d}/SHA256SUMS")" -eq 4 ] \
         && (cd "$d" && sha256sum --quiet -c SHA256SUMS) ;;
     pgs)
+      # A score pinned in PGS_MD5 must match its pin as well as its .md5.
       for id in $(sed -n 's/^NEW_IDS="\(.*\)"$/\1/p' "$PGS_CASE"); do
+        pin=$(awk -v i="$id" '$1 == i {print $2}' <<< "$PGS_MD5")
+        sum=$(md5sum "${d}/${id}.txt.gz" 2> /dev/null | cut -d' ' -f1)
         [ -s "${d}/${id}.txt.gz" ] && [ -s "${d}/${id}.txt.gz.md5" ] \
-          && [ "$(md5sum "${d}/${id}.txt.gz" | cut -d' ' -f1)" = "$(awk '{print $1; exit}' "${d}/${id}.txt.gz.md5")" ] \
+          && [ "$sum" = "$(awk '{print $1; exit}' "${d}/${id}.txt.gz.md5")" ] \
+          && { [ -z "$pin" ] || [ "$sum" = "$pin" ]; } \
           || return 1
       done ;;
     *) return 1 ;;
@@ -249,12 +257,48 @@ DATA_CACHE=${E2E_DATA_CACHE:-}
 # and MB/s from one request to the next, and a leg with no Actions cache could
 # spend its whole time limit on one download. The pin checks both copies the
 # same way, so the mirror can only save time, never change what a case reads.
+# kill_tree PID: PID and every process under it (data_fetch's subshells and
+# their curl).
+kill_tree() {
+  local c
+  for c in $(pgrep -P "$1" 2> /dev/null); do kill_tree "$c"; done
+  kill -TERM "$1" 2> /dev/null || true
+}
+# within SECS CMD...: runs CMD (a function too) and stops it with everything
+# under it after SECS seconds; returns CMD's status, or 124 when it was stopped.
+within() {
+  local secs=$1 pid wd rc=0 over
+  shift
+  over=$(mktemp)
+  "$@" & pid=$!
+  ( sleep "$secs"; echo over > "$over"; kill_tree "$pid" ) & wd=$!
+  wait "$pid" || rc=$?
+  kill_tree "$wd"
+  wait "$wd" 2> /dev/null || true
+  if [ -s "$over" ]; then rm -f "$over"; return 124; fi
+  rm -f "$over"
+  return "$rc"
+}
 # mfetch URL DEST KIND SUM: fetch from the mirror, then from URL. Called
-# inside data_fetch, after it sources scripts/lib/common.sh for fetch.
+# inside data_fetch, after it sources scripts/lib/common.sh for fetch. The
+# mirror try gets E2E_MIRROR_BUDGET seconds (default 900, or half of
+# E2E_DATA_BUDGET when that is less), so a mirror that trickles leaves the
+# source its turn within the fill's budget.
 mfetch() {
+  local secs=${E2E_MIRROR_BUDGET:-} rc=0
   if [ -n "${E2E_DATA_MIRROR:-}" ]; then
-    FETCH_TRIES=1 fetch "${E2E_DATA_MIRROR%/}/${1##*/}" "$2" "$3" "$4" 2> /dev/null && return 0
-    echo "Data cache: ${1##*/} not on the mirror; downloading it from its source"
+    if [ -z "$secs" ]; then
+      secs=$(( ${E2E_DATA_BUDGET:-2400} / 2 ))
+      [ "$secs" -le 900 ] || secs=900
+      [ "$secs" -ge 1 ] || secs=1
+    fi
+    FETCH_TRIES=1 within "$secs" fetch "${E2E_DATA_MIRROR%/}/${1##*/}" "$2" "$3" "$4" 2> /dev/null || rc=$?
+    [ "$rc" -eq 0 ] && return 0
+    if [ "$rc" -eq 124 ]; then
+      echo "Data cache: ${1##*/} took more than ${secs} s on the mirror; downloading it from its source"
+    else
+      echo "Data cache: ${1##*/} not on the mirror; downloading it from its source"
+    fi
   fi
   fetch "$@"
 }
@@ -321,9 +365,10 @@ data_fetch() (
       [ -n "$base" ] || { echo "ERROR: no PGS_BASE= line in ${PGS_CASE}" >&2; exit 1; }
       for id in $(sed -n 's/^NEW_IDS="\(.*\)"$/\1/p' "$PGS_CASE"); do
         f="${d}/${id}.txt.gz" url="${base}/${id}/ScoringFiles/Harmonized/${id}_hmPOS_GRCh38.txt.gz"
-        [ -s "$f" ] && [ -s "${f}.md5" ] && [ "$(_digest md5 "$f")" = "$(awk '{print $1; exit}' "${f}.md5")" ] && continue
-        rm -f "$f" "${f}.md5"
         pin=$(awk -v i="$id" '$1 == i {print $2}' <<< "$PGS_MD5")
+        [ -s "$f" ] && [ -s "${f}.md5" ] && [ "$(_digest md5 "$f")" = "$(awk '{print $1; exit}' "${f}.md5")" ] \
+          && { [ -z "$pin" ] || [ "$(_digest md5 "$f")" = "$pin" ]; } && continue
+        rm -f "$f" "${f}.md5"
         if [ -n "$pin" ]; then
           mfetch "$url" "$f" md5 "$pin" || exit 1
           echo "${pin}  ${url##*/}" > "${f}.md5"
@@ -336,13 +381,6 @@ data_fetch() (
     *) echo "ERROR: no data cache entry ${1}" >&2; exit 1 ;;
   esac
 )
-# kill_tree PID: PID and every process under it (data_fetch's subshells and
-# their curl).
-kill_tree() {
-  local c
-  for c in $(pgrep -P "$1" 2> /dev/null); do kill_tree "$c"; done
-  kill -TERM "$1" 2> /dev/null || true
-}
 # data_fill NAME: data_fetch NAME within E2E_DATA_BUDGET seconds (default
 # 2400). A fill that is still running then is stopped, its partial files
 # kept for the next try, and data_fill returns 124 with a message that says
@@ -351,20 +389,12 @@ kill_tree() {
 # Genomes sites VCF slowly enough that two shard legs reached their 240-minute
 # limit on that one download (fork run 41957608395).
 data_fill() {
-  local budget=${E2E_DATA_BUDGET:-2400} pid wd rc=0 over
+  local budget=${E2E_DATA_BUDGET:-2400} rc=0
   case "$budget" in ''|*[!0-9]*) echo "ERROR: E2E_DATA_BUDGET must be a whole number of seconds, got '${budget}'" >&2; return 1 ;; esac
-  over=$(mktemp)
-  data_fetch "$1" & pid=$!
-  ( sleep "$budget"; echo over > "$over"; kill_tree "$pid" ) & wd=$!
-  wait "$pid" || rc=$?
-  kill_tree "$wd"
-  wait "$wd" 2> /dev/null || true
-  if [ -s "$over" ]; then
-    rm -f "$over"
+  within "$budget" data_fetch "$1" || rc=$?
+  if [ "$rc" -eq 124 ]; then
     echo "ERROR: Data cache: filling ${1} took more than E2E_DATA_BUDGET=${budget} s and was stopped; a source this slow would eat the job's time limit" >&2
-    return 124
   fi
-  rm -f "$over"
   return "$rc"
 }
 case "${1:-}" in

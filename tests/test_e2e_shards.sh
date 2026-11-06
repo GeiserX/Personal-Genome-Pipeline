@@ -119,6 +119,15 @@ broken "an unknown stage" "z9${TAB}later${TAB}5${TAB}-"
 if out=$("$S" check 2>&1); then bad "check passed a table with no row for z9"
 elif grep -qx 'z9' <<< "$out"; then ok "check names the case with no row: $(tr '\n' ' ' <<< "$out")"
 else bad "check did not name z9: ${out}"; fi
+table | grep -v "^e1${TAB}" > "${WORK}/two-missing.tsv"
+if out=$(E2E_TIMES="${WORK}/two-missing.tsv" "$S" check 2>&1); then bad "check passed a table with no row for e1 and z9"
+elif grep -qx 'e1' <<< "$out" && grep -qx 'z9' <<< "$out"; then ok "check names both cases with no row"
+else bad "check did not name both e1 and z9: ${out}"; fi
+if E2E_TIMES="${WORK}/no-such.tsv" "$S" check > /dev/null 2>&1; then bad "check passed with no table"
+else ok "check refuses a table that is not there"; fi
+mkdir -p "${WORK}/empty"
+if E2E_CASE_DIR="${WORK}/empty" E2E_TIMES=/dev/null "$S" check > /dev/null 2>&1; then bad "check passed with no case and an empty table"
+else ok "check refuses a case directory with no case"; fi
 { table; printf '%s\n' "z9${TAB}shard${TAB}5${TAB}-"; } > "${WORK}/whole.tsv"
 if out=$(E2E_TIMES="${WORK}/whole.tsv" "$S" check 2>&1); then ok "check passes once z9 has its row: ${out}"
 else bad "check failed a table with a row for every case: ${out}"; fi

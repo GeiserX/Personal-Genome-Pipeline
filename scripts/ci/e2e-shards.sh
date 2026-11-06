@@ -289,6 +289,8 @@ times() {
 # check: the table checks of every command, plus a row for every case.
 check() {
   local missing
+  [ -r "$TIMES" ] || die "no table to check: ${TIMES}"
+  [ -n "$(cases)" ] || die "no case in ${CASE_DIR}"
   check_table
   missing=$(awk -F'\t' 'FILENAME == ARGV[1] { r[$1] = 1; next } !($1 in r)' <(rows) <(cases))
   [ -z "$missing" ] || die "$(printf '%s\n' "in ${TIMES}, no row for:" "$missing" "Add each with its stage, its measured seconds and its needs.")"

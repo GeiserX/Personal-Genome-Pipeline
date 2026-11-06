@@ -124,12 +124,13 @@ jobs:
 
       # The stub run below pulls every image of the default tools: the pinned
       # leg ran out of disk in it twice on 2026-11-05 (#300, job 127077180393;
-      # #290, run 41966270772). The free-disk step above runs first. The free
-      # space under / and under Docker's root goes to the log and the summary, and
+      # #290, run 41966270772). The free-disk step above runs first. On that
+      # leg, the free space under / and under Docker's root goes to the log
+      # and the summary, and
       # below MIN_FREE_GB the job stops here, naming the cause, instead of
       # failing in a task or in Nextflow's onComplete handler.
       - name: Free disk before the stub runs
-        if: steps.scope.outputs.run == 'true'
+        if: steps.scope.outputs.run == 'true' && matrix.line == 'pinned'
         env:
           MIN_FREE_GB: 20
           LINE: ${{ matrix.line }}

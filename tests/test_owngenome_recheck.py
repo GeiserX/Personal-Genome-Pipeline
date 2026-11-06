@@ -529,8 +529,10 @@ OPT_IN_PINS = [("MEGANE_IMAGE", "50"), ("MOCHA_PANEL_VERSION", "51"), ("MOCHA_IM
 
 
 def pins_ok(m, steps):
-    """Each pin of OPT_IN_PINS, bumped alone, makes affected_steps list its step."""
-    missed = [(k, n, m.affected_steps(steps, [k])) for k, n in OPT_IN_PINS if n not in m.affected_steps(steps, [k])]
+    """Each pin of OPT_IN_PINS, bumped alone, makes affected_steps list exactly its step and the
+    HTML report (no step reads the outputs of steps 50 to 53)."""
+    missed = [(k, n, got) for k, n in OPT_IN_PINS
+              for got in [m.affected_steps(steps, [k])] if sorted(got) != sorted([n, m.REPORT_STEP])]
     return not missed, missed
 
 
@@ -542,6 +544,9 @@ def main():
     blank = [dict(st, reads="") if st["step"] == "53" else st for st in steps]
     check("fails on a planted mistake: a bumped pin of steps 50-53 marks its step (row 53 with no reads)",
           not pins_ok(m, blank)[0], "passed on the mutant")
+    no_report = [st for st in steps if st["step"] != m.REPORT_STEP]
+    check("fails on a planted mistake: a bumped pin of steps 50-53 marks its step (no report step in the catalogue)",
+          not pins_ok(m, no_report)[0], "passed on the mutant")
     ok, detail = plugin_ok(load_plugin())
     check("the live-site plugin serves the check and gives each step its badges", ok, detail)
     bad = load_plugin()

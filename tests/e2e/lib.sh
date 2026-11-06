@@ -124,10 +124,10 @@ NET_BLOCKED=(env http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HT
 _sha256() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 # setup_ancestry_panel NAME PANEL: setup.sh --ancestry-panel for panel NAME
 # (installed at PANEL), its log in STEP_LOG, with checks. The HAPNEST panel
-# comes from the Actions cache, or on a miss from E2E_DATA_MIRROR (the
-# e2e-data-1 release, which holds a copy), checked against HAPNEST_SHA256;
-# then setup.sh runs with the network blocked. When neither has it, setup.sh
-# downloads it from EBI as a user's run does. With E2E_HAPNEST_KEEP=true a
+# comes from the Actions cache, an earlier install at PANEL, or else from
+# E2E_DATA_MIRROR (the e2e-data-1 release, which holds a copy), each checked
+# against HAPNEST_SHA256; then setup.sh runs with the network blocked. When
+# none has it, setup.sh downloads it from EBI as a user's run does. With E2E_HAPNEST_KEEP=true a
 # panel that matches the pin and did not come from the cache goes into it.
 setup_ancestry_panel() {
   local name=$1 panel=$2 cached="${E2E_DATA_CACHE:-}/hapnest/${1}.tar.zst" from=""
@@ -141,10 +141,17 @@ setup_ancestry_panel() {
       rm -f "$cached"
     fi
   fi
+  # A panel an earlier case installed, when it matches the pin, is used as it is.
+  if [ -z "$from" ] && [ "$name" = GRCh38_HAPNEST_reference ] && [ -s "$panel" ] \
+     && [ "$(_sha256 "$panel")" = "$HAPNEST_SHA256" ]; then
+    from="an earlier install"
+  fi
   if [ -z "$from" ] && [ "$name" = GRCh38_HAPNEST_reference ] && [ -n "${E2E_DATA_MIRROR:-}" ]; then
     mkdir -p "${panel%/*}"
-    # One try, cut when it stalls or takes over 30 minutes: EBI is next.
-    if curl -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 120 --max-time 1800          -o "${panel}.mirror" "${E2E_DATA_MIRROR%/}/${name}.tar.zst"        && [ "$(_sha256 "${panel}.mirror")" = "$HAPNEST_SHA256" ]; then
+    # One try, cut when it stalls or takes over 15 minutes: EBI is next.
+    if curl -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 120 --max-time 900 \
+         -o "${panel}.mirror" "${E2E_DATA_MIRROR%/}/${name}.tar.zst" \
+       && [ "$(_sha256 "${panel}.mirror")" = "$HAPNEST_SHA256" ]; then
       mv -f "${panel}.mirror" "$panel"
       from="the mirror"
     else

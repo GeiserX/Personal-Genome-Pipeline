@@ -15,7 +15,8 @@ failed=0
 # expect DESC 0|1 NAME: --data-check NAME on $T exits as said.
 expect() {
   local rc=0
-  E2E_DATA_CACHE=$T "$RUN" --data-check "$3" > /dev/null 2>&1 || rc=$?
+  # PINS, when set, replaces e2e-run.sh's PGS_MD5.
+  env ${PINS+"E2E_PGS_MD5=$PINS"} E2E_DATA_CACHE="$T" "$RUN" --data-check "$3" > /dev/null 2>&1 || rc=$?
   if { [ "$2" = 0 ] && [ "$rc" -eq 0 ]; } || { [ "$2" = 1 ] && [ "$rc" -ne 0 ]; }; then echo "PASS: $1"
   else echo "FAIL: $1 (exit ${rc})"; failed=1; fi
 }
@@ -44,7 +45,12 @@ for id in $ids; do
   echo "$id" | gzip -c > "${T}/pgs/${id}.txt.gz"
   echo "$(md5sum < "${T}/pgs/${id}.txt.gz" | cut -d' ' -f1)  ${id}_hmPOS_GRCh38.txt.gz" > "${T}/pgs/${id}.txt.gz.md5"
 done
-expect "pgs: every score with a matching .md5 passes" 0 pgs
+# PINS stands in for PGS_MD5 of e2e-run.sh: these files are made up.
+PINS=$(for id in $ids; do echo "${id} $(awk '{print $1}' "${T}/pgs/${id}.txt.gz.md5")"; done)
+expect "pgs: every score that matches its .md5 and its pin passes" 0 pgs
+saved=$PINS; unset PINS
+expect "pgs: a score that matches its .md5 but not its pin (the real PGS_MD5) fails" 1 pgs
+PINS=$saved
 last=${ids##* }
 echo x | gzip -c > "${T}/pgs/${last}.txt.gz"
 expect "pgs: a score that does not match its .md5 fails" 1 pgs
@@ -63,20 +69,36 @@ else echo "FAIL: the hla key does not match its inputs (${other:-?} ${pin:-?} ${
 if "$RUN" --data-key pgs | grep -qE '^e2e-data-pgs-[0-9a-f]{16}$'; then echo "PASS: the pgs key is a hash"
 else echo "FAIL: the pgs key"; failed=1; fi
 
-# --- the data fill budget: a slow source stops at E2E_DATA_BUDGET ------------
-# A mirror on 127.0.0.1 that answers every file at about 2 KB/s, fast enough
-# that fetch's stall limit (1 KB/s) never cuts it; every other host is sent
-# to a closed port. --data-fill pgs must stop at the 3-second budget with its
-# message. The control: a mirror that answers 404 fails at once, with no
-# budget message, so the message is not printed for any failure.
+# --- the data fill: the mirror, its deadline and the budget ------------------
+# A mirror on 127.0.0.1; every other host is sent to a closed port, so the
+# PGS Catalog, the source after the mirror, always fails. Its modes:
+#   slow  answers every file at about 2 KB/s, fast enough that fetch's stall
+#         limit (1 KB/s) never cuts it;
+#   404   has no file;
+#   DIR   serves the files of DIR.
+# Checks: a slow mirror is cut at E2E_MIRROR_BUDGET and the source is tried
+# within the fill's budget; a fill still running at E2E_DATA_BUDGET stops
+# with its message (exit 124); a mirror with every file pinned fills the
+# entry; a mirror whose bytes do not match the pins fills nothing. The 404
+# mirror is the control: it fails at once, with no budget message.
 SL="${T}/slow"
 mkdir -p "$SL"
 cat > "${SL}/server.py" <<'EOF'
-import http.server, sys, time
+import http.server, os, sys, time
+MODE = sys.argv[1]
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        if sys.argv[1] == "404":
+        if MODE == "404":
             self.send_error(404); return
+        if MODE != "slow":
+            f = os.path.join(MODE, os.path.basename(self.path))
+            if not os.path.isfile(f):
+                self.send_error(404); return
+            data = open(f, "rb").read()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data); return
         self.send_response(200)
         self.send_header("Content-Length", str(10 ** 8))
         self.end_headers()
@@ -91,30 +113,51 @@ s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
 print(s.server_address[1], flush=True)
 s.serve_forever()
 EOF
-fill() {  # fill MODE BUDGET: "EXIT SECONDS" of --data-fill pgs against the planted mirror; its log in ${SL}/MODE.log
+# fill TAG MODE DATA_BUDGET MIRROR_BUDGET: "EXIT SECONDS" of --data-fill pgs
+# against the mirror; its log in ${SL}/TAG.log, the entry in ${SL}/TAG.cache.
+fill() {
   local port pid rc=0 t0
-  python3 "${SL}/server.py" "$1" > "${SL}/port.$1" & pid=$!
+  python3 "${SL}/server.py" "$2" > "${SL}/port.$1" & pid=$!
   for _ in $(seq 50); do [ -s "${SL}/port.$1" ] && break; sleep 0.1; done
   port=$(head -n 1 "${SL}/port.$1")
-  rm -rf "${SL}/cache"
   t0=$(date +%s)
   env http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 \
-    no_proxy=127.0.0.1 NO_PROXY=127.0.0.1 E2E_FETCH_TRIES=1 E2E_FETCH_WAIT=0 E2E_DATA_BUDGET="$2" \
-    E2E_DATA_CACHE="${SL}/cache" E2E_DATA_MIRROR="http://127.0.0.1:${port}" \
+    no_proxy=127.0.0.1 NO_PROXY=127.0.0.1 E2E_FETCH_TRIES=1 E2E_FETCH_WAIT=0 E2E_DATA_BUDGET="$3" E2E_MIRROR_BUDGET="$4" \
+    E2E_PGS_MD5="$PINS" E2E_DATA_CACHE="${SL}/$1.cache" E2E_DATA_MIRROR="http://127.0.0.1:${port}" \
     timeout 60 "$RUN" --data-fill pgs > "${SL}/$1.log" 2>&1 || rc=$?
   kill "$pid" 2> /dev/null; wait "$pid" 2> /dev/null
   echo "$rc $(( $(date +%s) - t0 ))"
 }
-read -r rc secs <<< "$(fill slow 3)"
+read -r rc secs <<< "$(fill slow slow 3 30)"
 if [ "$rc" = 124 ] && [ "$secs" -lt 30 ] && grep -q 'filling pgs took more than E2E_DATA_BUDGET=3 s' "${SL}/slow.log"; then
   echo "PASS: a slow mirror stops the fill at its 3 s budget (exit ${rc} after ${secs} s) with its message"
 else echo "FAIL: the slow fill gave exit ${rc} after ${secs} s: $(tail -n 3 "${SL}/slow.log")"; failed=1; fi
-if pgrep -f "${SL}/cache" > /dev/null 2>&1; then echo "FAIL: a download of the stopped fill still runs"; failed=1
+if pgrep -f "${SL}/slow.cache" > /dev/null 2>&1; then echo "FAIL: a download of the stopped fill still runs"; failed=1
 else echo "PASS: nothing of the stopped fill still runs"; fi
-read -r rc secs <<< "$(fill 404 30)"
+read -r rc secs <<< "$(fill deadline slow 50 2)"
+if [ "$rc" != 0 ] && [ "$rc" != 124 ] && [ "$secs" -lt 30 ] && grep -q 'took more than 2 s on the mirror; downloading it from its source' "${SL}/deadline.log" \
+   && ! grep -q 'E2E_DATA_BUDGET' "${SL}/deadline.log"; then
+  echo "PASS: a slow mirror is cut at its 2 s deadline and the source gets its turn inside the budget (exit ${rc} after ${secs} s)"
+else echo "FAIL: the mirror deadline gave exit ${rc} after ${secs} s: $(tail -n 3 "${SL}/deadline.log")"; failed=1; fi
+read -r rc secs <<< "$(fill 404 404 30 10)"
 if [ "$rc" != 0 ] && [ "$rc" != 124 ] && [ "$secs" -lt 30 ] && ! grep -q 'E2E_DATA_BUDGET' "${SL}/404.log"; then
   echo "PASS: control: a mirror that answers 404, with the source blocked, fails at once (exit ${rc} after ${secs} s) with no budget message"
 else echo "FAIL: control gave exit ${rc} after ${secs} s: $(tail -n 3 "${SL}/404.log")"; failed=1; fi
+# The release names the score files as the PGS Catalog does.
+mkdir -p "${SL}/good" "${SL}/bad"
+for id in $ids; do
+  echo "$id" | gzip -c > "${SL}/good/${id}_hmPOS_GRCh38.txt.gz"
+  echo "not ${id}" | gzip -c > "${SL}/bad/${id}_hmPOS_GRCh38.txt.gz"
+done
+PINS=$(for id in $ids; do echo "${id} $(md5sum < "${SL}/good/${id}_hmPOS_GRCh38.txt.gz" | cut -d' ' -f1)"; done)
+read -r rc secs <<< "$(fill good "${SL}/good" 30 10)"
+if [ "$rc" = 0 ] && E2E_PGS_MD5=$PINS E2E_DATA_CACHE="${SL}/good.cache" "$RUN" --data-check pgs; then
+  echo "PASS: a mirror with every score pinned fills the entry, with the source blocked, and it checks out (${secs} s)"
+else echo "FAIL: the good mirror gave exit ${rc}: $(tail -n 3 "${SL}/good.log")"; failed=1; fi
+read -r rc secs <<< "$(fill bad "${SL}/bad" 30 10)"
+if [ "$rc" != 0 ] && [ -z "$(find "${SL}/bad.cache" -name '*.txt.gz' 2> /dev/null)" ] && grep -q 'not on the mirror' "${SL}/bad.log"; then
+  echo "PASS: a mirror whose bytes do not match the pins is refused and leaves no score in the entry (exit ${rc})"
+else echo "FAIL: the bad mirror gave exit ${rc}: $(find "${SL}/bad.cache" -type f 2> /dev/null | head -3) $(tail -n 3 "${SL}/bad.log")"; failed=1; fi
 
 # --- free-disk: a cleanup that fails is named in the summary -----------------
 # The action's script, run as GitHub runs a composite bash step, with sudo,
