@@ -105,7 +105,7 @@
                 "tools": {
                     "type": "string",
                     "description": "Comma-separated list of tools to run; an unknown name stops the run. DB-heavy tools (vep, slivar, clinical_filter, cpsr, clinvar, expansion_hunter, sample_qc) and extras (stranger, ancestry (needs --ancestry_ref and prs), ancestry_fine (needs --ancestry_fine_panel), ancient (needs --ancient_panel; samples with a gVCF), pypgx, SV callers, cram_archive, cyrius, parascopy, paraphase (PacBio HiFi BAMs only), y_haplogroup (male samples), y_str (Y-STR repeat counts, male samples), consumer_export (samples with a gVCF), bloodtype (blood group antigens; RhD needs the BAM), lpa (the LPA KIV-2 repeat count; needs the BAM), vntyper (MUC1 VNTR frameshifts behind ADTKD-MUC1; needs the BAM), viral (viral DNA in the unmapped reads; needs --viral_ref and a BAM), exomiser (runs when --hpo is set), chip (clonal haematopoiesis from the BAM; needs --chip_gff), archaic (needs --archaic_data), mei (Alu, L1 and SVA insertions with MEGAnE; needs --megane_kmers and a BAM), mocha (mosaic chromosomal alterations; needs --mocha_data), locityper (a second opinion at HLA class II, KIR, CYP2D6 and FCGR; samples with a BAM; needs --locityper_data)) are opt-in. prs and vcfanno are skipped with a warning until --pgs_scoring or a score file is set. With pharmcat, PharmCAT also gets the HLA types of hla_typing and a CYP2D6 call pypgx and cyrius agree on (PGX_CONSENSUS).",
-                    "default": "pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,html_report,multiqc",
+                    "default": "pharmcat,cpic,vcfanno,roh,prs,mito_haplogroup,telomere_hunter,mosdepth,mito_variants,traits,html_report,multiqc",
                     "fa_icon": "fas fa-toolbox"
                 }
             }
@@ -343,6 +343,12 @@
                     "format": "directory-path",
                     "description": "Exomiser's data folder, which `scripts/setup.sh --exomiser-data` installs as reference/exomiser-<release> (its <release>_hg38 and <release>_phenotype folders). Required with --hpo.",
                     "fa_icon": "fas fa-folder"
+                },
+                "pedigree": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Opt-in: run the family workflow (steps 38 and 39) on the samples of the samplesheet this file names: a pedigree (assets/pedigree.example.tsv), or a families file with a leading family column (assets/families.example.tsv). A families file that holds more than one family needs --family_name, and only that family runs. The family that runs needs two or more of those samples, each with a gVCF, and --somalier_sites.",
+                    "fa_icon": "fas fa-sitemap"
                 },
                 "family_name": {
                     "type": "string",

@@ -8,10 +8,14 @@ Two checks:
       run: every param of nextflow_schema.json, every --tools name of main.nf
       (known_tools) and every run-all.sh switch (its SWITCHES list) has a row,
       and every row still names one; every file row of a process names a file
-      that process still writes and publishes; and every file a module
-      publishes has a row. A stable row that no longer matches is a break. A
-      new param, tool, switch or published file with no row fails too, so the
-      contract stays the full list.
+      that process still writes and publishes, in the folder of a publishDir
+      that keeps it; every file a module publishes has a row; a nextflow row
+      (not internal) whose step script writes the same path is refused (its
+      legs are both);
+      and every default of nextflow_schema.json equals nextflow.config's. A
+      stable row that no longer matches is a break. A new param, tool, switch
+      or published file with no row fails too, so the contract stays the full
+      list.
 
   --outputs DIR --leg bash|nextflow --sample S [--observe]
       The files a run wrote. DIR is the folder that holds <sample>/ (GENOME_DIR
@@ -109,8 +113,49 @@ def concrete(pattern, sample="SAMPLE"):
     return p.strip("/")
 
 
+SAVE_AS = re.compile(r"^\s*(\w+)\s*->\s*\1\s*(?:\.(endsWith|startsWith)\(\s*'([^']*)'\s*\)|==\s*'([^']*)')"
+                     r"\s*\?\s*([^?:]+?)\s*:\s*([^?:]+?)\s*$", re.S)
+
+
+def closure_body(stmt):
+    """The body of a publishDir's saveAs closure, up to its own closing brace (an option
+    after it is not part of it), or None when the statement has no saveAs."""
+    m = re.search(r"saveAs:\s*\{", stmt)
+    if not m:
+        return None
+    depth, i = 1, m.end()
+    while i < len(stmt):
+        depth += {"{": 1, "}": -1}.get(stmt[i], 0)
+        if depth == 0:
+            return stmt[m.end():i]
+        i += 1
+    return stmt[m.end():]
+
+
+def save_as(closure, name):
+    """What a publishDir's saveAs closure does to a task file name (an output glob):
+    'keep' (published under its own name), 'drop' (returns null) or 'rename'.
+    A closure this reader does not follow counts as 'rename', which the static
+    check matches by basename only."""
+    if closure is None:
+        return "keep"
+    m = SAVE_AS.match(closure)
+    if not m:
+        return "rename"
+    var, method, arg, eq, yes, no = m.groups()
+    if method == "endsWith":
+        cond = name.endswith(arg)
+    elif method == "startsWith":
+        cond = name.startswith(arg)
+    else:
+        cond = name == eq
+    expr = (yes if cond else no).strip()
+    return "drop" if expr == "null" else "keep" if expr == var else "rename"
+
+
 def module_processes(repo):
-    """{process: {'publish': [(dir, [patterns] or None, has_saveas)], 'outputs': [glob]}} of modules/local."""
+    """{process: {'publish': [(dir, [patterns] or None, saveAs closure body or None)], 'outputs': [glob]}}
+    of modules/local."""
     procs = {}
     for f in sorted(glob.glob(os.path.join(repo, "modules", "local", "*", "main.nf"))):
         src = open(f).read()
@@ -134,7 +179,7 @@ def module_processes(repo):
                 pat = re.search(r"pattern:\s*[\"']([^\"']+)[\"']", stmt)
                 pubs.append((concrete(d.group(1)) if d else "",
                              braces(pat.group(1)) if pat else None,
-                             "saveAs" in stmt))
+                             closure_body(stmt)))
             out = re.search(r"^\s*output:\s*$(.*?)(?:^\s*(?:when|topic):|\Z)", head, re.M | re.S)
             outputs = []
             if out:
@@ -147,15 +192,19 @@ def module_processes(repo):
 
 
 def published(proc):
-    """(contracted-path glob, basename-only) pairs a process publishes; basename-only when a saveAs renames."""
+    """(output glob, contracted-path glob, basename-only) of each file a process publishes. A publishDir
+    whose saveAs drops the file does not count; basename-only when its saveAs renames the file."""
     items = []
-    for d, pats, saveas in proc["publish"]:
+    for d, pats, closure in proc["publish"]:
         for g in proc["outputs"]:
             c = concrete(g)
             if pats is not None and not any(fnmatch.fnmatch(c.replace("*", "X"), p) or fnmatch.fnmatch(c, p)
                                             for p in pats):
                 continue
-            items.append((g, (d + "/" + c) if d else c, saveas))
+            action = save_as(closure, c)
+            if action == "drop":
+                continue
+            items.append((g, (d + "/" + c) if d else c, action == "rename"))
     return items
 
 
@@ -163,6 +212,82 @@ def schema_params(repo):
     s = json.load(open(os.path.join(repo, "nextflow_schema.json")))
     defs = s.get("definitions") or s.get("$defs") or {}
     return {p for group in defs.values() for p in group.get("properties", {})}
+
+
+def schema_defaults(repo):
+    s = json.load(open(os.path.join(repo, "nextflow_schema.json")))
+    defs = s.get("definitions") or s.get("$defs") or {}
+    return {p: v["default"] for group in defs.values() for p, v in group.get("properties", {}).items()
+            if "default" in v}
+
+
+def config_params(repo):
+    """{name: value} of nextflow.config's params block, for the plain literals (strings, numbers,
+    true, false, null); a value this reader cannot parse is left out."""
+    src = open(os.path.join(repo, "nextflow.config")).read()
+    m = re.search(r"^params\s*\{(.*?)^\}", src, re.M | re.S)
+    out = {}
+    if not m:
+        return out
+    lit = {"true": True, "false": False, "null": None}
+    for name, val in re.findall(r"^\s*(\w+)\s*=\s*('[^']*'|\"[^\"]*\"|[-\w.]+)", m.group(1), re.M):
+        if val[0] in "'\"":
+            out[name] = val[1:-1]
+        elif val in lit:
+            out[name] = lit[val]
+        else:
+            try:
+                out[name] = int(val)
+            except ValueError:
+                try:
+                    out[name] = float(val)
+                except ValueError:
+                    pass
+    return out
+
+
+VAR = re.compile(r"\$\{(\w+)\}|\$(\w+)")
+ASSIGN = re.compile(r"^\s*(?:local\s+|export\s+|readonly\s+)?([A-Za-z_]\w*)=(\"[^\"\n]*\"|'[^'\n]*'|[^\s;#()]+)", re.M)
+
+
+def bash_paths(src):
+    """The lines of a step script with its shell variables expanded: SAMPLE as {sample},
+    GENOME_DIR as G, every other variable as each value it is assigned (a few at most)."""
+    assign = {}
+    for v, val in ASSIGN.findall(src):
+        assign.setdefault(v, []).append(val.strip("\"'"))
+    fixed = {"SAMPLE": "{sample}", "GENOME_DIR": "G", "1": "{sample}"}
+
+    # depth counts every variable filled in on the line, not the nesting: a line with
+    # ${WORK}, ${P} and P's own chain of OUTDIR, S, GENOME_DIR and SAMPLE needs seven.
+    # The search stops at 64 expansions of a line, so a deep line stays cheap.
+    def expand(s, depth=0):
+        m = VAR.search(s)
+        if not m or depth > 24:
+            return [s]
+        name = m.group(1) or m.group(2)
+        vals = [fixed[name]] if name in fixed else assign.get(name) or ["\0"]
+        out = []
+        for val in vals[:4]:
+            out.extend(expand(s[:m.start()] + val + s[m.end():], depth + 1))
+            if len(out) >= 64:
+                break
+        return out[:64]
+
+    return {e for line in src.split("\n") if not line.lstrip().startswith("#") for e in expand(line)}
+
+
+def bash_writes(repo, step, name, cache):
+    """The step script that names this per-sample path (scripts/<step>-*.sh), or None."""
+    if not name.startswith("{sample}/") or "*" in name or step == "-":
+        return None
+    if step not in cache:
+        files = sorted(glob.glob(os.path.join(repo, "scripts", f"{step}-*.sh")))
+        cache[step] = (files, "\n".join(bash_paths("".join(open(f).read() for f in files))) if files else "")
+    files, text = cache[step]
+    # the whole path: a longer name that starts with it (x.tsv.gz for x.tsv) is not it
+    hit = files and re.search(re.escape("G/" + name) + r"(?![\w.-])", text)
+    return os.path.relpath(files[0], repo) if hit else None
 
 
 def known_tools(repo):
@@ -193,6 +318,14 @@ def check_static(repo, rows):
         for name in sorted(have[kind] - set(listed)):
             problems.append(f"{kind} {name} of {where[kind]} has no row in the contract: add one")
 
+    defaults, config = schema_defaults(repo), config_params(repo)
+    if not config:
+        problems.append("found no params in nextflow.config: the reader no longer matches the code")
+    for name, val in sorted(defaults.items()):
+        if name in config and config[name] != val:
+            problems.append(f"param {name}: nextflow_schema.json's default {val!r} is not nextflow.config's "
+                            f"{config[name]!r}")
+
     procs = module_processes(repo)
     if not procs:
         problems.append("found no processes under modules/local")
@@ -214,6 +347,13 @@ def check_static(repo, rows):
             what = "BREAKING: the stable file" if r["stability"] == "stable" else "the file"
             problems.append(f"{what} {r['name']} (contract line {r['line']}) is not what {r['process']} "
                             f"publishes ({p['file']}): renamed, moved or no longer written")
+    cache = {}
+    for r in rows:
+        if r["kind"] == "file" and r["legs"] == "nextflow" and r["stability"] != "internal":
+            script = bash_writes(repo, r["step"], r["name"], cache)
+            if script:
+                problems.append(f"{r['name']} (contract line {r['line']}) has legs nextflow, but {script} "
+                                "writes it under the same name too: its legs are both")
     for name, p in sorted(procs.items()):
         rows_p = [concrete(r["name"]) for r in file_rows if r["process"] == name]
         if not p["publish"]:
