@@ -8,7 +8,8 @@
 #
 #   check    exits 1 unless every case of tests/e2e has exactly one row in
 #            e2e-case-paths.tsv, every row names a case, a base case's row is
-#            "-" and every glob matches a tracked file. It names each fault.
+#            "-" and every glob matches a tracked file, and only files inside
+#            the e2e scope. It names each fault.
 #   scope    prints the e2e scope as the push paths of e2e.yml are written
 #            (a directory as DIR/**, then the single files), sorted.
 #   rows     reads `git diff -U0` output of the two case tables
@@ -42,7 +43,7 @@ export LC_ALL=C
 
 # The paths the e2e cases exercise. A pull request that changes none of them
 # runs no case. The push paths of e2e.yml are the same list (e2e-plan checks).
-SCOPE_DIRS=(scripts modules workflows bin conf assets tests/e2e)
+SCOPE_DIRS=(scripts modules workflows bin conf assets tests/e2e .github/actions)
 SCOPE_FILES=(tests/fixtures/VERSION main.nf nextflow.config nextflow_schema.json versions.env .github/workflows/e2e.yml
   # The committed fixtures the cases read (their rows name them too).
   tests/fixtures/annotsv/class45.sh tests/fixtures/comphet/make_fixture.py tests/fixtures/consumer_export/sites.tsv.gz
@@ -59,7 +60,7 @@ FULL=(main.nf nextflow.config nextflow_schema.json versions.env assets/steps.tsv
   scripts/02-alignment.sh scripts/03-deepvariant.sh
   tests/fixtures/VERSION scripts/ci/build-fixture.sh
   scripts/ci/e2e-run.sh scripts/ci/e2e-shards.sh scripts/ci/e2e-scope.sh
-  tests/e2e/lib.sh 'tests/e2e/bin/*' .github/workflows/e2e.yml)
+  tests/e2e/lib.sh 'tests/e2e/bin/*' .github/workflows/e2e.yml '.github/actions/*')
 
 # Run on every pull request that runs any case: the bash steps and the
 # Nextflow pipeline from the fixture's FASTQ, and the parity check of the two.
@@ -87,7 +88,7 @@ tracked() {
 }
 
 check() {
-  local bad="" all base c globs g f hit gl
+  local bad="" all base c globs g f hit gl out
   [ -f "$PATHS" ] || die "no table ${PATHS}"
   all=$(cases); base=$(base_cases)
   for c in "${SMOKE[@]}"; do
@@ -104,6 +105,9 @@ check() {
     }
     END { for (k in known) if (!(k in seen)) print "case " k " has no row: add one with the globs of the files it runs" }' | sort)
   local -A have=()
+  local scope_globs=() p
+  for p in "${SCOPE_DIRS[@]}"; do scope_globs+=("${p}/*"); done
+  scope_globs+=("${SCOPE_FILES[@]}")
   mapfile -t files < <(tracked)
   for f in "${files[@]}"; do have[$f]=1; done
   while IFS=$'\t' read -r c globs; do
@@ -120,11 +124,23 @@ check() {
         done
       fi
       [ "$hit" = 1 ] || bad+=$'\n'"case ${c}: ${g} matches no tracked file"
+      # A file outside the e2e scope never starts a run, so a glob that
+      # reaches one would let a change to it merge untested.
+      out=""
+      if [[ $g != *[*?[]* ]]; then
+        in_list "$g" "${scope_globs[@]}" || out=$g
+      else
+        for f in "${files[@]}"; do
+          # shellcheck disable=SC2053  # g is a glob on purpose
+          if [[ $f == $g ]] && ! in_list "$f" "${scope_globs[@]}"; then out=$f; break; fi
+        done
+      fi
+      [ -z "$out" ] || bad+=$'\n'"case ${c}: ${g} matches ${out}, which is outside the e2e scope (SCOPE_DIRS, SCOPE_FILES): a change to it would run no case"
     done
   done < <(rows_of "$PATHS" | awk -F'\t' 'NF == 2')
   bad=$(sed '/^$/d' <<< "$bad")
   [ -z "$bad" ] || die "$(printf '%s\n' "in ${PATHS}:" "$bad")"
-  echo "Every one of the $(wc -l <<< "$all" | tr -d ' ') cases has one paths row, and every glob matches a file."
+  echo "Every one of the $(wc -l <<< "$all" | tr -d ' ') cases has one paths row, and every glob matches a file, inside the e2e scope."
 }
 
 scope() { { printf '%s/**\n' "${SCOPE_DIRS[@]}"; printf '%s\n' "${SCOPE_FILES[@]}"; } | sort; }
