@@ -4,11 +4,13 @@
 #             was in before the release check: 0.8.2 declared, v1.0.0 pushed);
 #             a minor tag without docs/releases/<tag>.md fails; with it, the
 #             notes file is the release body; a patch tag without notes gets
-#             the commit subjects; a missing tag fails.
+#             the commit subjects; notes still carrying the 'Not released
+#             yet' notice fail; a missing tag fails.
 #   checks:   a run still going, a failed or cancelled run, no ci-ok, or no
 #             runs at all fail; the ignored release job itself does not count.
 #   declared: a declared X.Y.0 without notes, notes with the wrong heading,
-#             a wrong file name or no CHANGELOG link fail.
+#             a wrong file name, no CHANGELOG link, or the draft notice
+#             on the declared version's notes fail.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -55,6 +57,7 @@ g tag v0.8.2
 g commit -q --allow-empty -m "fix: a change after 0.8.2"
 g tag v1.0.0
 
+draft() { printf '# OwnGenome %s\n\n> **Not released yet.** Work still landing.\n\n- one thing\n' "$1" > "${T}/docs/releases/v$1.md"; }
 # --- tag ---
 expect 1 "tag v1.0.0 on a commit that declares 0.8.2 is refused" --repo "$T" tag v1.0.0
 grep -q "does not match the version" <<< "$out" || bad "the mismatch message names the cause: ${out}"
@@ -72,6 +75,12 @@ g add -A && g commit -qm "docs: the 1.0.0 notes"
 g tag -f v1.0.0 >/dev/null
 expect 0 "v1.0.0 with matching manifest.version and its notes passes" --repo "$T" tag v1.0.0 --notes-out "${T}/body.md"
 if cmp -s "${T}/body.md" "${T}/docs/releases/v1.0.0.md"; then ok "the release body is the notes file"; else bad "the release body is not the notes file"; fi
+
+draft 1.0.0
+g add -A && g commit -qm "docs: the notes go back to draft"
+g tag -f v1.0.0 >/dev/null
+expect 1 "notes that still carry the 'Not released yet' notice are refused" --repo "$T" tag v1.0.0
+grep -q "Not released yet" <<< "$out" || bad "the draft message names the cause: ${out}"
 
 : > "${T}/docs/releases/v1.0.0.md"; printf '# OwnGenome 1.0.0\n' > "${T}/docs/releases/v1.0.0.md"
 g add -A && g commit -qm "docs: empty the notes"
@@ -120,6 +129,12 @@ printf '# OwnGenome 1.0.0\n\n- a thing\n' > "${D}/docs/releases/v1.0.0.md"
 expect 1 "notes that CHANGELOG.md does not link are refused" --repo "$D" declared
 echo "- 1.0.0: docs/releases/v1.0.0.md" >> "${D}/CHANGELOG.md"
 expect 0 "declared 1.0.0 with linked notes passes" --repo "$D" declared
+printf '# OwnGenome 1.0.0\n\n> **Not released yet.** Work still landing.\n\n- a thing\n' > "${D}/docs/releases/v1.0.0.md"
+expect 1 "declared 1.0.0 whose notes still carry the draft notice is refused" --repo "$D" declared
+sed -i.bak "s/'1.0.0'/'0.9.9'/" "${D}/nextflow.config"
+expect 0 "draft notes for a version not declared yet pass" --repo "$D" declared
+sed -i.bak "s/'0.9.9'/'1.0.0'/" "${D}/nextflow.config"
+printf '# OwnGenome 1.0.0\n\n- a thing\n' > "${D}/docs/releases/v1.0.0.md"
 printf '# Release 1.0.0\n\n- a thing\n' > "${D}/docs/releases/v1.0.0.md"
 expect 1 "notes whose heading is not '# OwnGenome 1.0.0' are refused" --repo "$D" declared
 printf '# OwnGenome 1.0.0\n\n- a thing\n' > "${D}/docs/releases/v1.0.0.md"

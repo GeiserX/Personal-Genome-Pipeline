@@ -8,7 +8,8 @@
 #       (PATCH = 0) must carry its hand-written notes, docs/releases/TAG.md,
 #       at TAG. With --notes-out the release body is written to FILE: the
 #       notes file when TAG has one, else (a patch release only) the commit
-#       subjects since the previous tag.
+#       subjects since the previous tag. Notes that still carry the draft
+#       notice (a line starting "> **Not released yet.**") are refused.
 #
 #   check-release.sh checks RUNS.TSV [--ignore NAME]...
 #       RUNS.TSV is the tagged commit's check runs, one per line:
@@ -21,7 +22,8 @@
 #       The working tree: the version nextflow.config declares, and every
 #       docs/releases/*.md. Each notes file is named vX.Y.Z.md, opens with
 #       "# OwnGenome X.Y.Z", is linked from CHANGELOG.md, and a declared
-#       major or minor version has one. Guard runs this through
+#       major or minor version has one, without the draft notice. Notes for
+#       a version not declared yet may carry it. Guard runs this through
 #       tests/test_release.sh, so a bump to X.Y.0 cannot merge without its
 #       notes.
 #
@@ -36,6 +38,8 @@ shift || true
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 semver='^v([0-9]+)\.([0-9]+)\.([0-9]+)$'
+# The notice a notes file carries while its release is still being written.
+draft='^> \*\*Not released yet\.\*\*'
 
 # manifest_version: the version = '...' line inside the manifest { } block of
 # nextflow.config on stdin. Exactly one, or an error.
@@ -80,6 +84,7 @@ case "$MODE" in
     notes="docs/releases/${TAG}.md"
     if text=$(git -C "$ROOT" show "${TAG}:${notes}" 2>/dev/null); then
       check_notes "${TAG}.md" "$text"
+      ! grep -q "$draft" <<< "$text" || die "${notes} still carries the 'Not released yet' notice: remove it in the pull request that bumps the version"
       [ -z "$OUT" ] || printf '%s\n' "$text" > "$OUT"
       echo "OK: ${TAG} matches manifest.version, notes from ${notes}"
     elif [ "$patch" = 0 ]; then
@@ -147,6 +152,9 @@ case "$MODE" in
     done
     if [ "$patch" = 0 ] && [ ! -f "${ROOT}/docs/releases/v${declared}.md" ]; then
       die "nextflow.config declares ${declared}, a major or minor release, and docs/releases/v${declared}.md does not exist: write its notes in the same pull request"
+    fi
+    if [ -f "${ROOT}/docs/releases/v${declared}.md" ] && grep -q "$draft" "${ROOT}/docs/releases/v${declared}.md"; then
+      die "nextflow.config declares ${declared} and docs/releases/v${declared}.md still carries the 'Not released yet' notice: remove it in the same pull request"
     fi
     echo "OK: declared version ${declared}, ${count} notes file(s) well formed"
     ;;
