@@ -27,6 +27,20 @@ Checks:
  12. check() itself names step 53 rerun-ready when the run used an older
      LOCITYPER_PANEL_VERSION than this checkout pins, and not when they match;
      its action names setup.sh --locityper-data, which the main setup leaves out.
+ 13. an image re-pinned at the same tag with a new digest is rerun-ready, for a pin
+     with no upstream lookup (step 50's) and for a looked-up one (PharmCAT); the
+     same reference on both sides is no-newer-release;
+ 14. a pin with no upstream lookup that the run's manifest lacks is unknown, never
+     no-newer-release, names no step and does not make the command exit 1;
+ 15. a pin read only by a step the run did not run is left out: an opt-in step not in
+     TOOLS (run-all.sh writes no row for it) and one recorded as skipped (no BAM);
+     a status file with no step rows at all leaves every pin in;
+ 16. a malformed Last-Modified of a PGS file, and an offline release with no tag,
+     are errors of that lookup, never a crash;
+ 17. --refresh-clinvar refuses (exit 3) while a run holds the ClinVar lock shared,
+     and holds it exclusive while setup.sh refreshes;
+ 18. the ClinVar lock block of run-all.sh and of step 06 waits while a refresh holds
+     the lock and goes on once it ends (needs flock; it fails in CI without it).
 Each check is then run against a planted mistake and must fail there.
 
 Run: python3 tests/test_owngenome_recheck.py
@@ -272,6 +286,8 @@ def all_checks(m):
             cmp["redone"] == ["06", "07"] and cmp["predicted_not_redone"] == ["13"]
             and cmp["redone_not_predicted"] == ["07"] and cmp["not_redone_script_steps"] == ["14"], cmp)
 
+        new_checks(m, tmp, steps, out)
+
         ld = os.path.join(tmp, "launch")
         os.makedirs(os.path.join(ld, ".nextflow"))
         with open(os.path.join(ld, ".nextflow", "history"), "w") as f:
@@ -288,6 +304,218 @@ def all_checks(m):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return out
+
+
+def manifest_add(g, rows):
+    with open(os.path.join(g, "S1", "run_manifest.tsv"), "a") as f:
+        f.writelines(f"version\t{k}\t{v}\n" for k, v in rows)
+
+
+def step_rows(g, rows):
+    """run_status.tsv step rows as run-all.sh writes them; a step it left out gets no row."""
+    with open(os.path.join(g, "S1", "logs", "run_status.tsv"), "a") as f:
+        f.writelines(f"step\t{k}\t{v}\n" for k, v in rows)
+
+
+def new_checks(m, tmp, steps, out):
+    # Image references built from the fixture's own, so no image name is a literal here.
+    ref = THIS_PINS["PHARMCAT_IMAGE"]
+    d1, d2 = ref + "@sha256:" + "a" * 64, ref + "@sha256:" + "b" * 64
+    g = genome(os.path.join(tmp, "digest"))
+    manifest_add(g, [("MEGANE_IMAGE", d1)])
+    new = by_item(m.check("S1", g, answers(m, g), steps, dict(THIS_PINS, MEGANE_IMAGE=d2), "3.66.0"))
+    same = by_item(m.check("S1", g, answers(m, g), steps, dict(THIS_PINS, MEGANE_IMAGE=d1), "3.66.0"))
+    mg, ms = new.get("MEGANE_IMAGE", {}), same.get("MEGANE_IMAGE", {})
+    out["a new digest at the same tag of a pin with no lookup is rerun-ready"] = (
+        mg.get("class") == "rerun-ready" and "50" in mg.get("steps", []) and mg.get("installed_ref") == d2
+        and ms.get("class") == "no-newer-release", (mg, ms))
+
+    gp = genome(os.path.join(tmp, "digest-pharmcat"))
+    rows = [x for x in open(os.path.join(gp, "S1", "run_manifest.tsv")) if not x.startswith("version\tPHARMCAT_IMAGE\t")]
+    open(os.path.join(gp, "S1", "run_manifest.tsv"), "w").writelines(rows + [f"version\tPHARMCAT_IMAGE\t{d1}\n"])
+    ph = by_item(m.check("S1", gp, answers(m, gp), steps, dict(THIS_PINS, PHARMCAT_IMAGE=d2), "3.66.0"))["PHARMCAT_IMAGE"]
+    ph1 = by_item(m.check("S1", gp, answers(m, gp), steps, dict(THIS_PINS, PHARMCAT_IMAGE=d1), "3.66.0"))["PHARMCAT_IMAGE"]
+    text = io.StringIO()
+    m.print_check({"sample": "S1", "checked_utc": "x", "items": [ph], "affected_steps": []}, text)
+    out["a new digest at the same tag of a looked-up image is rerun-ready"] = (
+        ph["class"] == "rerun-ready" and ph1["class"] == "no-newer-release" and "same tag, new image" in text.getvalue(),
+        (ph, ph1, text.getvalue()))
+
+    gu = genome(os.path.join(tmp, "unknown"))
+    st = m.check("S1", gu, answers(m, gu), steps, dict(THIS_PINS, MEGANE_IMAGE=d1), "3.66.0")
+    mu = by_item(st).get("MEGANE_IMAGE", {})
+    with contextlib.redirect_stdout(io.StringIO()):
+        ans = write(tmp, "unknown.json", json.load(open(os.path.join(FIX, "offline.json"))))
+        keep = m.check
+        m.check = lambda s_, g_, a_, st_, pins, hla: keep(s_, g_, a_, st_, dict(pins, MEGANE_IMAGE=d1), hla)
+        try:
+            rc = m.main(["--sample", "S1", "--genome-dir", gu, "--offline", ans])
+        finally:
+            m.check = keep
+    out["a pin with no lookup the run's manifest lacks is unknown, exit 0"] = (
+        mu.get("class") == "unknown" and "50" not in st["affected_steps"] and "50" not in st["rerun_ready_steps"]
+        and "older version" in mu.get("action", "") and rc == 0, (mu, st["affected_steps"], rc))
+
+    # A default run (no TOOLS): run-all.sh writes rows for the steps it ran and none for step 50.
+    gd = genome(os.path.join(tmp, "not-in-tools"))
+    manifest_add(gd, [("MEGANE_IMAGE", d1)])
+    step_rows(gd, [("06", "planned"), ("06", "ok")])
+    nd = m.check("S1", gd, answers(m, gd), steps, dict(THIS_PINS, MEGANE_IMAGE=d2), "3.66.0")
+    out["a pin read only by an opt-in step not in TOOLS is left out"] = (
+        "MEGANE_IMAGE" not in by_item(nd) and "50" not in nd["rerun_ready_steps"], by_item(nd).get("MEGANE_IMAGE"))
+
+    gs = genome(os.path.join(tmp, "skipped"))
+    manifest_add(gs, [("MEGANE_IMAGE", d1)])
+    step_rows(gs, [("06", "ok"), ("50", "skipped (no BAM)")])
+    sk = m.check("S1", gs, answers(m, gs), steps, dict(THIS_PINS, MEGANE_IMAGE=d2), "3.66.0")
+    gr = genome(os.path.join(tmp, "ran"))
+    manifest_add(gr, [("MEGANE_IMAGE", d1)])
+    step_rows(gr, [("06", "ok"), ("50", "planned"), ("50", "ok")])
+    rn = by_item(m.check("S1", gr, answers(m, gr), steps, dict(THIS_PINS, MEGANE_IMAGE=d2), "3.66.0"))
+    out["a pin read only by a step the run skipped is left out"] = (
+        "MEGANE_IMAGE" not in by_item(sk) and "50" not in sk["rerun_ready_steps"]
+        and rn.get("MEGANE_IMAGE", {}).get("class") == "rerun-ready", (by_item(sk).get("MEGANE_IMAGE"), rn.get("MEGANE_IMAGE")))
+
+    srv, port = serve_pgs("not a date")
+    try:
+        fr = m.load_freshness()
+        fr.RETRIES = 0
+        on = m.Online(fr, {}, "o/r", pgs_api=f"http://127.0.0.1:{port}/rest/score", raw=f"http://127.0.0.1:{port}",
+                      out=io.StringIO())
+        try:
+            gm = genome(os.path.join(tmp, "lastmod"))
+            pg = by_item(m.check("S1", gm, Mixed(on, answers(m, gm)), steps, THIS_PINS, "3.66.0"))["pgs:PGS000001"]
+            got = (pg["class"] == "error" and "Last-Modified" in pg.get("error", ""), pg)
+        except Exception as e:  # noqa: BLE001  the crash this check is about
+            got = (False, repr(e))
+    finally:
+        srv.shutdown()
+    out["a malformed Last-Modified of a PGS file is error, not a crash"] = got
+
+    try:
+        go = genome(os.path.join(tmp, "notag"))
+        so = m.check("S1", go, answers(m, go, release={"pins": {}}), steps, THIS_PINS, "3.66.0")
+        got = ("error" in so["pipeline_release"] and "tag" in so["pipeline_release"]["error"], so["pipeline_release"])
+    except Exception as e:  # noqa: BLE001
+        got = (False, repr(e))
+    out["an offline release with no tag is error, not a crash"] = got
+
+    gl = genome(os.path.join(tmp, "cvlock"))
+    lock = os.path.join(gl, "clinvar", ".refresh.lock")
+    keep_sp, ran = m.subprocess, []
+    m.subprocess = type("SP", (), {"run": staticmethod(lambda *a, **k: ran.append(a) or type("R", (), {"returncode": 0})())})
+    e = io.StringIO()
+    try:
+        with open(lock, "a") as held:
+            fcntl.flock(held, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(e):
+                rc = m.main(["--sample", "S1", "--genome-dir", gl, "--offline", os.path.join(FIX, "offline.json"),
+                             "--rerun", "--refresh-clinvar"])
+    finally:
+        m.subprocess = keep_sp
+    out["--refresh-clinvar refuses while a run holds the ClinVar lock"] = (
+        rc == 3 and ".refresh.lock" in e.getvalue() and not ran, (rc, e.getvalue(), ran))
+
+    seen = []
+
+    def setup_run(argv, *a, **k):
+        if "--refresh" in argv:
+            with open(lock, "a") as f:
+                try:
+                    fcntl.flock(f, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                    seen.append("free")
+                except OSError:
+                    seen.append("held")
+        return type("R", (), {"returncode": 0})()
+    m.subprocess = type("SP", (), {"run": staticmethod(setup_run)})
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = m.main(["--sample", "S1", "--genome-dir", gl, "--offline", os.path.join(FIX, "offline.json"),
+                         "--rerun", "--refresh-clinvar"])
+        with open(lock, "a") as f:  # let go before the replay's run-all.sh takes it shared
+            fcntl.flock(f, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            after = True
+    except OSError:
+        after = False
+    finally:
+        m.subprocess = keep_sp
+    out["--refresh-clinvar holds the ClinVar lock while setup.sh refreshes"] = (
+        seen == ["held"] and after and rc == 0, (seen, after, rc))
+
+
+def lock_block(path):
+    """The ClinVar lock block of a script: from 'CVLOCK=' through its closing 'fi'."""
+    x = re.search(r"^CVLOCK=.*?\n  fi\nfi\n", open(path).read(), re.S | re.M)
+    return x.group(0) if x else ""
+
+
+def lock_waits(block):
+    """block, run in bash while this process holds the lock exclusive: it must wait, then go on
+    once the lock is let go."""
+    import subprocess
+    import time
+    tmp = tempfile.mkdtemp(prefix="recheck-cvlock.")
+    try:
+        g = os.path.join(tmp, "genome")
+        os.makedirs(os.path.join(g, "clinvar"))
+        lock = os.path.join(g, "clinvar", ".refresh.lock")
+        with open(lock, "a") as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            p = subprocess.Popen(["bash", "-c", "set -euo pipefail\n" + block + "echo through\n"],
+                                 env=dict(os.environ, G=g, GENOME_DIR=g), stdout=subprocess.PIPE, text=True)
+            time.sleep(1.5)
+            waited = p.poll() is None
+        try:
+            o, _ = p.communicate(timeout=20)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            o, _ = p.communicate()
+        return (bool(block) and waited and p.returncode == 0 and "Waiting" in o and o.rstrip().endswith("through"),
+                (waited, p.returncode, o))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def serve_pgs(last_modified):
+    """A PGS Catalog score answer, and a HEAD of its file with this Last-Modified."""
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            port = self.server.server_address[1]
+            body = json.dumps({"id": "PGS000001", "ftp_harmonized_scoring_files": {"GRCh38": {
+                "positions": f"http://127.0.0.1:{port}/f/PGS000001_hmPOS_GRCh38.txt.gz"}}}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("Last-Modified", last_modified)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, srv.server_address[1]
+
+
+def from_source(old, new):
+    """bin/owngenome_recheck.py with old replaced by new (which must be in it), as a module."""
+    import types
+    src = open(TOOL).read()
+    if src.count(old) != 1:
+        raise AssertionError(f"planted mistake not in the copy: {old[:60]!r}")
+    mod = types.ModuleType("owngenome_recheck_planted")
+    mod.__file__ = TOOL
+    keep, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+    try:
+        exec(compile(src.replace(old, new), TOOL, "exec"), mod.__dict__)
+    finally:
+        sys.dont_write_bytecode = keep
+    return mod
 
 
 class Mixed:
@@ -428,6 +656,32 @@ def mutants():
         return cmd if re.search(r"(^|\s)-resume(\s|$)", cmd) else cmd + " -resume"
     m.launch_dir_command = regex_resume
     ms["--launch-dir: an argument holding -resume is not the option"] = m
+    ms["a new digest at the same tag of a pin with no lookup is rerun-ready"] = from_source(
+        '"rerun-ready" if ran_ref != inst_ref else', '"rerun-ready" if ran != inst else')
+    ms["a new digest at the same tag of a looked-up image is rerun-ready"] = from_source(
+        "and ran_ref != inst_ref:\n        return \"rerun-ready\"", "and False:\n        return \"rerun-ready\"")
+    ms["a pin with no lookup the run's manifest lacks is unknown, exit 0"] = from_source(
+        'cls = "unknown" if not', 'cls = "no-newer-release" if not')
+    ms["a pin read only by an opt-in step not in TOOLS is left out"] = from_source(
+        'if s["state"] in ("skipped", "not planned")}', 'if s["state"] in ("skipped",)}')
+    m = load()
+    m.steps_not_run = lambda *a: set()
+    ms["a pin read only by a step the run skipped is left out"] = m
+    ms["a malformed Last-Modified of a PGS file is error, not a crash"] = from_source(
+        "        try:  # a malformed date is a failed lookup of this score, never a crash of the whole check\n"
+        "            return email.utils.parsedate_to_datetime(lm).strftime(\"%Y%m%d\")\n"
+        "        except (TypeError, ValueError, AttributeError, OverflowError):\n",
+        "        return email.utils.parsedate_to_datetime(lm).strftime(\"%Y%m%d\")\n        if False:\n")
+    ms["an offline release with no tag is error, not a crash"] = from_source(
+        'tag, pins = e.get("tag"), e.get("pins") or {}\n        if not isinstance(tag, str) or not tag or not isinstance(pins, dict):',
+        'tag, pins = e["tag"], e.get("pins") or {}\n        if not isinstance(pins, dict):')
+    m = load()
+    m.fcntl = type("F", (), {"LOCK_EX": 0, "LOCK_NB": 0, "flock": staticmethod(lambda *a: None)})
+    ms["--refresh-clinvar refuses while a run holds the ClinVar lock"] = m
+    ms["--refresh-clinvar holds the ClinVar lock while setup.sh refreshes"] = from_source(
+        "            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)\n        except OSError:\n"
+        "            print(f\"ERROR: a run or step 06",
+        "            pass\n        except OSError:\n            print(f\"ERROR: a run or step 06")
     return ms
 
 
@@ -595,6 +849,19 @@ def main():
     unfiltered = plugin_from_source(src.replace(stale, "if False:"), "owngenome_live_recheck_unfiltered")
     check("fails on a planted mistake: the live-site plugin leaves out a check older than the run's manifest",
           not plugin_stale_ok(unfiltered)[0], "passed on the mutant")
+    import shutil as _sh
+    for script in ("scripts/run-all.sh", "scripts/06-clinvar-screen.sh"):
+        block = lock_block(os.path.join(REPO, script))
+        if not _sh.which("flock"):
+            check(f"the ClinVar lock block of {script} waits for a refresh (flock is not installed: "
+                  f"{'FAIL in CI' if os.environ.get('CI') else 'not run here'})", not os.environ.get("CI"))
+            continue
+        ok, detail = lock_waits(block)
+        check(f"the ClinVar lock block of {script} waits for a refresh, then goes on", ok, detail)
+        planted = re.sub(r"(?m)^    flock -s -n 7 .*$", "    :", block)
+        check(f"planted mistake is in the copy: the ClinVar lock block of {script}", planted != block)
+        check(f"fails on a planted mistake: the ClinVar lock block of {script} waits for a refresh (no flock call)",
+              not lock_waits(planted)[0], "passed on the mutant")
     results = all_checks(load())
     for name, (ok, detail) in results.items():
         check(name, ok, detail)

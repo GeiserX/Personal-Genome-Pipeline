@@ -62,6 +62,17 @@ export GENOME_DIR=${GENOME_DIR:?Set GENOME_DIR to your data directory}
 validate_sample "$SAMPLE"
 G=$GENOME_DIR S="${GENOME_DIR}/${SAMPLE}" LOG_DIR="${GENOME_DIR}/${SAMPLE}/logs" T=${TOOLS:-} C=${EXTRA_CALLERS:-}
 on() { [[ "${!1:-}" =~ ^(true|1)$ ]]; }
+# The ClinVar files are shared by every sample of GENOME_DIR. bin/owngenome_recheck.py --refresh-clinvar holds this
+# lock while it replaces them; the run holds it shared on fd 7 until it ends, so a run waits for a refresh going on
+# and a refresh refuses while a run goes on. Without flock (macOS: brew install flock) nothing waits here.
+CVLOCK="${G}/clinvar/.refresh.lock"
+if [ -d "${G}/clinvar" ] && command -v flock >/dev/null 2>&1; then
+  [ -e "$CVLOCK" ] || : 2>/dev/null >> "$CVLOCK" || true
+  if [ -r "$CVLOCK" ]; then
+    exec 7<"$CVLOCK"
+    flock -s -n 7 || { echo "Waiting for the ClinVar refresh that holds ${CVLOCK} to end ..."; flock -s 7; }
+  fi
+fi
 java_major=$(java -version 2>&1 | awk -F'"' '/version "/ {split($2, v, "."); print (v[1] == 1 ? v[2] : v[1]); exit}') || true
 if ! command -v nextflow >/dev/null 2>&1 || [[ ! "${java_major:-}" =~ ^[0-9]+$ ]] || [ "$java_major" -lt 17 ]; then
   printf '%s\n' "ERROR: run-all.sh starts the Nextflow pipeline and needs Java 17 or later (found: ${java_major:-none}) and Nextflow ($(command -v nextflow || echo 'not on PATH'))." \
@@ -295,7 +306,7 @@ else echo "  benchmark-variants skipped (only one caller VCF: set EXTRA_CALLERS,
 export NXF_VER=${NXF_VER:-$NEXTFLOW_VERSION}
 # The live site (docs/live-site.md). Nextflow's weblog is the nf-weblog plugin, which Nextflow 26.10 loads only when
 # a config names it, so the block lives in a config of this run's own, passed only when OWNGENOME_LIVE_URL is set: a run
-# without it neither downloads the plugin nor warns about an unknown weblog scope. Bump the pin with its release.
+# without it neither downloads the plugin nor warns about an unknown weblog scope. Renovate bumps the pin (renovate.json).
 NF_WEBLOG_PLUGIN=nf-weblog@1.2.0
 if [ -n "${OWNGENOME_LIVE_URL:-}" ]; then
   # The ingest listener speaks plain HTTP and serves /ingest/<run> at its root, so https or a path would lose every post.

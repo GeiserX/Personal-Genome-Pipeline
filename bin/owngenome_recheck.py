@@ -22,6 +22,8 @@ Each item gets one class:
   in-pipeline-release  a newer pin is in a pipeline release: update the pipeline
   upstream-only        upstream has a newer release that no pipeline release pins
   no-newer-release     the lookup answered and nothing is newer
+  unknown              a pin with no upstream lookup that the run's manifest
+                       does not name: nothing was compared
   error                the lookup failed (never read as up to date); exit 1
 The steps an item feeds come from the reads column of assets/steps.tsv, then
 every step downstream of them through its upstream column, then the reports.
@@ -37,7 +39,9 @@ is going on. Afterwards it compares the steps the run redid with the steps this
 check named, and lists the named script steps (04b, 14, 29, 03a-03d), which
 skip when their output exists, as not redone. --refresh-clinvar runs
 setup.sh --refresh clinvar first, and refuses while a run of any sample of
-GENOME_DIR is going on, since they share the ClinVar files. Standard library only.
+GENOME_DIR is going on, since they share the ClinVar files. It holds
+GENOME_DIR/clinvar/.refresh.lock while it refreshes: run-all.sh and step 06
+wait on it. Standard library only.
 """
 import argparse
 import fcntl
@@ -66,8 +70,11 @@ RAW = "https://raw.githubusercontent.com"
 REPORT_STEP = "24"  # the HTML report; the text report is written after it
 # ClinVar's ##fileDate is the release; NCBI's Last-Modified comes a day or two later.
 CLINVAR_SLACK_DAYS = 2
-CLASSES = ("rerun-ready", "refresh-available", "in-pipeline-release", "upstream-only", "no-newer-release", "error")
+CLASSES = ("rerun-ready", "refresh-available", "in-pipeline-release", "upstream-only", "no-newer-release", "unknown",
+           "error")
 LOG_HEADER = "utc\tevent\titem\tclass\tdetail\n"
+# Held exclusive by --refresh-clinvar, shared by scripts/run-all.sh and scripts/06-clinvar-screen.sh.
+CLINVAR_LOCK = "clinvar/.refresh.lock"
 CLINVAR_FILES = ("clinvar/clinvar_pathogenic_chr.vcf.gz", "clinvar/clinvar_chr.vcf.gz", "clinvar/clinvar.vcf.gz")
 # The pinned items: (manifest key, label, freshness lookup, how to read its upstream).
 PINNED = (
@@ -290,7 +297,10 @@ class Online:
         except self.fr.LOOKUP_ERRORS as e:
             raise Failed(str(e))
         import email.utils
-        return email.utils.parsedate_to_datetime(lm).strftime("%Y%m%d")
+        try:  # a malformed date is a failed lookup of this score, never a crash of the whole check
+            return email.utils.parsedate_to_datetime(lm).strftime("%Y%m%d")
+        except (TypeError, ValueError, AttributeError, OverflowError):
+            raise Failed(f"cannot read the Last-Modified of {url}: {lm!r}")
 
     def release(self):
         try:
@@ -334,7 +344,10 @@ class Offline:
 
     def release(self):
         e = self._get("release")
-        return e["tag"], dict(e.get("pins") or {})
+        tag, pins = e.get("tag"), e.get("pins") or {}
+        if not isinstance(tag, str) or not tag or not isinstance(pins, dict):
+            raise Failed("the offline answers' release needs a tag and a pins object")
+        return tag, dict(pins)
 
 
 # --- the check -----------------------------------------------------------------------------
@@ -361,6 +374,10 @@ def classify(item, release_tag, release_pins, release_error, clinvar=False):
         return "error"
     ran, inst, up = item.get("ran_with"), item.get("installed"), item.get("upstream")
     if inst and ran and ver(inst) > ver(ran):
+        return "rerun-ready"
+    # An image re-pinned at the same tag (a new digest): the tags compare equal, the references do not.
+    ran_ref, inst_ref = item.get("ran_with_ref"), item.get("installed_ref")
+    if inst and ran and ver(inst) == ver(ran) and ran_ref and inst_ref and ran_ref != inst_ref:
         return "rerun-ready"
     # ClinVar's date is in the manifest whenever step 06 had a file, so a run without one cannot be compared
     # with the file here. A pin with no run value (HLA data not installed then) compares this checkout's.
@@ -391,6 +408,21 @@ def classify(item, release_tag, release_pins, release_error, clinvar=False):
     return "upstream-only"
 
 
+def steps_not_run(sample, sample_dir):
+    """The steps this run did not run: the ones run-all.sh recorded as skipped (no BAM, missing
+    data), and the ones it wrote no row for, which is how it leaves out an opt-in step not in TOOLS
+    (run_state's "not planned"). Empty when logs/run_status.tsv records no step at all (a run of an
+    older version), so nothing is left out on a guess."""
+    try:
+        status = run_state.read_run_status(os.path.join(sample_dir, "logs", "run_status.tsv"))
+        if not (status or {}).get("steps"):
+            return set()
+        return {s["step"] for s in run_state.collect(sample, sample_dir)["steps"]
+                if s["state"] in ("skipped", "not planned")}
+    except (OSError, ValueError, KeyError):
+        return set()
+
+
 def action(item, sample):
     c, key = item["class"], item["item"]
     if c == "rerun-ready":
@@ -415,6 +447,9 @@ def action(item, sample):
         return "no pipeline release pins it yet; nothing to do until one does"
     if c == "error":
         return "the lookup failed; check again later"
+    if c == "unknown":
+        return ("the run's manifest does not name this pin (a run of an older version): nothing to compare; "
+                "the next run records it")
     return ""
 
 
@@ -446,18 +481,31 @@ def check(sample, genome_dir, answers, steps, this_pins, this_hla):
         ran = pin_value(key, man.get(("data", key)) if key == "hla_database" else version.get(key))
         inst = this_hla if key == "hla_database" else pin_value(key, this_pins.get(key))
         item = {"item": key, "label": label, "kind": "pin", "ran_with": ran, "installed": inst}
+        if key.endswith("_IMAGE"):
+            item["ran_with_ref"], item["installed_ref"] = version.get(key) or None, this_pins.get(key) or None
         if key == "hla_database" and not this_hla:
             item["error"] = "could not read this checkout's HLA_DB_RELEASE (scripts/lib/common.sh)"
         add(item, answers.pinned, key, lookup, pattern)
     # The other versions.env pins a step reads (steps 50 to 53): no freshness source exists for them, so
-    # nothing is looked up; a pin here that differs from the run's makes its step rerun-ready.
+    # nothing is looked up; a pin here that differs from the run's (an image by its full reference, so a
+    # new digest at the same tag counts) makes its step rerun-ready. A pin the run's manifest lacks is
+    # unknown, never no-newer-release. A pin read only by steps this run did not run (an opt-in step not
+    # in TOOLS, or one skipped for missing data) is left out: a rerun would not run that step either.
     known = {k for k, *_ in PINNED}
+    skipped = steps_not_run(sample, sample_dir)
     for key in dict.fromkeys(r[:-5] if r.endswith("@self") else r for s in steps for r in reads_of(s)):
         if key in known or key not in this_pins:
             continue
-        ran, inst = pin_value(key, version.get(key)), pin_value(key, this_pins.get(key))
+        readers = [s["step"] for s in steps if any(key_matches(key, r) for r in reads_of(s))]
+        if readers and all(n in skipped for n in readers):
+            continue
+        ran_ref, inst_ref = version.get(key) or None, this_pins.get(key) or None
+        ran, inst = pin_value(key, ran_ref), pin_value(key, inst_ref)
+        cls = "unknown" if not (ran_ref and inst_ref) else "rerun-ready" if ran_ref != inst_ref else "no-newer-release"
         item = {"item": key, "label": f"{key} (no upstream lookup)", "kind": "pin", "ran_with": ran,
-                "installed": inst, "class": "rerun-ready" if ran and inst and ran != inst else "no-newer-release"}
+                "installed": inst, "class": cls}
+        if key.endswith("_IMAGE"):
+            item["ran_with_ref"], item["installed_ref"] = ran_ref, inst_ref
         item["steps"] = affected_steps(steps, [key])
         item["action"] = action(item, sample)
         items.append(item)
@@ -520,6 +568,9 @@ def print_check(state, out=None):
     w(f"Database re-check of {state['sample']} ({state['checked_utc']}):\n")
     for i in state["items"]:
         detail = i.get("error") or f"run used {i.get('ran_with') or 'unknown'}, here {i.get('installed') or 'unknown'}, upstream {i.get('upstream') or 'unknown'}"
+        if not i.get("error") and i.get("ran_with_ref") and i.get("installed_ref") and i["ran_with_ref"] != i["installed_ref"] \
+                and i.get("ran_with") == i.get("installed"):
+            detail += f"; same tag, new image: run used {i['ran_with_ref']}, here {i['installed_ref']}"
         w(f"  {i['label']}: {i['class']} ({detail})\n")
         if i["class"] not in ("no-newer-release",) and i.get("action"):
             w(f"    {i['action']}\n")
@@ -624,6 +675,31 @@ def running_samples(genome_dir):
             and run_state.collect(n, os.path.join(genome_dir, n))["run"]["state"] == "running"]
 
 
+def refresh_clinvar(genome_dir):
+    """setup.sh --refresh clinvar under the ClinVar lock of GENOME_DIR (CLINVAR_LOCK). The ClinVar files
+    are shared by every sample, so a run of any of them blocks the refresh: run-all.sh and step 06 hold
+    the lock shared while they read the files, and wait while this holds it. A run with no lock (a bare
+    nextflow run, an older checkout) is caught by its logs/run_status.tsv. The lock is let go before
+    --rerun starts run-all.sh, which takes it shared."""
+    os.makedirs(os.path.join(genome_dir, "clinvar"), exist_ok=True)
+    with open(os.path.join(genome_dir, CLINVAR_LOCK), "a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            print(f"ERROR: a run or step 06 holds {os.path.join(genome_dir, CLINVAR_LOCK)}: not refreshing the "
+                  "ClinVar files it reads.", file=sys.stderr)
+            return 3
+        busy = running_samples(genome_dir)
+        if busy:
+            print(f"ERROR: a run of {', '.join(busy)} is going on: not refreshing the ClinVar files it reads.",
+                  file=sys.stderr)
+            return 3
+        r = subprocess.run([os.path.join(ROOT, "scripts", "setup.sh"), "--refresh", "clinvar", genome_dir]).returncode
+        if r != 0:
+            print("ERROR: setup.sh --refresh clinvar failed: see above.", file=sys.stderr)
+        return r
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--sample")
@@ -659,16 +735,8 @@ def main(argv=None):
         print(f"ERROR: no {sample_dir}/run_manifest.tsv: run the pipeline on {a.sample} first.", file=sys.stderr)
         return 2
     if a.refresh_clinvar:
-        # The ClinVar files are shared by every sample of GENOME_DIR, so a run of any of them blocks the
-        # refresh. This narrows the window; a run that starts during the refresh is not stopped.
-        busy = running_samples(a.genome_dir)
-        if busy:
-            print(f"ERROR: a run of {', '.join(busy)} is going on: not refreshing the ClinVar files it reads.",
-                  file=sys.stderr)
-            return 3
-        r = subprocess.run([os.path.join(ROOT, "scripts", "setup.sh"), "--refresh", "clinvar", a.genome_dir]).returncode
+        r = refresh_clinvar(a.genome_dir)
         if r != 0:
-            print("ERROR: setup.sh --refresh clinvar failed: see above.", file=sys.stderr)
             return r
     fr = load_freshness()
     this_pins, _ = fr.read_pins(os.path.join(ROOT, "versions.env"))

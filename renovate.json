@@ -65,6 +65,14 @@
     },
     {
       "customType": "regex",
+      "description": "nf-weblog, the Nextflow plugin of the live site: NF_WEBLOG_PLUGIN in scripts/run-all.sh and the plugins block docs/live-site.md shows, in one PR. Its releases are tagged without a v.",
+      "managerFilePatterns": ["/^scripts/run-all\\.sh$/", "/^docs/live-site\\.md$/"],
+      "matchStrings": ["NF_WEBLOG_PLUGIN=nf-weblog@(?<currentValue>\\d+\\.\\d+\\.\\d+)", "id 'nf-weblog@(?<currentValue>\\d+\\.\\d+\\.\\d+)'"],
+      "depNameTemplate": "nextflow-io/nf-weblog",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
       "description": "actionlint, downloaded by version in the lint workflow.",
       "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
       "matchStrings": ["ACTIONLINT_VERSION[=:]\\s*[\"']?(?<currentValue>\\d+\\.\\d+\\.\\d+)"],

@@ -23,6 +23,8 @@ Standard library only, so the plain `python3` on the host is enough. It needs th
 | IPD-IMGT/HLA | `hla_database` | The `release_version.txt` of the IPD-IMGT/HLA repository | 08 |
 | Each PGS score | `pgs:<ID>`, its `HmPOS_date` | The PGS Catalog's REST API, then the `Last-Modified` date of the harmonised GRCh38 file | 25, then 26 |
 
+The pins of steps 50 to 53 (`MEGANE_IMAGE`, `MOCHA_PANEL_VERSION`, `MOCHA_IMAGE`, `VNTYPER_IMAGE`, `LOCITYPER_PANEL_VERSION`, `LOCITYPER_IMAGE`) have no upstream lookup: each is compared only with this checkout's `versions.env`. An image is compared by its full reference, so a new `@sha256` digest at the same tag counts as a change, for these and for `PHARMCAT_IMAGE`. A pin read only by steps this run did not run (an opt-in step not in `TOOLS`, or one skipped for missing data) is not listed: a rerun would not run that step either.
+
 The HTML report (24) and the text report are written again after any of them. The ClinVar release inside the PCGR bundle (`cpsr_clinvar_release`) moves with the PCGR bundle, never with step 06's ClinVar file.
 
 The lookups are the ones the monthly CI check uses (`scripts/ci/freshness.py`). It also reads the newest release of this pipeline (`--owngenome-repo`, default `GeiserX/OwnGenome`) and that release's `versions.env`, to say whether a newer pin is already in a release.
@@ -37,11 +39,12 @@ Each item gets one class:
 
 | Class | Meaning | What to do |
 |---|---|---|
-| `rerun-ready` | What is installed here is newer than what the run used: a newer ClinVar file or PGS file on disk, or a pin in this checkout | Rerun (for a pin, run `./scripts/setup.sh` first so its data is there) |
-| `refresh-available` | ClinVar only: NCBI's file is more than 2 days newer than the one installed | `./scripts/setup.sh --refresh clinvar $GENOME_DIR`, then rerun; `--rerun --refresh-clinvar` does both, and refuses while any sample of `$GENOME_DIR` is running, since they share the ClinVar files |
+| `rerun-ready` | What is installed here is newer than what the run used: a newer ClinVar file or PGS file on disk, or a pin in this checkout (an image re-pinned to a new digest at the same tag too) | Rerun (for a pin, run `./scripts/setup.sh` first so its data is there) |
+| `refresh-available` | ClinVar only: NCBI's file is more than 2 days newer than the one installed | `./scripts/setup.sh --refresh clinvar $GENOME_DIR`, then rerun; `--rerun --refresh-clinvar` does both, and refuses while any sample of `$GENOME_DIR` is running, since they share the ClinVar files ([the ClinVar lock](#the-clinvar-lock)) |
 | `in-pipeline-release` | A pipeline release pins a newer version | Update the pipeline to that release, run `setup.sh`, then rerun |
 | `upstream-only` | Upstream has a newer release that no pipeline release pins | Nothing yet for a pinned item; for a PGS score, download it again ([step 25](25-prs.md)) |
 | `no-newer-release` | The lookup answered and nothing is newer | Nothing |
+| `unknown` | A pin of steps 50 to 53 that the run's manifest does not name (a run of an older version): nothing was compared | Nothing; the next run records it. It does not make the command exit 1 |
 | `error` | The lookup failed | Check again later. A failed lookup is never read as "up to date", and the command exits 1 |
 
 The 2-day margin for ClinVar is there because NCBI dates the file a day or two after the release in its `##fileDate`. A newer PGS file date means the catalog wrote the harmonised file again; it does not prove the weights changed.
@@ -67,6 +70,10 @@ When the run ends, it compares the steps that ran a task again with the steps th
 
 A sample last run by an older `run-all.sh` has no `meta command` row: run the same command once by hand.
 
+### The ClinVar lock
+
+The ClinVar files are shared by every sample of `$GENOME_DIR`. `--refresh-clinvar` holds `$GENOME_DIR/clinvar/.refresh.lock` exclusive while `setup.sh --refresh clinvar` replaces them, and lets go before the rerun starts. `run-all.sh` holds the same lock shared from its start to its end, and `scripts/06-clinvar-screen.sh` while it runs: a run that starts during a refresh waits for it ("Waiting for the ClinVar refresh ..."), and a refresh refuses (exit 3) while a run holds the lock. It also refuses while any sample's `logs/run_status.tsv` says a run is going on, which covers a run of an older checkout. The shell side needs `flock` (part of util-linux on Linux; on macOS `brew install flock`); without it nothing waits. A bare `nextflow run`, and `setup.sh --refresh clinvar` run by hand, take no lock.
+
 ### A bare Nextflow run
 
 A bare `nextflow run main.nf` writes no run manifest, so there is nothing to check. To get the command back, `--launch-dir` prints the last command of that launch directory (its `.nextflow/history`) with `-resume` added. It never runs it.
@@ -77,9 +84,10 @@ python3 bin/owngenome_recheck.py --launch-dir /path/to/launch/dir
 
 ## The files it writes
 
-- `<sample>/recheck/state.json`, replaced whole on each check: `checked_utc`, the hosts asked, the pipeline release it read, one entry per item (`item`, `label`, `ran_with`, `installed`, `upstream`, `class`, `steps`, `action`, and `error` or `in_owngenome_release` when they apply), `affected_steps` (the steps a rerun would redo for the `rerun-ready` and `refresh-available` items), and after a rerun a `rerun` block (`started_utc`, `finished_utc`, `rc`, `command`, `predicted_vs_redone`). The last rerun stays until another one replaces it.
+- `<sample>/recheck/state.json`, replaced whole on each check: `checked_utc`, the hosts asked, the pipeline release it read, one entry per item (`item`, `label`, `ran_with`, `installed`, `upstream`, `class`, `steps`, `action`, and `error` or `in_owngenome_release` when they apply; an image item also has `ran_with_ref` and `installed_ref`, the full references with any digest), `affected_steps` (the steps a rerun would redo for the `rerun-ready` and `refresh-available` items), and after a rerun a `rerun` block (`started_utc`, `finished_utc`, `rc`, `command`, `predicted_vs_redone`). The last rerun stays until another one replaces it.
 - `<sample>/recheck/log.tsv`, only ever appended: one row per item and check, and a row as each rerun starts and ends.
 - `<sample>/recheck/rerun.lock`, an empty file each `--rerun` locks while it runs.
+- `$GENOME_DIR/clinvar/.refresh.lock`, an empty file: [the ClinVar lock](#the-clinvar-lock). `run-all.sh` and step 06 make it too when it is missing.
 
 ## In the reports and on the live site
 
