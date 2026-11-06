@@ -3,10 +3,13 @@
 # writes from its pinned downloads (ClinGen's recurrent CNV BED V2.1 and three
 # GIAB v3.6 stratifications, each checked against its sha256): a hand edit of
 # an interval row fails here. Control: a copy of the catalog with one target
-# moved by 1 kb must fail the same check.
+# moved by 1 kb must fail the same check. The downloads come from the e2e
+# data cache when the runner filled it (entry catalogs, mirror first;
+# scripts/ci/e2e-run.sh), else from their sources.
 . "$(dirname "$0")/lib.sh"
 
 CACHE="${CASE_TMP}/downloads"
+[ -z "${E2E_DATA_CACHE:-}" ] || CACHE="${E2E_DATA_CACHE}/catalogs/cn-intervals"
 mkdir -p "$CACHE"
 echo "+ scripts/ci/build-cn-intervals.py --check"
 python3 "${REPO}/scripts/ci/build-cn-intervals.py" --cache "$CACHE" --check 2>&1 | tee "$STEP_LOG"

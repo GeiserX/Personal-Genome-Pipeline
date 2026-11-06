@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# The data cache entries hla and pgs of scripts/ci/e2e-run.sh: --data-check
-# passes a whole entry and fails a changed, missing or partial one (the e2e
-# workflow saves and uses only an entry that passes), and --data-key names
-# the releases; a data fill that runs past E2E_DATA_BUDGET stops with its
+# The data cache entries hla, pgs and catalogs of scripts/ci/e2e-run.sh:
+# --data-check passes a whole entry and fails a changed, missing or partial
+# one (the e2e workflow saves and uses only an entry that passes), and
+# --data-key names the releases; kill_tree stops a parent before its
+# children; a data fill that runs past E2E_DATA_BUDGET stops with its
 # message (a planted slow mirror on 127.0.0.1, the sources blocked); and
 # .github/actions/free-disk names a cleanup that failed in
 # its summary (fake sudo, docker and df). No network, no docker.
@@ -68,6 +69,17 @@ if [ -n "$other" ] && [ -n "$pin" ] && [ -n "$gencode" ] \
 else echo "FAIL: the hla key does not match its inputs (${other:-?} ${pin:-?} ${gencode:-?}): ${key}"; failed=1; fi
 if "$RUN" --data-key pgs | grep -qE '^e2e-data-pgs-[0-9a-f]{16}$'; then echo "PASS: the pgs key is a hash"
 else echo "FAIL: the pgs key"; failed=1; fi
+
+# catalogs: the downloads of the two table builders, each in its folder.
+if "$RUN" --data-key catalogs | grep -qE '^e2e-data-catalogs-[0-9a-f]{16}$'; then echo "PASS: the catalogs key is a hash"
+else echo "FAIL: the catalogs key"; failed=1; fi
+n=$( { bash "${REPO}/scripts/ci/build-callability.sh" --list; python3 "${REPO}/scripts/ci/build-cn-intervals.py" --list; } | awk 'NF == 3 && $2 ~ /^https:/ && $3 ~ /^[0-9a-f]{64}$/' | wc -l | tr -d ' ')
+if [ "$n" = 11 ]; then echo "PASS: the two builders list 11 pinned downloads (7 and 4)"
+else echo "FAIL: the builders list ${n} pinned downloads, want 11"; failed=1; fi
+mkdir -p "${T}/catalogs/callability"
+expect "catalogs: an entry with no file fails" 1 catalogs
+bash "${REPO}/scripts/ci/build-callability.sh" --list | head -n 1 | { read -r name _ _; echo planted > "${T}/catalogs/callability/${name}"; }
+expect "catalogs: a file that does not match its pin fails" 1 catalogs
 
 # --- the data fill: the mirror, its deadline and the budget ------------------
 # A mirror on 127.0.0.1; every other host is sent to a closed port, so the
@@ -159,6 +171,28 @@ read -r rc secs <<< "$(fill bad "${SL}/bad" 30 10)"
 if [ "$rc" != 0 ] && [ -z "$(find "${SL}/bad.cache" -name '*.txt.gz' 2> /dev/null)" ] && grep -q 'not on the mirror' "${SL}/bad.log"; then
   echo "PASS: a mirror whose bytes do not match the pins is refused and leaves no score in the entry (exit ${rc})"
 else echo "FAIL: the bad mirror gave exit ${rc}: $(find "${SL}/bad.cache" -type f 2> /dev/null | head -3) $(tail -n 3 "${SL}/bad.log")"; failed=1; fi
+
+# --- kill_tree: the parent stops before its children ------------------------
+# A parent that starts its next command when its child dies (mfetch starts
+# the source download when the mirror try ends) must not get to start it: a
+# bash whose first sleep is killed would start a second one. Stopped
+# children first, the second sleep ran on after kill_tree returned.
+fn=$(sed -n '/^kill_tree() {/,/^}/p' "$RUN")
+[ -n "$fn" ] || { echo "FAIL: no kill_tree function in e2e-run.sh"; exit 1; }
+eval "$fn"
+KT="${T}/kill-tree"
+mkdir -p "$KT"
+bash -c 'sleep 30 & first=$!; sleep 40 & wait "$first"; sleep 31 & echo $! > "$1/second"; wait' _ "$KT" & kp=$!
+for _ in $(seq 50); do [ "$(pgrep -P "$kp" 2> /dev/null | wc -l)" -ge 2 ] && break; sleep 0.1; done
+kill_tree "$kp"
+wait "$kp" 2> /dev/null
+sleep 1
+if [ -s "${KT}/second" ] && kill -0 "$(cat "${KT}/second")" 2> /dev/null; then
+  echo "FAIL: kill_tree let the parent start a new child after its first one was stopped"; failed=1
+  kill "$(cat "${KT}/second")" 2> /dev/null
+elif pgrep -P "$kp" > /dev/null 2>&1 || kill -0 "$kp" 2> /dev/null; then
+  echo "FAIL: kill_tree left the parent or its child running"; failed=1
+else echo "PASS: kill_tree stops the parent first, so it starts nothing after its child is stopped"; fi
 
 # --- free-disk: a cleanup that fails is named in the summary -----------------
 # The action's script, run as GitHub runs a composite bash step, with sudo,

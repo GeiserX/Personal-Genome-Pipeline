@@ -14,7 +14,8 @@
 #   --pull-images  pulls those images, as step 3 below does, and exits.
 #   --pull-image REF  pulls one image with the same retry (the docker shim's
 #            pulls of the lazy images at their first use), and exits.
-#   --data-key NAME  prints the Actions cache key of data entry NAME (hla, pgs).
+#   --data-key NAME  prints the Actions cache key of data entry NAME (hla, pgs,
+#            catalogs).
 #   --data-check NAME  exits 0 when entry NAME in E2E_DATA_CACHE is whole and
 #            matches its checksums (the e2e workflow saves only such an entry).
 #   --data-fill NAME  fills entry NAME in E2E_DATA_CACHE as a case's run does,
@@ -173,8 +174,8 @@ if [ "${1:-}" = --image-groups ]; then
 fi
 
 # --- Data cache keys and checks -------------------------------------------------
-# The e2e workflow asks here for the Actions cache key of the entries hla and
-# pgs (`--data-key NAME`) and whether an entry is whole before it saves it
+# The e2e workflow asks here for the Actions cache key of the entries hla,
+# pgs and catalogs (`--data-key NAME`) and whether an entry is whole before it saves it
 # (`--data-check NAME`), so the key and the check are written once. The other
 # entries (mocha, archaic) are keyed in e2e.yml on their versions.env pins.
 DATA_CACHE=${E2E_DATA_CACHE:-}
@@ -187,6 +188,24 @@ PGS_MD5=${E2E_PGS_MD5-"PGS002257 bb1b2b11a499c5930e8c835647e48296
 PGS000065 90ac7aabbbde9bdaa681dbdb66c0ebd8
 PGS000064 43b39c4450f423f0772bbd8779dd640f
 PGS000066 b34f31b8b3a7dbbbb58882a70e14649d"}
+# CATALOGS: the builders of the committed tables two cases rebuild and
+# compare, as "FOLDER COMMAND...": each lists its pinned downloads with
+# --list ("NAME URL SHA256"), and entry catalogs holds them in FOLDER under
+# NAME, where the builder's cache reads them (callability-1-catalog,
+# cn-intervals-1-catalog). GENCODE's GTFs come from
+# EBI's FTP server, which refused every connection on 2026-11-06 (run
+# 42259432681).
+CATALOGS="callability bash ${REPO}/scripts/ci/build-callability.sh
+cn-intervals python3 ${REPO}/scripts/ci/build-cn-intervals.py"
+# catalog_files: "FOLDER NAME URL SHA256" of every download of CATALOGS.
+catalog_files() {
+  local dir cmd out
+  while read -r dir cmd; do
+    # shellcheck disable=SC2086  # cmd is a command and its arguments
+    out=$($cmd --list) && [ -n "$out" ] || { echo "ERROR: ${cmd} --list gave nothing" >&2; return 1; }
+    sed "s|^|${dir} |" <<< "$out"
+  done <<< "$CATALOGS"
+}
 # hla_releases: the IPD-IMGT/HLA releases bash-step-08-hla installs (the
 # release before the pin, then the pin), from the case and scripts/lib/common.sh.
 hla_releases() {
@@ -211,6 +230,9 @@ data_key() {
     pgs)
       h=$(grep -E '^(NEW_IDS|PGS_BASE)=' "$PGS_CASE" | sha256sum | cut -c1-16)
       echo "e2e-data-pgs-${h}" ;;
+    catalogs)
+      h=$(catalog_files | sha256sum | cut -c1-16) && [ "${#h}" -eq 16 ] || return 1
+      echo "e2e-data-catalogs-${h}" ;;
     *) echo "ERROR: no data cache key for ${1}" >&2; return 1 ;;
   esac
 }
@@ -234,6 +256,13 @@ data_ok() {
           && { [ -z "$pin" ] || [ "$sum" = "$pin" ]; } \
           || return 1
       done ;;
+    catalogs)
+      # Every download of every builder, matching its pin.
+      local list dir name url
+      list=$(catalog_files) || return 1
+      while read -r dir name url pin; do
+        [ -s "${d}/${dir}/${name}" ] && [ "$(sha256sum "${d}/${dir}/${name}" | cut -d' ' -f1)" = "$pin" ] || return 1
+      done <<< "$list" ;;
     *) return 1 ;;
   esac
 }
@@ -258,10 +287,14 @@ data_ok() {
 # same way, so the mirror can only save time, never change what a case reads.
 # kill_tree PID: PID and every process under it (data_fetch's subshells and
 # their curl).
+# The children are listed first and the parent is stopped before them: a
+# parent still running when its child dies would start the next command
+# (mfetch's source download after the mirror try), which the list missed.
 kill_tree() {
-  local c
-  for c in $(pgrep -P "$1" 2> /dev/null); do kill_tree "$c"; done
+  local c kids
+  kids=$(pgrep -P "$1" 2> /dev/null || true)
   kill -TERM "$1" 2> /dev/null || true
+  for c in $kids; do kill_tree "$c"; done
 }
 # within SECS CMD...: runs CMD (a function too) and stops it with everything
 # under it after SECS seconds; returns CMD's status, or 124 when it was stopped.
@@ -380,6 +413,15 @@ data_fetch() (
         fi
       done
       data_ok pgs || exit 1 ;;
+    catalogs)
+      list=$(catalog_files) || exit 1
+      while read -r dir name url sum; do
+        f="${d}/${dir}/${name}"
+        [ -s "$f" ] && [ "$(_digest sha256 "$f")" = "$sum" ] && continue
+        rm -f "$f"
+        mfetch "$url" "$f" sha256 "$sum" || exit 1
+      done <<< "$list"
+      data_ok catalogs || exit 1 ;;
     *) echo "ERROR: no data cache entry ${1}" >&2; exit 1 ;;
   esac
 )
@@ -677,6 +719,8 @@ trap 'kill "$LOW_PID" 2> /dev/null || true' EXIT
 #     finds them and downloads nothing.
 #   prs-scores-and-run-options-1: the four real PGS Catalog score files
 #     (ftp.ebi.ac.uk); the case copies them from E2E_DATA_CACHE/pgs.
+#   callability-1-catalog, cn-intervals-1-catalog: the pinned downloads of their builders (CATALOGS above); each case
+#     points its builder's cache at E2E_DATA_CACHE/catalogs/<its folder>.
 data_name() {
   # shellcheck source=../../versions.env
   case "$1" in
@@ -684,6 +728,7 @@ data_name() {
     archaic-ancestry-1.sh) echo "archaic ${GENOME_DIR}/reference/archaic/$(. "${REPO}/versions.env" && echo "$ARCHAIC_DATA_VERSION")/download" ;;
     bash-step-08-hla.sh) echo "hla ${GENOME_DIR} offline" ;;
     prs-scores-and-run-options-1-strand-sex.sh) echo "pgs -" ;;
+    callability-1-catalog.sh|cn-intervals-1-catalog.sh) echo "catalogs -" ;;
   esac
 }
 # Every HTTP(S) request of a process run under it goes to a closed port.
@@ -843,9 +888,13 @@ for c in "${CASES[@]}"; do
   echo "::endgroup::"
   # A case whose network block could not be shown to hold proves nothing offline.
   [ "$rc" -eq 0 ] && $CASE_CONTROL_FAILED && rc=-1
+  # Nor does a case that exited 0 without one [PASS] line and without saying
+  # why it had nothing to check (NO_CHECKS_REASON, finish in lib.sh).
+  [ "$rc" -eq 0 ] && ! grep -q '^\[PASS\] ' "$log" && ! grep -q "^${name}: no checks run: " "$log" && rc=-3
   case "$rc" in
     0)   result=pass ;;
     -1)  result="FAIL (network-block control)"; failed=$((failed + 1)) ;;
+    -3)  result="FAIL (no check ran)"; failed=$((failed + 1)) ;;
     -2)  result="FAIL (data fill over ${E2E_DATA_BUDGET:-2400}s)"; failed=$((failed + 1)) ;;
     124) result="FAIL (timeout ${CASE_TIMEOUT}s)"; failed=$((failed + 1)) ;;
     *)   result="FAIL (exit ${rc})"; failed=$((failed + 1)) ;;
