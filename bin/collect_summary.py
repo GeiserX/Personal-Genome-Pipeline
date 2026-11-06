@@ -778,7 +778,9 @@ def smn_reading(smn1):
 
 # Tables in paralogs/ that other parts of steps 35 and 35b write, not catalog rows.
 NOT_CATALOG_TABLES = ("hba", "paraphase")
-PARASCOPY_COLUMNS = {"chrom", "start", "end", "agCN", "psCN", "psCN_qual", "psCN_filter"}
+# agCN_filter and agCN_qual too: without them a catalog locus would read as
+# "not resolved" instead of unreadable.
+PARASCOPY_COLUMNS = {"chrom", "start", "end", "agCN", "agCN_filter", "agCN_qual", "psCN", "psCN_qual", "psCN_filter"}
 
 
 def parascopy_tables(d, s):
@@ -848,8 +850,8 @@ def sec_parascopy(d, s):
     if "smn" in tables:
         rows = read_tsv(tables["smn"])
         if rows and not PARASCOPY_COLUMNS <= set(rows[0]):
-            raise Unreadable(f"{os.path.basename(tables['smn'])} lacks the chrom, start, end, agCN, psCN, psCN_qual or "
-                             "psCN_filter column")
+            raise Unreadable(f"{os.path.basename(tables['smn'])} lacks the chrom, start, end, agCN, agCN_filter, "
+                             "agCN_qual, psCN, psCN_qual or psCN_filter column")
         smn1 = parascopy_cn_at(rows, *paraphase_report.SMN1_EXON7)
         smn2 = parascopy_cn_at(rows, *SMN2_EXON7)
         # Step 35 writes one row whose agCN_filter is "not assessed: <reason>"
