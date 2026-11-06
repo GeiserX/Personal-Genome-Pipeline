@@ -32,6 +32,8 @@ expect() {
   fi
 }
 
+# cause TEXT: the last refusal names its cause, so an unrelated failure cannot pass.
+cause() { grep -qF -- "$1" <<< "$out" || bad "the refusal names its cause ('$1'): ${out}"; }
 g() { git -C "$T" -c user.name=t -c user.email=t@example.invalid -c tag.gpgSign=false -c commit.gpgSign=false -c core.hooksPath=/dev/null "$@"; }
 config() {
   cat > "${T}/nextflow.config" <<NF
@@ -62,7 +64,9 @@ draft() { printf '# OwnGenome %s\n\n> **Not released yet.** Work still landing.\
 expect 1 "tag v1.0.0 on a commit that declares 0.8.2 is refused" --repo "$T" tag v1.0.0
 grep -q "does not match the version" <<< "$out" || bad "the mismatch message names the cause: ${out}"
 expect 1 "a tag that does not exist is refused" --repo "$T" tag v9.9.9
+cause "does not exist"
 expect 1 "a tag not of the form vX.Y.Z is refused" --repo "$T" tag 1.0.0
+cause "not of the form"
 
 config 1.0.0
 g add -A && g commit -qm "chore: declare 1.0.0"
@@ -75,6 +79,12 @@ g add -A && g commit -qm "docs: the 1.0.0 notes"
 g tag -f v1.0.0 >/dev/null
 expect 0 "v1.0.0 with matching manifest.version and its notes passes" --repo "$T" tag v1.0.0 --notes-out "${T}/body.md"
 if cmp -s "${T}/body.md" "${T}/docs/releases/v1.0.0.md"; then ok "the release body is the notes file"; else bad "the release body is not the notes file"; fi
+g tag -f -a -m "OwnGenome 1.0.0" v1.0.0 >/dev/null
+expect 0 "an annotated v1.0.0 tag with matching manifest.version passes" --repo "$T" tag v1.0.0
+g tag -a -m "OwnGenome 1.1.0" v1.1.0
+expect 1 "an annotated v1.1.0 tag on a commit that declares 1.0.0 is refused" --repo "$T" tag v1.1.0
+cause "does not match the version"
+g tag -d v1.1.0 >/dev/null
 
 draft 1.0.0
 g add -A && g commit -qm "docs: the notes go back to draft"
@@ -84,8 +94,9 @@ grep -q "Not released yet" <<< "$out" || bad "the draft message names the cause:
 
 : > "${T}/docs/releases/v1.0.0.md"; printf '# OwnGenome 1.0.0\n' > "${T}/docs/releases/v1.0.0.md"
 g add -A && g commit -qm "docs: empty the notes"
-g tag -f v1.0.0 >/dev/null
+g tag -f -a -m "OwnGenome 1.0.0" v1.0.0 >/dev/null   # annotated: the patch body below must stop at it too
 expect 1 "notes that hold only a heading are refused" --repo "$T" tag v1.0.0
+cause "only a heading"
 
 config 1.0.1
 g add -A && g commit -qm "fix: a patch after 1.0.0"
@@ -102,18 +113,25 @@ runs "ci-ok${tab}completed${tab}success" "shellcheck${tab}completed${tab}success
      "create-release${tab}in_progress${tab}"
 expect 0 "all checks green, the release job itself left out" checks "${T}/runs.tsv" --ignore create-release
 expect 1 "the release job counts when it is not left out" checks "${T}/runs.tsv"
+cause "NOT FINISHED: create-release"
 runs "ci-ok${tab}completed${tab}success" "nextflow (pinned)${tab}in_progress${tab}"
 expect 1 "a check still running is refused" checks "${T}/runs.tsv"
+cause "NOT FINISHED"
 runs "ci-ok${tab}completed${tab}success" "unit-tests${tab}completed${tab}failure"
 expect 1 "a failed check is refused" checks "${T}/runs.tsv"
+cause "NOT GREEN: unit-tests"
 runs "ci-ok${tab}completed${tab}success" "e2e${tab}completed${tab}cancelled"
 expect 1 "a cancelled check is refused" checks "${T}/runs.tsv"
+cause "NOT GREEN: e2e"
 runs "shellcheck${tab}completed${tab}success"
 expect 1 "no ci-ok among the checks is refused" checks "${T}/runs.tsv"
+cause "ci-ok did not succeed"
 runs "ci-ok${tab}completed${tab}failure"
 expect 1 "a failed ci-ok is refused" checks "${T}/runs.tsv"
+cause "ci-ok did not succeed"
 : > "${T}/runs.tsv"
 expect 1 "a commit with no check runs is refused" checks "${T}/runs.tsv"
+cause "no check runs"
 
 # --- declared ---
 D="${T}/declared"
@@ -125,26 +143,32 @@ manifest {
 NF
 echo "# Changelog" > "${D}/CHANGELOG.md"
 expect 1 "declared 1.0.0 without its notes is refused" --repo "$D" declared
+cause "does not exist: write its notes"
 printf '# OwnGenome 1.0.0\n\n- a thing\n' > "${D}/docs/releases/v1.0.0.md"
 expect 1 "notes that CHANGELOG.md does not link are refused" --repo "$D" declared
+cause "CHANGELOG.md does not link"
 echo "- 1.0.0: docs/releases/v1.0.0.md" >> "${D}/CHANGELOG.md"
 expect 0 "declared 1.0.0 with linked notes passes" --repo "$D" declared
 printf '# OwnGenome 1.0.0\n\n> **Not released yet.** Work still landing.\n\n- a thing\n' > "${D}/docs/releases/v1.0.0.md"
 expect 1 "declared 1.0.0 whose notes still carry the draft notice is refused" --repo "$D" declared
+cause "Not released yet"
 sed -i.bak "s/'1.0.0'/'0.9.9'/" "${D}/nextflow.config"
 expect 0 "draft notes for a version not declared yet pass" --repo "$D" declared
 sed -i.bak "s/'0.9.9'/'1.0.0'/" "${D}/nextflow.config"
 printf '# OwnGenome 1.0.0\n\n- a thing\n' > "${D}/docs/releases/v1.0.0.md"
 printf '# Release 1.0.0\n\n- a thing\n' > "${D}/docs/releases/v1.0.0.md"
 expect 1 "notes whose heading is not '# OwnGenome 1.0.0' are refused" --repo "$D" declared
+cause "the first line must be"
 printf '# OwnGenome 1.0.0\n\n- a thing\n' > "${D}/docs/releases/v1.0.0.md"
 printf '# OwnGenome 1.1\n\n- a thing\n' > "${D}/docs/releases/v1.1.md"
 expect 1 "a notes file not named vX.Y.Z.md is refused" --repo "$D" declared
+cause "is named vMAJOR.MINOR.PATCH.md"
 rm "${D}/docs/releases/v1.1.md"
 sed -i.bak "s/'1.0.0'/'1.0.2'/" "${D}/nextflow.config"
 expect 0 "a declared patch version needs no notes of its own" --repo "$D" declared
 printf 'manifest {\n    name = "x"\n}\n' > "${D}/nextflow.config"
 expect 1 "a manifest with no version is refused" --repo "$D" declared
+cause "declares no version"
 
 # --- the real tree ---
 expect 0 "the real tree: declared version and every notes file" declared
