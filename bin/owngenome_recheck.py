@@ -408,10 +408,17 @@ def classify(item, release_tag, release_pins, release_error, clinvar=False):
     return "upstream-only"
 
 
-def skipped_steps(sample, sample_dir):
-    """The steps run-all.sh recorded as skipped in this run (logs/run_status.tsv)."""
+def steps_not_run(sample, sample_dir):
+    """The steps this run did not run: the ones run-all.sh recorded as skipped (no BAM, missing
+    data), and the ones it wrote no row for, which is how it leaves out an opt-in step not in TOOLS
+    (run_state's "not planned"). Empty when logs/run_status.tsv records no step at all (a run of an
+    older version), so nothing is left out on a guess."""
     try:
-        return {s["step"] for s in run_state.collect(sample, sample_dir)["steps"] if s["state"] == "skipped"}
+        status = run_state.read_run_status(os.path.join(sample_dir, "logs", "run_status.tsv"))
+        if not (status or {}).get("steps"):
+            return set()
+        return {s["step"] for s in run_state.collect(sample, sample_dir)["steps"]
+                if s["state"] in ("skipped", "not planned")}
     except (OSError, ValueError, KeyError):
         return set()
 
@@ -482,10 +489,10 @@ def check(sample, genome_dir, answers, steps, this_pins, this_hla):
     # The other versions.env pins a step reads (steps 50 to 53): no freshness source exists for them, so
     # nothing is looked up; a pin here that differs from the run's (an image by its full reference, so a
     # new digest at the same tag counts) makes its step rerun-ready. A pin the run's manifest lacks is
-    # unknown, never no-newer-release. A pin read only by steps run-all.sh recorded as skipped (an opt-in
-    # step the run left out) is left out: a rerun would not run that step either.
+    # unknown, never no-newer-release. A pin read only by steps this run did not run (an opt-in step not
+    # in TOOLS, or one skipped for missing data) is left out: a rerun would not run that step either.
     known = {k for k, *_ in PINNED}
-    skipped = skipped_steps(sample, sample_dir)
+    skipped = steps_not_run(sample, sample_dir)
     for key in dict.fromkeys(r[:-5] if r.endswith("@self") else r for s in steps for r in reads_of(s)):
         if key in known or key not in this_pins:
             continue

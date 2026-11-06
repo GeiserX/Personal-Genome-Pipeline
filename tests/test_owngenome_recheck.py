@@ -32,7 +32,9 @@ Checks:
      same reference on both sides is no-newer-release;
  14. a pin with no upstream lookup that the run's manifest lacks is unknown, never
      no-newer-release, names no step and does not make the command exit 1;
- 15. a pin read only by a step run-all.sh recorded as skipped is left out;
+ 15. a pin read only by a step the run did not run is left out: an opt-in step not in
+     TOOLS (run-all.sh writes no row for it) and one recorded as skipped (no BAM);
+     a status file with no step rows at all leaves every pin in;
  16. a malformed Last-Modified of a PGS file, and an offline release with no tag,
      are errors of that lookup, never a crash;
  17. --refresh-clinvar refuses (exit 3) while a run holds the ClinVar lock shared,
@@ -309,9 +311,10 @@ def manifest_add(g, rows):
         f.writelines(f"version\t{k}\t{v}\n" for k, v in rows)
 
 
-def skip_step(g, step):
+def step_rows(g, rows):
+    """run_status.tsv step rows as run-all.sh writes them; a step it left out gets no row."""
     with open(os.path.join(g, "S1", "logs", "run_status.tsv"), "a") as f:
-        f.write(f"step\t{step}\tskipped (opt-in: add mei to TOOLS)\n")
+        f.writelines(f"step\t{k}\t{v}\n" for k, v in rows)
 
 
 def new_checks(m, tmp, steps, out):
@@ -353,12 +356,25 @@ def new_checks(m, tmp, steps, out):
         mu.get("class") == "unknown" and "50" not in st["affected_steps"] and "50" not in st["rerun_ready_steps"]
         and "older version" in mu.get("action", "") and rc == 0, (mu, st["affected_steps"], rc))
 
+    # A default run (no TOOLS): run-all.sh writes rows for the steps it ran and none for step 50.
+    gd = genome(os.path.join(tmp, "not-in-tools"))
+    manifest_add(gd, [("MEGANE_IMAGE", d1)])
+    step_rows(gd, [("06", "planned"), ("06", "ok")])
+    nd = m.check("S1", gd, answers(m, gd), steps, dict(THIS_PINS, MEGANE_IMAGE=d2), "3.66.0")
+    out["a pin read only by an opt-in step not in TOOLS is left out"] = (
+        "MEGANE_IMAGE" not in by_item(nd) and "50" not in nd["rerun_ready_steps"], by_item(nd).get("MEGANE_IMAGE"))
+
     gs = genome(os.path.join(tmp, "skipped"))
     manifest_add(gs, [("MEGANE_IMAGE", d1)])
-    skip_step(gs, "50")
+    step_rows(gs, [("06", "ok"), ("50", "skipped (no BAM)")])
     sk = m.check("S1", gs, answers(m, gs), steps, dict(THIS_PINS, MEGANE_IMAGE=d2), "3.66.0")
+    gr = genome(os.path.join(tmp, "ran"))
+    manifest_add(gr, [("MEGANE_IMAGE", d1)])
+    step_rows(gr, [("06", "ok"), ("50", "planned"), ("50", "ok")])
+    rn = by_item(m.check("S1", gr, answers(m, gr), steps, dict(THIS_PINS, MEGANE_IMAGE=d2), "3.66.0"))
     out["a pin read only by a step the run skipped is left out"] = (
-        "MEGANE_IMAGE" not in by_item(sk) and "50" not in sk["rerun_ready_steps"], by_item(sk).get("MEGANE_IMAGE"))
+        "MEGANE_IMAGE" not in by_item(sk) and "50" not in sk["rerun_ready_steps"]
+        and rn.get("MEGANE_IMAGE", {}).get("class") == "rerun-ready", (by_item(sk).get("MEGANE_IMAGE"), rn.get("MEGANE_IMAGE")))
 
     srv, port = serve_pgs("not a date")
     try:
@@ -646,8 +662,10 @@ def mutants():
         "and ran_ref != inst_ref:\n        return \"rerun-ready\"", "and False:\n        return \"rerun-ready\"")
     ms["a pin with no lookup the run's manifest lacks is unknown, exit 0"] = from_source(
         'cls = "unknown" if not', 'cls = "no-newer-release" if not')
+    ms["a pin read only by an opt-in step not in TOOLS is left out"] = from_source(
+        'if s["state"] in ("skipped", "not planned")}', 'if s["state"] in ("skipped",)}')
     m = load()
-    m.skipped_steps = lambda *a: set()
+    m.steps_not_run = lambda *a: set()
     ms["a pin read only by a step the run skipped is left out"] = m
     ms["a malformed Last-Modified of a PGS file is error, not a crash"] = from_source(
         "        try:  # a malformed date is a failed lookup of this score, never a crash of the whole check\n"

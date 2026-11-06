@@ -23,7 +23,7 @@ Standard library only, so the plain `python3` on the host is enough. It needs th
 | IPD-IMGT/HLA | `hla_database` | The `release_version.txt` of the IPD-IMGT/HLA repository | 08 |
 | Each PGS score | `pgs:<ID>`, its `HmPOS_date` | The PGS Catalog's REST API, then the `Last-Modified` date of the harmonised GRCh38 file | 25, then 26 |
 
-The pins of steps 50 to 53 (`MEGANE_IMAGE`, `MOCHA_PANEL_VERSION`, `MOCHA_IMAGE`, `VNTYPER_IMAGE`, `LOCITYPER_PANEL_VERSION`, `LOCITYPER_IMAGE`) have no upstream lookup: each is compared only with this checkout's `versions.env`. An image is compared by its full reference, so a new `@sha256` digest at the same tag counts as a change, for these and for `PHARMCAT_IMAGE`. A pin read only by a step that `run-all.sh` recorded as skipped in this run (an opt-in step it left out) is not listed: a rerun would not run that step either.
+The pins of steps 50 to 53 (`MEGANE_IMAGE`, `MOCHA_PANEL_VERSION`, `MOCHA_IMAGE`, `VNTYPER_IMAGE`, `LOCITYPER_PANEL_VERSION`, `LOCITYPER_IMAGE`) have no upstream lookup: each is compared only with this checkout's `versions.env`. An image is compared by its full reference, so a new `@sha256` digest at the same tag counts as a change, for these and for `PHARMCAT_IMAGE`. A pin read only by steps this run did not run (an opt-in step not in `TOOLS`, or one skipped for missing data) is not listed: a rerun would not run that step either.
 
 The HTML report (24) and the text report are written again after any of them. The ClinVar release inside the PCGR bundle (`cpsr_clinvar_release`) moves with the PCGR bundle, never with step 06's ClinVar file.
 
