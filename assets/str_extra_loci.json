@@ -5,7 +5,7 @@
   "ReferenceRegion": ["chr7:117548606-117548628", "chr7:117548628-117548635"],
   "VariantId": ["CFTR_TG", "CFTR_T"],
   "VariantType": ["Repeat", "Repeat"],
-  "NoThresholds": "the CFTR intron 9 TG and poly-T tract (legacy IVS8; GRCh38 is TG11 T7), a splicing modifier read beside R117H and CBAVD findings: 5T with TG12 or TG13 is a variable-penetrance allele (Deignan 2020, PMID 32404922). Two counts, CFTR_TG and CFTR_T, not an expansion",
+  "NoThresholds": "the CFTR intron 9 TG and poly-T tract (legacy IVS8; GRCh38 is TG11 T7), a splicing modifier read beside R117H and CBAVD findings: 5T with TG12 or TG13 is a variable-penetrance allele (Deignan 2020, PMID 32404922). Two counts, CFTR_TG and CFTR_T, not an expansion. ExpansionHunter does not phase them: when both counts differ between the copies, which TG count sits with 5T is not known from these counts",
   "Disease": "CFTR-related disorders",
   "InheritanceMode": "AR",
   "Source": "OwnGenome",
