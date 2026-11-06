@@ -4,8 +4,8 @@
  * (#1c1917) and a row of base tiles in green #16a34a (A), blue #2563eb (C),
  * amber #d97706 (G) and red #dc2626 (T). The header inverts the banner: the
  * near-black as the surface, the cream as the text, the blue as the accent.
- * mkdocs.yml sets `primary: custom` and `accent: custom`, so Material paints
- * nothing until these variables exist.
+ * zensical.toml sets `primary: custom` and `accent: custom`, so the theme
+ * paints nothing until these variables exist.
  */
 :root {
   --md-primary-fg-color: #1c1917; /* banner wordmark, the header surface */
@@ -45,9 +45,15 @@
  * .md-header__topic and the page title in a second one, and swaps them on
  * scroll. Styling both would change every page title too. */
 .md-header__topic:first-child .md-ellipsis {
-  color: #f6f1e7;
   font-weight: 800;
   letter-spacing: -0.01em;
+}
+
+/* That colour only on the dark scheme: Zensical's modern header takes the page
+   background, so on the light scheme it is white and a light name would vanish.
+   There the name keeps the default text colour. */
+[data-md-color-scheme="slate"] .md-header__topic:first-child .md-ellipsis {
+  color: #f6f1e7;
 }
 
 /* Keep the mark and the name close, so they read as one unit. */

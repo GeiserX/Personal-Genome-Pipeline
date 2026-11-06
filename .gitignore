@@ -94,7 +94,7 @@ ci.config
 # OMC / local agent operational state — may contain local paths or notes; never commit
 .omc/
 
-# MkDocs build output
+# Docs build output
 site/
 
 # Beads / Dolt files (added by bd init)

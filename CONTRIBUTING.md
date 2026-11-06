@@ -63,7 +63,7 @@ validate_sample "$SAMPLE"
 Every pipeline step needs:
 - `docs/NN-tool-name.md` — What it does, why, Docker image, command, output, runtime, notes
 - `scripts/NN-tool-name.sh` — The executable script
-- An entry in the `nav:` of [`mkdocs.yml`](mkdocs.yml), or the docs build fails on the orphan page
+- An entry in the `nav` of [`zensical.toml`](zensical.toml), or the docs site check fails on the orphan page
 - A mention in the category table of [`docs/pipeline-overview.md`](docs/pipeline-overview.md)
 - Section in `docs/interpreting-results.md` if the output needs explanation
 
@@ -94,7 +94,7 @@ The CI pipeline enforces this with automated scanning.
 5. **Create the Nextflow module** `modules/local/<tool>/main.nf` and wire it into the workflow, or say in [`docs/nextflow.md`](docs/nextflow.md) why the step stays bash-only. A module has no `container` line: add its process to the table in `scripts/ci/gen-containers-config.sh` and run that script.
 6. **Create the documentation** `docs/NN-tool-name.md` following the existing step docs.
 7. **Update these files:**
-   - [`mkdocs.yml`](mkdocs.yml): the page in `nav:`
+   - [`zensical.toml`](zensical.toml): the page in `nav`
    - [`docs/pipeline-overview.md`](docs/pipeline-overview.md): the category table
    - `scripts/run-all.sh`: one entry in its step list (a `plan` call), so a default run passes the module's name in `--tools` (and its database parameter when the data is under `GENOME_DIR`). A bash-only step that a default run should include gets a switch there instead, run after the pipeline
    - [`tests/smoke/commands.tsv`](tests/smoke/commands.tsv): a row for the image, a real command on the fixture and a check on what the tool wrote. [`container-test.yml`](.github/workflows/container-test.yml) fails for an image with no row
