@@ -316,9 +316,8 @@ workflow {
     // leading family column: one family runs, the one --family_name names
     // (needed when the file holds more than one). Here only the family and
     // sample columns are read; FAMILY_PREPARE (bin/family_report.py prepare)
-    // checks the rest before the joint call starts. Read with containsKey,
-    // so a run without the option is not told about an undefined parameter.
-    def pedigree   = params.containsKey('pedigree') ? params.pedigree : null
+    // checks the rest before the joint call starts.
+    def pedigree   = params.pedigree
     // The family's folder under --outdir: --family_name, else 'family'
     def family_dir = params.family_name ?: 'family'
     def family_ids = []

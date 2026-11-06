@@ -5,9 +5,12 @@
      run-all.sh switch and published Nextflow file has its row, and every row
      still matches the code;
   2. static controls, each on a copy of the code: a renamed published file, a
-     removed param, a removed switch, a new --tools name with no row and a new
-     published file with no row are each refused, and the stable ones are
-     named BREAKING;
+     removed param, a removed switch, a new --tools name with no row, a new
+     published file with no row and a schema default that is not
+     nextflow.config's are each refused, and the stable ones are named
+     BREAKING; so are, on a copy of the contract, a file row in the folder of
+     a publishDir whose saveAs drops it and a nextflow row whose step script
+     writes the same path; --pedigree is a declared param;
   3. the run check on a planted results folder made from the contract's own
      e2e rows passes for both legs; then a dropped column, a dropped VCF
      field, a dropped JSON key and a renamed file are each refused, naming the
@@ -63,9 +66,28 @@ def code_copy(tmp):
     dst = os.path.join(tmp, "repo")
     shutil.copytree(os.path.join(REPO, "modules"), os.path.join(dst, "modules"))
     os.makedirs(os.path.join(dst, "scripts"))
-    for f in ("main.nf", "nextflow_schema.json", os.path.join("scripts", "run-all.sh")):
+    for f in ("main.nf", "nextflow_schema.json", "nextflow.config"):
         shutil.copy(os.path.join(REPO, f), os.path.join(dst, f))
+    for f in os.listdir(os.path.join(REPO, "scripts")):
+        if f.endswith(".sh"):
+            shutil.copy(os.path.join(REPO, "scripts", f), os.path.join(dst, "scripts", f))
     return dst
+
+
+def contract_copy(tmp, name, change):
+    """The contract with one row changed: change(cells) edits the cells of the file row called name."""
+    path = os.path.join(tmp, "contract.tsv")
+    hit = False
+    with open(CONTRACT) as f, open(path, "w") as g:
+        for line in f:
+            c = line.rstrip("\n").split("\t")
+            if c[0] == "file" and c[1] == name:
+                change(c)
+                line = "\t".join(c) + "\n"
+                hit = True
+            g.write(line)
+    assert hit, f"no file row {name}"
+    return path
 
 
 def edit(path, old, new, count=1):
@@ -96,6 +118,9 @@ def static_controls():
          lambda d: edit(os.path.join(d, "modules", "local", "roh", "main.nf"),
                         'path("*_roh.txt"),', 'path("*_roh.txt"),\n    tuple val(meta), path("*_roh_extra.tsv"), emit: extra\n'),
          [r"ROH .* writes \*_roh_extra\.tsv and has no contract row"]),
+        ("a schema default that is not nextflow.config's (traits left out of --tools)",
+         lambda d: edit(os.path.join(d, "nextflow_schema.json"), "mito_variants,traits,html_report", "mito_variants,html_report"),
+         [r"param tools: nextflow_schema\.json's default .* is not nextflow\.config's"]),
     ]
     for desc, change, want in cases:
         tmp = tempfile.mkdtemp()
@@ -107,6 +132,36 @@ def static_controls():
             check(f"static control refused: {desc}", rc == 1 and not missing, f"rc={rc}, missing {missing}: {out[-1500:]}")
         finally:
             shutil.rmtree(tmp)
+
+
+    def to_aligned(c):
+        c[1] = "{sample}/aligned/{sample}_read_count.tsv"
+
+    def to_nextflow(c):
+        c[4] = "nextflow"
+
+    contract_cases = [
+        ("the read count in aligned/, whose publishDir drops it (it is published to qc/)",
+         "{sample}/qc/{sample}_read_count.tsv", to_aligned,
+         [r"BREAKING: the stable file \{sample\}/aligned/\{sample\}_read_count\.tsv .* is not what ALIGN_MINIMAP2 publishes"]),
+        ("legs nextflow on a file step 49 writes under the same name",
+         "{sample}/chip/{sample}_chip.tsv", to_nextflow,
+         [r"\{sample\}/chip/\{sample\}_chip\.tsv .* has legs nextflow, but scripts/49-chip\.sh writes it"]),
+    ]
+    for desc, name, change, want in contract_cases:
+        tmp = tempfile.mkdtemp()
+        try:
+            rc, out = run("--static", "--contract", contract_copy(tmp, name, change))
+            missing = [w for w in want if not re.search(w, out)]
+            check(f"static control refused: {desc}", rc == 1 and not missing, f"rc={rc}, missing {missing}: {out[-1500:]}")
+        finally:
+            shutil.rmtree(tmp)
+
+    config = open(os.path.join(REPO, "nextflow.config")).read()
+    schema = json.load(open(os.path.join(REPO, "nextflow_schema.json")))
+    in_schema = any("pedigree" in g.get("properties", {}) for g in schema["definitions"].values())
+    check("--pedigree is declared in nextflow.config and nextflow_schema.json",
+          re.search(r"^\s*pedigree\s*=\s*null\b", config, re.M) is not None and in_schema)
 
 
 def _drop_param(d, name):
