@@ -169,7 +169,7 @@ file	{sample}/locityper/{sample}_locityper.log	53	LOCITYPER	both	text	experiment
 file	{sample}/locityper/{sample}_locityper.tsv	53	LOCITYPER	both	tsv	experimental	-	-
 file	{sample}/locityper/work	53	LOCITYPER	both	dir	experimental	-	-
 file	{sample}/mosdepth/{sample}.mosdepth.summary.txt	16b	-	bash	tsv	stable	bash	chrom,length,bases,mean,min,max
-file	{sample}/paralogs/{sample}_*_copy_number.tsv	35	PARASCOPY	nextflow	tsv	experimental	-	-
+file	{sample}/paralogs/{sample}_*_copy_number.tsv	35	PARASCOPY	both	tsv	experimental	-	-
 file	{sample}/paralogs/{sample}_cn_dosage.tsv	35	PARASCOPY	both	tsv	experimental	-	-
 file	{sample}/paralogs/{sample}_cn_intervals.tsv	35	PARASCOPY	both	tsv	experimental	-	-
 file	{sample}/paralogs/{sample}_cyp21a2_psv.tsv	35	PARASCOPY	both	tsv	experimental	-	-
@@ -178,7 +178,7 @@ file	{sample}/paralogs/{sample}_paraphase	35b	PARAPHASE	both	dir	experimental	-	
 file	{sample}/paralogs/{sample}_paraphase_copy_number.tsv	35b	PARAPHASE_REPORT	both	tsv	experimental	-	-
 file	{sample}/paralogs/{sample}_paraphase_variants.tsv	35b	PARAPHASE_REPORT	both	tsv	experimental	-	-
 file	{sample}/paralogs/{sample}_parascopy	35	PARASCOPY	both	dir	experimental	-	-
-file	{sample}/paralogs/{sample}_smn_copy_number.tsv	35	PARASCOPY	nextflow	tsv	experimental	-	-
+file	{sample}/paralogs/{sample}_smn_copy_number.tsv	35	PARASCOPY	both	tsv	experimental	-	-
 file	{sample}/pgx_consensus/{sample}_outside_calls.tsv	36	PGX_CONSENSUS	both	tsv	stable	-	-
 file	{sample}/pgx_consensus/{sample}_pgx_consensus.tsv	36	PGX_CONSENSUS	both	tsv	stable	-	-
 file	{sample}/pharmcat/{sample}.match.json	07	PHARMCAT	nextflow	json	stable	-	-
