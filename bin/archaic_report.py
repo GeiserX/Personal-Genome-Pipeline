@@ -32,6 +32,10 @@ Subcommands:
              the site stays in IBDmix's input and IBDmix's --mask stops it
              scoring, except that a homozygous mismatch there still counts
              against a segment.
+  strict     (setup.sh --archaic) the lifted GRCh38 rows of one chromosome with
+             every row outside the 1000 Genomes strict mask marked masked in
+             all three archaic columns (the same code 10 to 12), instead of
+             dropped, so IBDmix still scores a mismatch there.
   genotypes  (step 43) IBDmix's genotype file of each chromosome: the three
              archaic columns, SAMPLE (yours, from the VCF) and the stand-ins;
              the mask of each archaic genome (chrN.<genome>.mask.bed, the
@@ -55,6 +59,7 @@ Used by scripts/setup.sh, scripts/43-archaic.sh and the ARCHAIC_* processes
 library only.
 """
 import argparse
+import bisect
 import gzip
 import heapq
 import os
@@ -290,6 +295,41 @@ def cmd_table(a):
     flush()
     out.close()
     print(f"{chrom}: {rows} rows", file=sys.stderr)
+
+
+def cmd_strict(a):
+    """The lifted GRCh38 rows of one chromosome (no header, the 13 table
+    columns), once per position, with the calls of every row outside the 1000
+    Genomes strict mask marked masked (MASKED plus the ALT count, 9 stays 9).
+    The strict mask is the same for the three genomes, so all three are
+    marked; step 43 then hands IBDmix those positions as its mask."""
+    iv = read_mask(a.strict, a.chrom)
+    if not iv:
+        die(f"{a.strict} holds no interval on chromosome {a.chrom}: a mask that matches nothing "
+            "would mark every site masked")
+    starts = [s for s, _ in iv]
+    seen = set()
+    rows = marked = 0
+    with open(a.rows) as f, open(a.out, "w") as out:
+        for line in f:
+            c = line.rstrip("\n").split("\t")
+            if len(c) != len(TABLE_HEADER):
+                die(f"{a.rows}: a row has {len(c)} columns, want {len(TABLE_HEADER)}: {line[:80]!r}")
+            pos = int(c[1])
+            if pos in seen:
+                continue
+            seen.add(pos)
+            i = bisect.bisect_right(starts, pos - 1) - 1
+            if not (i >= 0 and pos - 1 < iv[i][1]):
+                hit = False
+                for k in (4, 5, 6):
+                    if c[k] in ("0", "1", "2"):
+                        c[k] = str(int(c[k]) + MASKED)
+                        hit = True
+                marked += hit
+            out.write("\t".join(c) + "\n")
+            rows += 1
+    print(f"{a.chrom}: {rows} rows, {marked} outside the strict mask and marked masked", file=sys.stderr)
 
 
 # setup.sh --archaic stamps its table with the sha256 of everything above this
@@ -677,6 +717,11 @@ def main(argv=None):
     t.add_argument("--exclude", action="append", default=[],
                    help="BED: leave out every site inside these regions (segmental duplications, indel neighbourhoods)")
     t.add_argument("--out", required=True)
+    m = sub.add_parser("strict", help="mark the rows outside the GRCh38 strict mask masked (setup.sh --archaic)")
+    m.add_argument("--chrom", required=True)
+    m.add_argument("--strict", required=True, help="BED: the 1000 Genomes GRCh38 strict mask")
+    m.add_argument("--rows", required=True, help="the lifted rows, tab-separated, no header")
+    m.add_argument("--out", required=True)
     g = sub.add_parser("genotypes", help="IBDmix's genotype files for one sample (step 43)")
     g.add_argument("--table-dir", required=True)
     g.add_argument("--vcf", required=True)
@@ -693,7 +738,7 @@ def main(argv=None):
     a = p.parse_args(argv)
     if a.cmd == "genotypes" and a.pseudo < 1:
         die("--pseudo must be 1 or more", 2)
-    {"table": cmd_table, "genotypes": cmd_genotypes, "report": cmd_report}[a.cmd](a)
+    {"table": cmd_table, "strict": cmd_strict, "genotypes": cmd_genotypes, "report": cmd_report}[a.cmd](a)
 
 
 if __name__ == "__main__":

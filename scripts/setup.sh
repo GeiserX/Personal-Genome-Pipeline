@@ -1985,19 +1985,28 @@ install_archaic() {
       tail -n 20 "${wk}/liftover.log"
       echo "[WARN] Picard could not lift chr${c}"; return 1
     fi
-    # The rows that land on the same chromosome and inside the 1000 Genomes
-    # GRCh38 strict mask, once per position. The mask is sliced to this
-    # chromosome first: bcftools -T reads the whole targets file into memory,
-    # and the mask has 4.1 million lines for the genome.
+    # The rows that land on the same chromosome, once per position. A row
+    # outside the 1000 Genomes GRCh38 strict mask is kept with its archaic
+    # calls marked masked (as the FilterBed ones are), not dropped: the
+    # published workflow hands IBDmix that mask, and IBDmix still scores a
+    # mismatch at a masked site.
+    # shellcheck disable=SC2016  # $1 and $2 belong to the inner bash
+    if ! run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c \
+           'bcftools query -i "CHROM==\"chr$2\"" -f "%CHROM\t%POS\t%REF\t%ALT\t%INFO/Altai\t%INFO/Vindija\t%INFO/Denisova\t%INFO/AF_ALL\t%INFO/AF_AFR\t%INFO/AF_AMR\t%INFO/AF_EAS\t%INFO/AF_EUR\t%INFO/AF_SAS\n" "$1" > "$3/lifted.tsv"' \
+           _ "$(cpath "${wk}/hg38.vcf")" "$c" "$(cpath "$wk")"; then
+      echo "[WARN] Could not read the lifted chr${c}"; return 1
+    fi
     awk -v c="chr${c}" '$1 == c' "${dir}/strict_GRCh38.bed" > "${wk}/strict.bed"
     if [ ! -s "${wk}/strict.bed" ]; then
       echo "[WARN] the GRCh38 strict mask has no interval on chr${c}: ${dir}/strict_GRCh38.bed"; return 1
     fi
-    # shellcheck disable=SC2016  # $1 to $3 belong to the inner bash
+    if ! run_in --rw "$dir" -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
+          python3 /pgp-bin/archaic_report.py strict --chrom "$c" --strict "$(cpath "${wk}/strict.bed")" \
+            --rows "$(cpath "${wk}/lifted.tsv")" --out "$(cpath "${wk}/marked.tsv")"; then
+      echo "[WARN] Could not mark the strict mask on chr${c}"; return 1
+    fi
     if ! { printf 'chrom\tpos\tref\talt\tAltai\tVindija\tDenisova\tAF_ALL\tAF_AFR\tAF_AMR\tAF_EAS\tAF_EUR\tAF_SAS\n'
-           run_in --rw "$dir" "$BCFTOOLS_IMAGE" bash -euo pipefail -c \
-             'bcftools query -T "$3" -i "CHROM==\"chr$2\"" -f "%CHROM\t%POS\t%REF\t%ALT\t%INFO/Altai\t%INFO/Vindija\t%INFO/Denisova\t%INFO/AF_ALL\t%INFO/AF_AFR\t%INFO/AF_AMR\t%INFO/AF_EAS\t%INFO/AF_EUR\t%INFO/AF_SAS\n" "$1"' \
-             _ "$(cpath "${wk}/hg38.vcf")" "$c" "$(cpath "${wk}/strict.bed")" | awk -F'\t' '!seen[$2]++'
+           cat "${wk}/marked.tsv"
          } | gzip -c > "${dir}/chr${c}.tsv.gz.part"; then
       echo "[WARN] Could not write chr${c} of the table"; return 1
     fi
