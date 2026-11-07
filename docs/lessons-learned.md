@@ -615,6 +615,11 @@ Most bioinformatics containers run as non-root users. If writing to bind-mounted
 - **Why:** `ubuntu-latest` hands out runners of two sizes, 145 GB and 72 GB (48 GB free after the clean-up step), and on the ubuntu-26.04 image Docker 29 keeps images in containerd's store, which holds each layer as a compressed blob and as an unpacked copy: DeepVariant's, GATK's and VNtyper's images took 24.8 GB there against 17.6 GB on overlay2. In that store `docker image inspect -f '{{.Size}}'` gives the compressed size (7.2 GB for the same three), so the image table understated what the disk held. Every leg also pre-pulled all 56 case images, the five largest included, whatever its cases ran.
 - **Fix:** each e2e leg turns `containerd-snapshotter` off in `/etc/docker/daemon.json` and restarts Docker before it restores an image, so images go to overlay2; the five largest images are pulled at a case's first `docker run` of them (`tests/e2e/bin/docker`) and removed when the case ends; the image cache keys moved to `e2e-images-ovl-`, because 7 of the 46 archives saved from containerd's store did not load into overlay2; and `e2e-run.sh` fails a leg with less than `E2E_MIN_FREE_GB` free before its first case, so a short disk shows as one clear error instead of a failure in a pull or a case.
 
+### A 72 GB runner hides a blank 220 GB disk
+- **Failed:** shard 1 of #297's run 42018365546 had 16 GB free before its cases, where main's run of the same cases had 89 GB free and used 26 GB at peak. DeepVariant's lazy pull inside the Nextflow run then failed with "no space left on device", and four cases failed.
+- **Why:** `ubuntu-latest` gives some legs a runner whose root disk is 72 GB. `/mnt` is a plain directory on that disk, so the work area pick found no second disk. The runner does have one: a blank NVMe disk (220.7 GB, no partition, no file system, nothing mounted), seen with `lsblk` in probe run 42037810203.
+- **Fix:** the leg's first step formats a blank whole disk and mounts it at `/mnt`; the work-area pick then takes `/mnt`, and the "Docker image store" step sets Docker's `data-root` to `/mnt/docker`.
+
 ## Downloads (2026-11)
 
 ### One bad transfer of a large file failed the whole setup

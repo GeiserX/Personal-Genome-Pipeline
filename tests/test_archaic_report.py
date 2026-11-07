@@ -3,14 +3,16 @@
 
 Checks:
   1. table: a 1000 Genomes site keeps its frequencies and gets each archaic
-     genome's ALT count; an archaic record with another ALT or another REF is
+     genome's ALT count, 10 plus it outside that genome's mask or inside an
+     excluded region; an archaic record with another ALT or another REF is
      unknown (9); a site only an archaic genome varies at gets frequency 0; a
      site no archaic genome was called at, or only called as reference with
      no modern variation, is left out; a position given twice by 1000 Genomes
      is left out;
-  2. genotypes: the stand-in columns carry the population's ALT count; your
-     column is your ALT count, 0 where your VCF has no record, 9 for a
-     non-PASS record; a site where your VCF has another ALT is left out; a
+  2. genotypes: a masked archaic call (10 to 12) goes to IBDmix as its ALT
+     count and its position into that genome's mask file; the stand-in
+     columns carry the population's ALT count; your column is your ALT
+     count, 0 where your VCF has no record, 9 for a non-PASS record; a site where your VCF has another ALT is left out; a
      chromosome your VCF has no record on is not analysed; in a split VCF an
      SNV keeps its call beside an insertion, a multi-allelic record or the
      0/0 half of a split site, in either order, a usable record of the same
@@ -25,7 +27,11 @@ Checks:
   4. with IBDmix itself (IBDMIX_IMAGE, docker): a planted 600 kb stretch where
      the synthetic person carries the Neanderthal haplotype comes out as one
      Neanderthal segment over it, and a planted Denisovan one as Denisovan;
-     the same person without the planted stretches gets no segment at all.
+     the same person without the planted stretches gets no segment at all;
+     where the person contradicts both Neanderthals inside the planted
+     stretch and their calls there are masked, the segment stops at the
+     masked mismatches, while the same calls written as unknown (9, the
+     table before the fix) let it run through.
      Set ARCHAIC_TEST_NO_DOCKER=1 to skip part 4 on a machine without docker;
      CI never sets it.
 
@@ -122,18 +128,28 @@ m_rows, mi = table_info(f"{TMP}/masked.vcf", ("--mask", f"Altai={TMP}/altai.bed"
                                               "--mask", f"Vindija={TMP}/vindija.bed",
                                               "--mask", f"Denisova={TMP}/denisova.bed.gz"))
 check("inside its mask a genome keeps its call", mi[100]["Altai"] == "2" and mi[100]["Denisova"] == "1", mi.get(100))
-check("outside its mask a genome is unknown (9), where the control read 0",
-      mi[100]["Vindija"] == "9" and nm[100]["Vindija"] == "0", (mi.get(100), nm.get(100)))
-check("a row that only a masked-out reference call kept is dropped (200 goes, and the control kept it)",
-      sorted(m_rows) == [100, 500] and 200 in nm_rows, (sorted(m_rows), sorted(nm_rows)))
-check("an archaic-only site inside its mask stays, with that genome's ALT",
-      m_rows[500][4] == "C" and mi[500]["Altai"] == "1" and mi[500]["Vindija"] == "9", (m_rows.get(500), mi.get(500)))
+# Outside its mask a call is kept as masked (10 plus its ALT count), as Chen
+# et al. keep the site in IBDmix's input and mask it there; the old table
+# coded it 9 (unknown), which let IBDmix's segments run through it.
+check("outside its mask a genome's call is masked (10 for 0/0), where the control read 0",
+      mi[100]["Vindija"] == "10" and nm[100]["Vindija"] == "0", (mi.get(100), nm.get(100)))
+check("a row whose only call is masked stays, with that call masked (200: Altai 0/0 is 10)",
+      sorted(m_rows) == [100, 200, 500] and mi[200]["Altai"] == "10" and nm[200]["Altai"] == "0",
+      (sorted(m_rows), mi.get(200)))
+check("an archaic-only site inside its mask keeps that genome's ALT, and the other genome's call is masked",
+      m_rows[500][4] == "C" and mi[500]["Altai"] == "1" and mi[500]["Vindija"] == "10", (m_rows.get(500), mi.get(500)))
+check("unknown stays 9 inside or outside a mask",
+      mi.get(200, {}).get("Vindija") == "9" and mi.get(500, {}).get("Denisova") == "9", (mi.get(200), mi.get(500)))
 check("a mask file is read with and without the chr prefix", mi[100]["Denisova"] == "1", mi.get(100))
-# The excluded regions: a site inside one is left out whatever the genomes say.
+# The excluded regions: every call at a site inside one is masked, whatever
+# the genome's own mask says; the sites outside are untouched.
 write(f"{TMP}/excl.bed", "22\t90\t120\tsegdup\n")
-ex_rows, _ = table_info(f"{TMP}/excl.vcf", ("--exclude", f"{TMP}/excl.bed"))
-check("a site inside an excluded region is left out, and the rest stay",
-      sorted(ex_rows) == [200, 500] and 100 in nm_rows, (sorted(ex_rows), sorted(nm_rows)))
+ex_rows, ex = table_info(f"{TMP}/excl.vcf", ("--exclude", f"{TMP}/excl.bed"))
+check("every call at a site inside an excluded region is masked (100: 12, 10, 11), where the control read 2, 0, 1",
+      (ex[100]["Altai"], ex[100]["Vindija"], ex[100]["Denisova"]) == ("12", "10", "11")
+      and (nm[100]["Altai"], nm[100]["Vindija"], nm[100]["Denisova"]) == ("2", "0", "1"), (ex.get(100), nm.get(100)))
+check("and the sites outside it keep their calls", sorted(ex_rows) == [100, 200, 500]
+      and (ex[200]["Altai"], ex[500]["Altai"]) == ("0", "1"), (sorted(ex_rows), ex.get(200), ex.get(500)))
 write(f"{TMP}/excl_other.bed", "7\t90\t120\tsegdup\n")
 r = run(*common, "--exclude", f"{TMP}/excl_other.bed", "--out", f"{TMP}/x.vcf")
 check("an exclusion list with no interval on the chromosome stops the build",
@@ -232,6 +248,36 @@ check("pick_call gives the same code in either order",
                        (("A", "G", 0), ("A", "T", 0)), (("A", "G", 1), ("A", "T", 2)), (("A", "G", 9), ("A", "T", 0)),
                        (("A", "G", 1), ("A", "G", 2))]))
 
+# Masked calls: IBDmix gets the call itself and a mask per genome of the
+# positions where it is masked, the runs of written rows closed by the next
+# unmasked one. Codes per row: Altai, Vindija, Denisova.
+mdir = f"{TMP}/table_masked"
+os.makedirs(mdir)
+mrows = {100: ("A\tG", "12\t0\t9"), 200: ("C\tT", "10\t11\t0"), 300: ("G\tA", "2\t0\t0"),
+         400: ("T\tC", "10\t0\t0"), 500: ("A\tC", "0\t0\t0"), 600: ("C\tT", "11\t0\t0")}
+with gzip.open(f"{mdir}/chr22.tsv.gz", "wt") as f:
+    f.write(hdr + "".join(f"chr22\t{p}\t{ra}\t{c}\t0.2\t0\t0\t0\t0\t0\n" for p, (ra, c) in mrows.items()))
+write(f"{TMP}/m.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS\n"
+      "chr22\t500\t.\tA\tT\t50\tPASS\t.\tGT\t0/1\n")      # another ALT: row 500 is left out
+r = run("genotypes", "--table-dir", mdir, "--vcf", f"{TMP}/m.vcf", "--pseudo", "10", "--out-dir", f"{TMP}/gtm")
+check("genotypes on a table with masked calls exits 0", r.returncode == 0, r.stderr)
+gm = {int(l.split("\t")[1]): l.split("\t")[4:7] for l in gzip.open(f"{TMP}/gtm/chr22.gt.gz", "rt").read().splitlines()[1:]}
+check("IBDmix gets each masked call as its ALT count (12, 10, 11 are 2, 0, 1)",
+      gm.get(100) == ["2", "0", "9"] and gm.get(200) == ["0", "1", "0"] and gm.get(600) == ["1", "0", "0"], gm)
+masks = {g: open(f"{TMP}/gtm/chr22.{g}.mask.bed").read() if os.path.exists(f"{TMP}/gtm/chr22.{g}.mask.bed") else None
+         for g in ar.ARCHAICS}
+check("Altai's mask: 100-200, then 400-600 (the left-out row 500 does not close it)",
+      masks["Altai"] == "22\t99\t200\n22\t399\t600\n", masks["Altai"])
+check("Vindija's mask: 200 alone", masks["Vindija"] == "22\t199\t200\n", masks["Vindija"])
+check("Denisova's mask is written and empty", masks["Denisova"] == "", masks["Denisova"])
+check("an unmasked table writes empty masks", open(f"{TMP}/gt/chr22.Altai.mask.bed").read() == "")
+bdir = f"{TMP}/table_bad"
+os.makedirs(bdir)
+with gzip.open(f"{bdir}/chr22.tsv.gz", "wt") as f:
+    f.write(hdr + "chr22\t100\tA\tG\t7\t0\t0\t0.2\t0\t0\t0\t0\t0\n")
+r = run("genotypes", "--table-dir", bdir, "--vcf", f"{TMP}/m.vcf", "--out-dir", f"{TMP}/gtb")
+check("a code the table never holds (7) stops the step", r.returncode == 1 and "code '7'" in r.stderr, r.stderr)
+
 # --- 3. report ---------------------------------------------------------------------
 idir = f"{TMP}/ibd"
 os.makedirs(idir)
@@ -305,12 +351,21 @@ NEA = (2000000, 2600000)
 DEN = (3200000, 3600000)
 
 
-def synthetic(d, plant):
+MID = (2200000, 2400000)
+
+
+def synthetic(d, plant, mid=None):
     """A 4 Mb chr22 table and one person. A third of the sites carry an allele
     the Neanderthals share and modern people rarely do, a third one only the
     Denisovan carries, a third are common. The person draws both copies from
     the frequencies, except inside the planted stretches, where one copy
-    carries the archaic allele."""
+    carries the archaic allele.
+
+    mid: the middle of the planted Neanderthal stretch (MID) holds sites the
+    person contradicts (0/0 where both Neanderthals are 1/1), and the two
+    Neanderthals' calls there are outside their masks. "masked" writes them
+    as this table does (10 plus the call); "unknown" as the table before the
+    fix did (9)."""
     rnd = random.Random(11)
     os.makedirs(f"{d}/table")
     rows, calls = [], []
@@ -323,10 +378,15 @@ def synthetic(d, plant):
         else:
             f = rnd.uniform(0.1, 0.9)
             al = vi = de = sum(rnd.random() < f for _ in range(2))
-        rows.append(f"chr22\t{pos}\tA\tG\t{al}\t{vi}\t{de}\t" + "\t".join([f"{f:.4f}"] * 6))
+        ta, tv = al, vi          # the codes the table writes
         g = [rnd.random() < f, rnd.random() < f]
         if plant and NEA[0] <= pos < NEA[1]:
             g[0] = al == 2
+        if mid and MID[0] <= pos < MID[1]:
+            if kind == 0:
+                g = [False, False]
+            ta, tv = (al + ar.MASKED, vi + ar.MASKED) if mid == "masked" else (9, 9)
+        rows.append(f"chr22\t{pos}\tA\tG\t{ta}\t{tv}\t{de}\t" + "\t".join([f"{f:.4f}"] * 6))
         if plant and DEN[0] <= pos < DEN[1]:
             g[0] = de == 2
         if any(g):
@@ -343,7 +403,7 @@ def ibdmix_run(d):
     os.makedirs(f"{d}/ibd")
     # The flags of scripts/43-archaic.sh.
     sh = ("set -e; gzip -dc /w/gt/chr22.gt.gz > /w/gt/chr22.gt; for a in Altai Vindija Denisova; do "
-          "ibdmix -g /w/gt/chr22.gt -s /w/gt/samples.txt -n $a -o /w/ibd/chr22.$a.txt "
+          "ibdmix -g /w/gt/chr22.gt -s /w/gt/samples.txt -n $a -r /w/gt/chr22.$a.mask.bed -o /w/ibd/chr22.$a.txt "
           "-d 4 -m 1 -a 0.01 -e 0.002 -c 2; done")
     r = subprocess.run(["docker", "run", "--rm", "--network", "none", "-u", f"{os.getuid()}:{os.getgid()}",
                         "-v", f"{d}:/w", image("IBDMIX_IMAGE"), "sh", "-c", sh], capture_output=True, text=True)
@@ -377,6 +437,32 @@ else:
                   len(den) == 1 and cover(den, *DEN) >= 0.9 * (DEN[1] - DEN[0]), den)
         else:
             check("without the planted stretches: no segment", body == [], body)
+
+    # The masked middle. Chen et al. keep a masked site in IBDmix's input and
+    # mask it there, so a homozygous mismatch still counts against a segment;
+    # the table before the fix wrote such calls as unknown (9), and a segment
+    # ran through them unopposed. "unknown" is that control: the planted
+    # segment crosses the contradicted middle. "masked" is this table: it
+    # must not.
+    cover_mid = {}
+    for mid in ("unknown", "masked"):
+        d = f"{TMP}/real_mid_{mid}"
+        os.makedirs(d)
+        os.chmod(d, 0o777)
+        synthetic(d, True, mid)
+        r = ibdmix_run(d)
+        check(f"IBDmix chain exits 0 (middle {mid})", r.returncode == 0, r.stderr + r.stdout)
+        if r.returncode:
+            continue
+        body = [l.split("\t") for l in open(f"{d}/out/S_archaic_segments.tsv").read().splitlines()[1:]]
+        print(f"  segments (middle {mid}): {[(b[1], b[2], b[4]) for b in body]}")
+        cover_mid[mid] = sum(max(0, min(int(b[2]), MID[1]) - max(int(b[1]), MID[0]))
+                             for b in body if b[4] == "Neanderthal")
+    span = MID[1] - MID[0]
+    check("control, calls written as unknown (9): the Neanderthal segment runs through the contradicted middle",
+          cover_mid.get("unknown", 0) >= 0.9 * span, cover_mid)
+    check("calls written as masked: IBDmix's mask keeps the mismatches, and no segment covers the middle",
+          "masked" in cover_mid and cover_mid["masked"] <= 0.1 * span, cover_mid)
 
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"{FAILS} check(s) failed" if FAILS else "all checks passed")

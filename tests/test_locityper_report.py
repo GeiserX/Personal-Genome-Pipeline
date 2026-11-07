@@ -27,7 +27,17 @@ finished locus):
      installed lists it as running and passes --tools locityper,
      --locityper_data and --locityper_bg_region; without the database it is
      skipped, "data not installed". Control: the opted-in checks fail on the
-     default run's output.
+     default run's output. A result without read counts fails the filter
+     and its counts read '.', never 0 of 0 (case 2);
+  8. LOCITYPER_DATA and LOCITYPER_BG_REGION are run-all.sh switches: the
+     command logs/run_status.tsv keeps for owngenome_recheck.py --rerun names
+     both, and 'meta switches' lists them. Control: a run without
+     LOCITYPER_DATA records none;
+  9. step 53 and the LOCITYPER module's guard (its script lines before
+     Locityper, run in bash) stop on a missing DONE and on a DONE that names
+     this .fai with another FASTA, and pass on this .fai and FASTA. Control:
+     a DONE that names only the .fai, which the old guard accepted, is
+     refused.
 
 Run: python3 tests/test_locityper_report.py
 """
@@ -117,6 +127,12 @@ def cases(mod, t):
     r = row(res(wd=None))
     out.append(("2. no weighted distance fails, pointing at locityper augment",
                 r["filter"] == "fail" and "augment" in r["reason"] and r["weighted_distance"] == ".", r))
+    r = row({k: v for k, v in res().items() if k not in ("total_reads", "unexpl_reads")})
+    out.append(("2. no read counts fails, saying so, and the counts read '.' (not 0 of 0)",
+                r["filter"] == "fail" and "no read counts" in r["reason"] and r["total_reads"] == "."
+                and r["unexplained_reads"] == ".", r))
+    r = row(res(total=None, unexpl=12))
+    out.append(("2. a null total_reads fails too", r["filter"] == "fail" and "no read counts" in r["reason"], r))
     r = row(res(), success=False, exit_code=101)
     out.append(("3. no success file: not called, with Locityper's exit code",
                 r["status"] == "not called" and "exit code 101" in r["reason"] and r["genotype"] == "."
@@ -143,7 +159,7 @@ def cases(mod, t):
     return out
 
 
-def run_all(w, tools, done=True):
+def run_all(w, tools, done=True, extra=None):
     """scripts/run-all.sh on a placeholder BAM and VCF under the fake docker
     and nextflow; returns its output and the arguments it gave nextflow."""
     import shutil
@@ -164,6 +180,7 @@ def run_all(w, tools, done=True):
            "LOCITYPER_BG_REGION": "chr20:10000001-10500000"}
     if tools:
         env["TOOLS"] = tools
+    env.update(extra or {})
     p = subprocess.run(["bash", os.path.join(REPO, "scripts", "run-all.sh"), "s1", "male"], env=env, stdin=subprocess.DEVNULL,
                        capture_output=True, text=True)
     log = open(os.path.join(w, "docker.log")).read() if os.path.exists(os.path.join(w, "docker.log")) else ""
@@ -202,6 +219,103 @@ def plan_checks(w):
           and "--locityper_data" not in nf, out[-1500:])
     failed = [d for d, ok, _ in opted_in(out_off, nf_off) if not ok]
     check("7. control: the opted-in checks fail on the default run's output", len(failed) == 2, failed)
+
+    # 8. LOCITYPER_DATA and LOCITYPER_BG_REGION are run-all.sh switches: the
+    # command logs/run_status.tsv keeps for owngenome_recheck.py --rerun names
+    # them, and 'meta switches' lists them, so a replay keeps the database.
+    def meta(w, key):
+        path = os.path.join(w, "g", "s1", "logs", "run_status.tsv")
+        for line in (open(path) if os.path.exists(path) else []):
+            c = line.rstrip("\n").split("\t")
+            if c[:2] == ["meta", key]:
+                return c[2]
+        return ""
+    alt = os.path.join(w, "elsewhere", "locityper")  # outside the folder run_all clears
+    os.makedirs(alt, exist_ok=True)
+    with open(os.path.join(alt, "DONE"), "w") as fh:
+        fh.write("ok\n")
+    out, nf = run_all(os.path.join(w, "alt"), "pharmcat,locityper", done=False, extra={"LOCITYPER_DATA": alt})
+    cmd, sw = meta(os.path.join(w, "alt"), "command"), meta(os.path.join(w, "alt"), "switches").split()
+    check("8. LOCITYPER_DATA reaches Nextflow", f"--locityper_data {alt}" in nf, nf)
+    check("8. the recorded command keeps LOCITYPER_DATA and LOCITYPER_BG_REGION",
+          f"LOCITYPER_DATA={alt} " in cmd and "LOCITYPER_BG_REGION=chr20:10000001-10500000 " in cmd, cmd)
+    check("8. 'meta switches' lists both", {"LOCITYPER_DATA", "LOCITYPER_BG_REGION"} <= set(sw), sw)
+    cmd_off = meta(os.path.join(w, "default"), "command")
+    check("8. control: a run without LOCITYPER_DATA records none, so the check above can fail",
+          bool(cmd_off) and "LOCITYPER_DATA=" not in cmd_off, cmd_off)
+
+
+def done_guards(w):
+    """9. scripts/53-locityper.sh and the LOCITYPER module stop before
+    Locityper when DONE is missing or names another .fai or FASTA: DONE names
+    both digests (setup.sh), and a FASTA with the same contigs and other bases
+    is another reference."""
+    import hashlib
+    import re
+    import shutil
+    g = os.path.join(w, "g")
+    ref = os.path.join(g, "reference", "GRCh38_no_alt_analysis_set.fasta")
+    data = os.path.join(g, "reference", "locityper-" + lr_panel_version())
+    for f in ("s1/aligned/s1_sorted.bam", "s1/aligned/s1_sorted.bam.bai"):
+        os.makedirs(os.path.dirname(os.path.join(g, f)), exist_ok=True)
+        open(os.path.join(g, f), "w").write("placeholder\n")
+    os.makedirs(data)
+    open(ref, "w").write(">chr1\nACGT\n")
+    open(ref + ".fai", "w").write("chr1\t4\t6\t4\t5\n")
+    open(os.path.join(data, "counts.jf"), "w").write("x\n")
+    open(os.path.join(data, "loci.bed"), "w").write("chr1\t0\t4\tX\n")
+
+    def sha(path):
+        return hashlib.sha256(open(path, "rb").read()).hexdigest()
+    good = f"fai={sha(ref + '.fai')} fasta={sha(ref)} image=x panel=y loci=z\n"
+    other = f"fai={sha(ref + '.fai')} fasta={hashlib.sha256(b'>chr1 TGCA').hexdigest()} image=x panel=y loci=z\n"
+    env = {"PATH": os.path.join(REPO, "scripts", "ci", "fake-docker") + os.pathsep + os.environ["PATH"], "HOME": w,
+           "GENOME_DIR": g, "FAKE_DOCKER_LOG": os.path.join(w, "docker.log")}
+
+    def step53(done):
+        if done is None:
+            if os.path.exists(os.path.join(data, "DONE")):
+                os.remove(os.path.join(data, "DONE"))
+        else:
+            open(os.path.join(data, "DONE"), "w").write(done)
+        p = subprocess.run(["bash", os.path.join(REPO, "scripts", "53-locityper.sh"), "s1"], env=env,
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        return p.stdout + p.stderr
+
+    out = step53(other)
+    check("9. step 53: a DONE naming the same .fai and another FASTA stops it",
+          "built from another reference" in out and "Database:" not in out, out[-800:])
+    out = step53(good)
+    check("9. step 53: a DONE naming this .fai and FASTA passes the guard",
+          "another reference" not in out and "Database: " in out, out[-800:])
+    out = step53(None)
+    check("9. step 53: no DONE stops it", "database not found" in out and "Database:" not in out, out[-800:])
+
+    # The module's guard, as the task runs it: the lines of its script before Locityper, with
+    # Nextflow's ${...} filled in and \$ unescaped.
+    src = open(os.path.join(REPO, "modules", "local", "locityper", "main.nf")).read()
+    m = re.search(r'script:.*?"""\n(.*?)\n\s*mkdir -p work', src, re.S)
+    check("9. module: the guard is in the script block", m is not None)
+    if not m:
+        return
+    guard = (m.group(1).replace("${data}", data).replace("${fai}", ref + ".fai").replace("${fasta}", ref)
+             .replace("\\$", "$"))
+    if not shutil.which("sha256sum"):
+        print("[SKIP] 9. module guard: no sha256sum on this machine")
+        return
+
+    def module(done):
+        if done is None:
+            os.remove(os.path.join(data, "DONE"))
+        else:
+            open(os.path.join(data, "DONE"), "w").write(done)
+        p = subprocess.run(["bash", "-c", guard + "\necho GUARD-PASSED"], capture_output=True, text=True)
+        return p.stdout + p.stderr
+    check("9. module: another FASTA stops it", "built from another reference" in module(other))
+    check("9. module: this .fai and FASTA pass", "GUARD-PASSED" in module(good), module(good))
+    check("9. module: no DONE stops it with that reason", "not finished (no DONE)" in module(None))
+    check("9. control: a DONE naming only the .fai (the old guard's test) is not enough",
+          "GUARD-PASSED" not in module(f"fai={sha(ref + '.fai')} image=x\n"))
 
 
 def main():
@@ -296,6 +410,9 @@ def main():
 
         # 7. run-all.sh plans step 53 only when TOOLS names it
         plan_checks(os.path.join(t, "plan"))
+
+        # 9. the DONE guards of step 53 and the module
+        done_guards(os.path.join(t, "guard"))
 
     print("\nRESULT:", "ALL PASS" if FAILS == 0 else f"{FAILS} FAILED")
     return 1 if FAILS else 0

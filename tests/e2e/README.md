@@ -13,10 +13,13 @@ parallel jobs by `scripts/ci/e2e-shards.sh`, and each case runs at most once.
   (stage `base`: the numbered files and `bash-step-08-hla`) run first, in
   their own job, and every shard starts from what they wrote. A case that reads what another, non-base case wrote must
   name that case in its `needs` column, so both run in the same shard, in
-  name order. A new case with no row runs in some shard, counts as 300
-  seconds and needs nothing. A case that runs well over 300 seconds also
-  needs a row with its measured seconds, or the split balances it as a
-  300-second case.
+  name order.
+- Every case needs a row in `e2e-case-times.tsv`: its stage (`base` or
+  `shard`), its measured seconds and its needs. `scripts/ci/e2e-shards.sh
+  check` fails when a case has none, and `tests/test_e2e_shards.sh` runs it
+  on the real table in Guard's unit tests. The split itself would still run
+  a case with no row, as a 300-second shard case that needs nothing, so
+  write the seconds the case took.
 - Every case needs a row in
   [`scripts/ci/e2e-case-paths.tsv`](../../scripts/ci/e2e-case-paths.tsv):
   the globs of the files it runs (step scripts, modules, bin helpers,
