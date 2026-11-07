@@ -10,10 +10,11 @@
 #     step 43 hands IBDmix as its mask;
 #   - HG002 (GIAB's v4.2.1 genotypes on chr22): the step runs, the shares are
 #     numbers, the analysed span is most of the chromosome, and the
-#     Neanderthal total is not over the 95th percentile of the range Chen et
-#     al.'s own released calls give Europeans on chr22 (the check that found
-#     the unmasked table calling about three times too much, and the table
-#     that dropped the strict-mask rows still 4% over it);
+#     Neanderthal total lies between the lowest value (51 kb) of the range
+#     Chen et al.'s own released calls give Europeans on chr22 and a 1,200 kb
+#     regression guard (the guard that catches the unmasked table calling
+#     about three times too much; the whole-genome check decides whether the
+#     share is in range);
 #   - PLANT, HG002 with one chromosome over chr22:28-29 Mb (GRCh38) copied
 #     from Vindija 33.19 (0/1 wherever Vindija carries the ALT, no record
 #     where it does not): a Neanderthal segment covers 70% of that window or
