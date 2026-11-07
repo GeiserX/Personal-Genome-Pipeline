@@ -59,7 +59,8 @@ workflow ANNOTATION {
     // VEP_NORM first splits and left-aligns the PASS records, as step 13
     // does, so an indel finds its gnomAD and ClinVar record.
     //
-    ch_vep_vcf = Channel.empty()
+    ch_vep_vcf       = Channel.empty()
+    ch_vep_vcf_index = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('vep')) {
         VEP_NORM(ch_current_vcf, ch_reference, ch_reference_fai)
         ch_versions = ch_versions.mix(VEP_NORM.out.versions)
@@ -73,6 +74,7 @@ workflow ANNOTATION {
         )
         ch_versions = ch_versions.mix(VEP.out.versions)
         ch_vep_vcf  = VEP.out.vcf
+        ch_vep_vcf_index = VEP.out.vcf_index
 
         // Combine VCF + index for downstream
         ch_current_vcf = VEP.out.vcf
@@ -123,6 +125,7 @@ workflow ANNOTATION {
     // (slivar image). Sequential from VCFANNO (or VEP, or raw VCF)
     //
     ch_slivar_vcf    = Channel.empty()
+    ch_slivar_summary = Channel.empty()
     ch_comphet_pairs = Channel.empty()   // [meta, <id>_compound_het_pairs.tsv]
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('slivar')) {
         if (!params.tools.split(',').collect{it.trim()}.contains('vep')) {
@@ -144,6 +147,7 @@ workflow ANNOTATION {
         )
         ch_versions  = ch_versions.mix(SLIVAR_PRIORITIZE.out.versions, SLIVAR.out.versions, COMPHET_PHASE.out.versions)
         ch_slivar_vcf    = SLIVAR_PRIORITIZE.out.vcf
+        ch_slivar_summary = SLIVAR_PRIORITIZE.out.summary_tsv
         ch_comphet_pairs = COMPHET_PHASE.out.pairs
     }
 
@@ -151,7 +155,8 @@ workflow ANNOTATION {
     // STEP 3b: CLINICAL_FILTER — Extract clinically relevant variants
     // Branches from VCFANNO output (parallel with SLIVAR)
     //
-    ch_clinical_vcf = Channel.empty()
+    ch_clinical_vcf     = Channel.empty()
+    ch_clinical_summary = Channel.empty()
     if (params.tools && params.tools.split(',').collect{it.trim()}.contains('clinical_filter')) {
         if (!params.tools.split(',').collect{it.trim()}.contains('vep')) {
             error "clinical_filter requires VEP-annotated input (IMPACT field). Add 'vep' to --tools or remove 'clinical_filter'."
@@ -161,13 +166,17 @@ workflow ANNOTATION {
         )
         ch_versions     = ch_versions.mix(CLINICAL_FILTER.out.versions)
         ch_clinical_vcf = CLINICAL_FILTER.out.vcf
+        ch_clinical_summary = CLINICAL_FILTER.out.summary_tsv
     }
 
     emit:
     vep_vcf       = ch_vep_vcf          // channel: [meta, vcf]
+    vep_vcf_index = ch_vep_vcf_index    // channel: [meta, tbi]
     enriched_vcf  = ch_enriched_vcf     // channel: [meta, vcf]
     slivar_vcf    = ch_slivar_vcf       // channel: [meta, vcf]
+    slivar_summary = ch_slivar_summary  // channel: [meta, <id>_slivar_summary.tsv]
     comphet_pairs = ch_comphet_pairs    // channel: [meta, <id>_compound_het_pairs.tsv]
     clinical_vcf  = ch_clinical_vcf     // channel: [meta, vcf]
+    clinical_summary = ch_clinical_summary // channel: [meta, <id>_clinical_summary.tsv]
     versions      = ch_versions         // channel: versions.yml
 }

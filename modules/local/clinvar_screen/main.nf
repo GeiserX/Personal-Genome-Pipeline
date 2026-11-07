@@ -263,37 +263,55 @@ process CLINVAR_SCREEN {
     <id>_clinvar_cdna_scan.tsv, the loci with reads across two or more exon
     junctions; ext.cdna_scan = false skips it (the table then says so).
 
-    Equivalent to: scripts/06-clinvar-screen.sh, step 4
+    source 'cpsr' runs the same check on CPSR's P/LP rows instead (the
+    CLINICAL workflow): hits_tsv is CPSR's classification table, read with
+    clip_check.py --cpsr, and the task writes cpsr/<id>_cpsr_cdna_check.tsv
+    and no scan, as scripts/17 does. construct is [] there, as scripts/17
+    passes no construct catalog.
+
+    Equivalent to: scripts/06-clinvar-screen.sh, step 4, and
+    scripts/17-cpsr.sh, the cDNA read check
 */
 process CLINVAR_CDNA_CHECK {
     tag "$meta.id"
     label 'process_single'
 
-    // The table only: CLINVAR_SCREEN's versions.yml is the one in clinvar/.
+    // The tables only: CLINVAR_SCREEN's (CPSR's) versions.yml is the one in clinvar/ (cpsr/).
     publishDir { "${params.outdir}/${meta.id}/clinvar" }, mode: params.publish_dir_mode, pattern: '*_clinvar_cdna_*.tsv'
+    publishDir { "${params.outdir}/${meta.id}/cpsr" }, mode: params.publish_dir_mode, pattern: '*_cpsr_cdna_check.tsv'
 
     input:
     // Fixed names: a samplesheet path may hold any character, and these go on a command line.
     tuple val(meta), path(hits_tsv), path(bam, stageAs: 'sample.bam'), path(bai, stageAs: 'sample.bam.bai')
     path(exons, stageAs: 'exons.bed')
     path(construct, stageAs: 'construct_variants.tsv')
+    val(source)   // 'clinvar' (step 06's hits) or 'cpsr' (step 17's classification table)
 
     output:
-    tuple val(meta), path("${meta.id}_clinvar_cdna_check.tsv"), emit: cdna_check
-    tuple val(meta), path("${meta.id}_clinvar_cdna_scan.tsv"),  emit: cdna_scan
+    // One source per task: the clinvar tables, or the cpsr one.
+    tuple val(meta), path("${meta.id}_clinvar_cdna_check.tsv"), emit: cdna_check,      optional: true
+    tuple val(meta), path("${meta.id}_clinvar_cdna_scan.tsv"),  emit: cdna_scan,       optional: true
+    tuple val(meta), path("${meta.id}_cpsr_cdna_check.tsv"),    emit: cpsr_cdna_check, optional: true
     path "versions.yml",                                         emit: versions
 
     when:
     task.ext.when == null || task.ext.when
 
     script:
+    if (!(source in ['clinvar', 'cpsr'])) {
+        error "CLINVAR_CDNA_CHECK: source must be 'clinvar' or 'cpsr', not '${source}'"
+    }
     def reads = !bam ? "--skip 'no BAM for this sample in the samplesheet'" :
                 !exons ? "--skip 'no GENCODE exons (--gencode_exons)'" :
                 "--bam ${bam} --exons ${exons}"
     def scan = task.ext.cdna_scan == false ? "--skip 'ext.cdna_scan = false'" : reads
+    def rows = source == 'cpsr' ? "--cpsr ${hits_tsv}" : "--hits ${hits_tsv}"
+    def cons = construct ? "--construct ${construct}" : ''
+    // The scan reads every exon, whatever the rows: once per sample, with step 06.
+    def scan_cmd = source == 'clinvar' ? "cdna_scan.py --out ${meta.id}_clinvar_cdna_scan.tsv ${scan}" : ''
     """
-    clip_check.py --hits ${hits_tsv} --out ${meta.id}_clinvar_cdna_check.tsv --construct ${construct} ${reads}
-    cdna_scan.py --out ${meta.id}_clinvar_cdna_scan.tsv ${scan}
+    clip_check.py ${rows} --out ${meta.id}_${source}_cdna_check.tsv ${cons} ${reads}
+    ${scan_cmd}
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -303,7 +321,8 @@ process CLINVAR_CDNA_CHECK {
 
     stub:
     """
-    touch ${meta.id}_clinvar_cdna_check.tsv ${meta.id}_clinvar_cdna_scan.tsv
+    touch ${meta.id}_${source}_cdna_check.tsv
+    ${source == 'clinvar' ? "touch ${meta.id}_clinvar_cdna_scan.tsv" : ''}
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

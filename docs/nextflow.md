@@ -6,7 +6,7 @@ The pipeline is a [Nextflow](https://www.nextflow.io/) DSL2 pipeline, `main.nf`.
 - **a BAM or a CRAM** without a VCF: it is called;
 - **a VCF** from any caller (nf-core/sarek, DRAGEN, a provider), with an optional BAM or CRAM.
 
-Every BAM then goes through a sex check (indexcov), and the pipeline runs pharmacogenomics, variant annotation, clinical screening, BAM analyses, structural variant calling and reporting: 8 workflows, 85 processes in 47 module files under `modules/local/`. A VCF given in the samplesheet needs FILTER=PASS records and GRCh38 contig names with chr; see [FILTER=PASS required](#filterpass-required) and [Contig names and gVCF input](#contig-names-and-gvcf-input). Starting from a provider's VCF: [Starting from a Vendor VCF](vcf-first.md).
+Every BAM then goes through a sex check (indexcov), and the pipeline runs pharmacogenomics, variant annotation, clinical screening, BAM analyses, structural variant calling and reporting: 8 workflows under `workflows/`, built from the processes under `modules/local/` (one folder per tool). A VCF given in the samplesheet needs FILTER=PASS records and GRCh38 contig names with chr; see [FILTER=PASS required](#filterpass-required) and [Contig names and gVCF input](#contig-names-and-gvcf-input). Starting from a provider's VCF: [Starting from a Vendor VCF](vcf-first.md).
 
 > **Nextflow is the pipeline; the scripts are single steps.** Each numbered script in `scripts/` runs one step on its own and takes its image tags from the same `versions.env` and its helpers from `scripts/lib/common.sh`; `run-all.sh` is a launcher: it writes a one-row samplesheet and starts this pipeline with `-resume`, then runs the few script-only steps you ask for and the reports. CI runs the scripts and the pipeline on the same reads and fails when their results differ (see [Bash vs Nextflow parity](#bash-vs-nextflow-parity)). The Singularity profile is untested (see [Profiles](#profiles)).
 
@@ -207,7 +207,8 @@ results/
 │   ├── vep/                # VEP VCF, and the vcfanno-enriched VCF when a score file is set
 │   ├── slivar/             # Prioritized variants + compound hets
 │   ├── clinical/           # Clinically relevant variant subset
-│   ├── cpsr/               # Cancer predisposition report
+│   ├── cpsr/               # Cancer predisposition report: CPSR's HTML and classification table, and the cDNA
+│   │                       #   read check of its P/LP rows (<sample>_cpsr_cdna_check.tsv)
 │   ├── roh/                # Runs of homozygosity
 │   ├── prs/                # Polygenic risk scores
 │   ├── ancestry/           # Ancestry: projection onto the panel (with --ancestry_ref)
@@ -215,13 +216,22 @@ results/
 │   ├── mito/               # Mitochondrial variant calls with their ClinVar and gnomAD annotation, the haplogroup
 │   │                       #   from them and haplocheck's contamination check
 │   ├── y_haplogroup/       # Y-chromosome haplogroup of male samples (Yleaf, opt-in: y_haplogroup)
+│   ├── y_str/              # <sample>_y_str.tsv, .csv and the calls VCF: Y-STR repeat counts of male samples (opt-in: y_str)
 │   ├── bloodtype/          # Blood group antigens predicted from the genome (opt-in: bloodtype)
 │   ├── lpa/                # LPA KIV-2 repeat count from read depth (opt-in: lpa)
 │   ├── chip/               # <sample>_chip.tsv, <sample>_chip_depth.tsv and Mutect2's filtered calls: clonal
 │   │                       #   haematopoiesis in 13 genes (opt-in: chip)
+│   ├── vntyper/            # <sample>_vntyper.tsv and VNtyper's run folder: the MUC1 VNTR screen (opt-in: vntyper)
+│   ├── viral/              # <sample>_viral.tsv, the coverage of each virus and of the human genome, and the viral reads BAM (opt-in: viral)
+│   ├── exomiser/           # <sample>_exomiser_top.tsv, the text summary, the HPO terms and Exomiser's own results:
+│   │                       #   variants ranked against the symptoms (--hpo, exomiser)
+│   ├── mei/                # <sample>_mei.tsv, <sample>_mei_sites.tsv, the depth table and MEGANE's VCF: mobile element insertions (opt-in: mei)
+│   ├── mosaic/             # <sample>_mocha.tsv and <sample>_mocha_summary.tsv: mosaic chromosomal changes (MoChA, opt-in: mocha)
+│   ├── locityper/          # <sample>_locityper.tsv and Locityper's work folder: genotypes of hard genes (opt-in: locityper)
 │   ├── archaic/            # Neanderthal and Denisovan share and segments (IBDmix, opt-in: archaic)
 │   ├── ancient/            # The nearest ancient groups (table and text), their info and the PCA plot (AADR, opt-in: ancient)
 │   ├── hla/                # HLA typing
+│   ├── hla_optitype/       # OptiType's HLA-A and HLA-B, and <sample>_hla_concordance.tsv against T1K (--hla_qc)
 │   ├── expansion_hunter/   # Repeat expansion calls, Stranger's annotation and, when Stranger flags RFC1, its motif count
 │   ├── telomere/           # Telomere length estimation
 │   ├── coverage/           # Coverage statistics (mosdepth)
@@ -347,7 +357,7 @@ Where a module and its script differ on purpose:
 | Mito variants (20) | extracts the chrM reads with `samtools view`; annotates the calls with `clinvar/clinvar_chr.vcf.gz` and the gnomAD chrM sites under `gnomad_mito/` when they are installed | with GATK `PrintReads`. Mutect2 applies its own read filters to either, so the calls are expected to match; CI does not compare them. Both mark possible NuMTs at the median autosomal depth from mosdepth (step 16b, or `MOSDEPTH` when `mosdepth` is in `--tools`). `MITO_VARIANTS_ANNOTATE` runs the same annotation (`bin/collect_summary.py mito-annotate`) with the files of `--mito_clinvar` and `--gnomad_mito`; without them the table names each file as not given and leaves its columns `.`. `run-all.sh` passes `--mito_clinvar` when `clinvar/clinvar_chr.vcf.gz` and its `.tbi` are installed, and `--gnomad_mito` when the gnomAD chrM sites are |
 | AnnotSV (05) | annotates step 15's duphold-filtered calls; without them, or when Manta's calls are newer, Manta's calls, and says so | `ANNOTSV` always reads `DUPHOLD_FILTER`'s output: `annotsv` in `--tools` needs `duphold` and `manta` |
 | Y haplogroup (37) | reads the sex step 16 (indexcov) infers | runs on the rows whose samplesheet sex is male, which `INDEXCOV` has checked against the reads |
-| HTML report (24) | renders every section from `bin/collect_summary.py`'s summary | `HTML_REPORT` runs the same code on the outputs of this run's steps, among them the cDNA read check of the ClinVar hits, the CYP2D6 depth check, the phased compound-het pairs, the RFC1 motif count, AnnotSV's class 4 and 5 table, the chrM annotation and step 35's HBA1/HBA2 count. The clinical filter and slivar cards show counts only, beside slivar's pairs by phase (the module gets their VCFs, not their summary tables). For every section, run `GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>` on the Nextflow output |
+| HTML report (24) | renders every section from `bin/collect_summary.py`'s summary | `HTML_REPORT` runs the same code on the outputs of this run's steps, among them the cDNA read check of the ClinVar hits, the CYP2D6 depth check, the phased compound-het pairs, the RFC1 motif count, AnnotSV's class 4 and 5 table, the chrM annotation and step 35's HBA1/HBA2 count. It also gets the VEP VCF (each ClinVar hit's gnomAD AF and rsIDs), CPSR's classification table and the cDNA read check of its P/LP rows, `ALIGN_MINIMAP2`'s read count, and the clinical filter's and slivar's summary tables. The slivar card has no compound-het variant and gene counts: the Nextflow slivar module writes no `<sample>_compound_hets.tsv`. For every section, run `GENOME_DIR=<outdir> scripts/24-html-report.sh <sample>` on the Nextflow output |
 | CNVpytor (18) | mounts each resource file over the image's data folder | copies the files into the image's `site-packages`, so it needs a writable container |
 | Cyrius (21) | runs Cyrius from the install `setup.sh --cyrius` made | the same install, given as `--cyrius_install` (see [Cyrius, opt-in](#cyrius-opt-in)) |
 
@@ -433,7 +443,7 @@ Cyrius (CYP2D6 star alleles) is under a non-commercial licence and is not in the
 
 ### CI validation scope
 
-`nextflow.yml` lints the pipeline and stub-runs every process, on the pinned Nextflow release and the newest 26.10.x, with one samplesheet row per starting point; it also checks that `T1K_BUILD` ran once for all samples, and that a VCF+BAM-only samplesheet against a reference with no `.sr.mmi` beside it finishes without building an index or aligning anything. A job that fails prints which tasks were running or waiting and uploads the Nextflow logs as the artifact `nextflow-logs-<line>`. The E2E workflow runs the pipeline with real containers on a slice of the public HG002 genome: from the FASTQ pair through alignment, the sex check and DeepVariant to the default tools but cyrius (the fixture's BAM lacks the autosomal bins Cyrius normalises on), plus clinvar and hla_typing; through the VCF+BAM entry, over several cases, with clinvar, mosdepth, delly, manta, vcfanno, roh, pharmcat, cpic, pypgx, telomere_hunter, mito_haplogroup, survivor_merge, y_haplogroup, sample_qc, prs, cram_archive and html_report (the prs case's row names a gVCF too); and the sex-check stop (see [Testing](testing.md#the-e2e-job)). It then runs the parity check above. It cannot run the tools whose databases do not fit a CI runner (vep's offline cache, cpsr) or the ones it has no data for. Before trusting results from a new installation, run the pipeline on a known sample and compare key outputs (PharmCAT star alleles, ClinVar hit counts) against expected values.
+`nextflow.yml` lints the pipeline and stub-runs every process, on the pinned Nextflow release and the newest 26.10.x, with one samplesheet row per starting point; it also checks that `T1K_BUILD` ran once for all samples, and that a VCF+BAM-only samplesheet against a reference with no `.sr.mmi` beside it finishes without building an index or aligning anything. A job that fails prints which tasks were running or waiting and uploads the Nextflow logs as the artifact `nextflow-logs-<line>`. The E2E workflow runs the pipeline with real containers on a slice of the public HG002 genome: from the FASTQ pair through alignment, the sex check and DeepVariant to the default tools but cyrius (the fixture's BAM lacks the autosomal bins Cyrius normalises on), plus clinvar and hla_typing; through the VCF+BAM entry, over several cases, with clinvar, mosdepth, delly, manta, vcfanno, roh, pharmcat, cpic, pypgx, telomere_hunter, mito_haplogroup, survivor_merge, y_haplogroup, sample_qc, prs, cram_archive and html_report (the prs case's row names a gVCF too), and duphold, expansion_hunter and cnvpytor (case `nf-wiring-2-sv-str-tools`); and the sex-check stop (see [Testing](testing.md#the-e2e-job)). It then runs the parity check above. It cannot run the tools whose databases do not fit a CI runner (vep's offline cache, cpsr) or the ones it has no data for. Before trusting results from a new installation, run the pipeline on a known sample and compare key outputs (PharmCAT star alleles, ClinVar hit counts) against expected values.
 
 ---
 

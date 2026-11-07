@@ -678,7 +678,29 @@ class Live:
         return out
 
     def run_file_allowed(self, run, rel):
-        return rel in self.run_files(run) or any(fnmatch.fnmatch(rel, g) for g in self.app.run_globs)
+        files = self.run_files(run)
+        if rel in files or any(fnmatch.fnmatch(rel, g) for g in self.app.run_globs):
+            return True
+        # The one HTML file directly in a folder the report links (cpsr/, which
+        # holds CPSR's own report): the folder request redirects to it (run_path).
+        folder = os.path.dirname(rel)
+        return bool(folder) and self.sole_html(run, folder, files) == os.path.basename(rel)
+
+    def sole_html(self, run, folder, files=None):
+        """The name of the only HTML file directly in a run folder the report links, inside the
+        run and the root; None when the folder is not linked or holds none or several."""
+        d = run["dir"]
+        if not d or folder not in (self.run_files(run) if files is None else files):
+            return None
+        p = os.path.join(d, folder)
+        try:
+            names = os.listdir(p) if os.path.isdir(p) else []
+        except OSError:
+            return None
+        top = os.path.realpath(d)
+        pages = [f for f in names if f.lower().endswith(".html") and os.path.isfile(os.path.join(p, f))
+                 and Live.inside(os.path.join(p, f), top) and Live.inside(os.path.join(p, f), self.root)]
+        return pages[0] if len(pages) == 1 else None
 
     def index_page(self):
         assets = self.cfg.assets
@@ -952,6 +974,14 @@ class BrowserHandler(BaseHTTPRequestHandler):
             self.log("file", name, rel, 404)
             return self.deny(404)
         p = os.path.join(d, rel)
+        if os.path.isdir(p) and Live.inside(p, os.path.realpath(d)) and Live.inside(p, self.live.root):
+            # The site lists no folder: a linked folder with one HTML file in it
+            # (cpsr/ with CPSR's report) opens that file.
+            page = self.live.sole_html(run, rel)
+            if page:
+                self.log("file", name, rel, 302)
+                return self.send_body(302, "text/plain", "", [("Location", "/runs/" + urllib.parse.quote(name) + "/"
+                                                               + urllib.parse.quote(rel + "/" + page))])
         if not os.path.isfile(p) or not Live.inside(p, os.path.realpath(d)) or not Live.inside(p, self.live.root):
             self.log("file", name, rel, 404)
             return self.deny(404)

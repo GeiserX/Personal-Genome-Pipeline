@@ -107,6 +107,7 @@ file	{sample}/cpic/{sample}_cpic_recommendations.txt	27	CPIC_LOOKUP	both	text	st
 file	{sample}/cpic/{sample}_phenotypes.tsv	27	CPIC_LOOKUP	both	tsv	stable	both	-
 file	{sample}/cpsr/{sample}.cpsr.grch38.classification.tsv.gz	17	CPSR	nextflow	tsv	stable	-	-
 file	{sample}/cpsr/{sample}.cpsr.grch38.html	17	CPSR	nextflow	html	stable	-	-
+file	{sample}/cpsr/{sample}_cpsr_cdna_check.tsv	17	CLINVAR_CDNA_CHECK	both	tsv	stable	-	-
 file	{sample}/cyrius/{sample}_cyp2d6.tsv	21	CYRIUS	nextflow	tsv	stable	-	-
 file	{sample}/cyrius/{sample}_cyp2d6_depth_check.tsv	21	CYRIUS	nextflow	tsv	stable	-	-
 file	{sample}/delly/{sample}_sv.vcf.gz	19	DELLY_BCF2VCF	nextflow	vcf	stable	nextflow	INFO/SVTYPE

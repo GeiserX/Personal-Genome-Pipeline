@@ -87,7 +87,8 @@ workflow PGX {
                 .filter { row -> row[1] != null }
                 .map { row -> tuple(row[1], row[2], row[3] ? row[3][0] : [], row[3] ? row[3][1] : []) },
             ch_gencode_exons,
-            Channel.value(file("${projectDir}/assets/construct_variants.tsv", checkIfExists: true))
+            Channel.value(file("${projectDir}/assets/construct_variants.tsv", checkIfExists: true)),
+            'clinvar'
         )
         ch_clinvar_cdna = CLINVAR_CDNA_CHECK.out.cdna_check
         ch_clinvar_scan = CLINVAR_CDNA_CHECK.out.cdna_scan
