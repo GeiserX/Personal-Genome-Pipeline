@@ -1458,7 +1458,7 @@ install_locityper_data() {
     # The hash holds one entry per distinct k-mer, at most one per base, so it
     # is sized to the reference's length (about 3.1G for GRCh38), never below
     # 10M. A fixed 3G made a 235 Mb reference take 36 minutes on 16 GB.
-    hsize=$(awk '{n += $2} END {n = n < 10000000 ? 10000000 : n; printf "%d", n}' "${REF_FASTA}.fai")
+    hsize=$(awk '{n += $2} END {n = n < 10000000 ? 10000000 : n; printf "%.0f", n}' "${REF_FASTA}.fai")
     if ! run_in --rw "$dir" "$LOCITYPER_IMAGE" jellyfish count --canonical --lower-count 2 --out-counter-len 2 \
         --mer-len 25 --threads "$THREADS" --size "$hsize" --output "$(cpath "${dir}/counts.jf.part")" "$REF_FASTA_C"; then
       rm -f "${dir}/counts.jf.part"
