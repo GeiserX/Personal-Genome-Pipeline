@@ -21,8 +21,11 @@ module reads G2 from the sample's VCF and puts the two together:
                                              of the G2 span
                              not_read        a no-call, a filtered G2 call, an
                                              allele other than G2 inside its
-                                             span, or a REF that is not the
-                                             GRCh38 base
+                                             span, a REF that is not the
+                                             GRCh38 base, or more than one
+                                             record calling G2 (one copy
+                                             written twice cannot be told
+                                             from two copies)
   combine(rule_line, g2)   the G1 + G2 result and its reading, from step 42's
                            APOL1 line (G0/G0, G0/G1, G1/G1) and read_g2's answer.
 
@@ -103,7 +106,7 @@ def read_g2(records, kind):
     kind is 'gvcf' (reference blocks: a base with no record has no reads) or
     'vcf' (variant calls only). Returns {status, copies, gq, text}; copies is
     None unless status is called or no_call_record."""
-    copies, covered, gqs, problems, seen = 0, set(), [], [], False
+    copies, covered, gqs, problems, seen, g2_records = 0, set(), [], [], False, 0
     for r in records:
         if not overlaps(r):
             continue
@@ -145,6 +148,13 @@ def read_g2(records, kind):
                 problems.append(f"an allele other than G2 inside its span ({r[0]}:{pos} {ref}>{a})")
                 break
         else:
+            if n:
+                g2_records += 1
+                if g2_records > 1:
+                    # Two records of the one deletion (say a left-aligned and a shifted copy of
+                    # the same call) cannot be told from two G2 copies.
+                    problems.append("more than one record calls the G2 deletion")
+                    break
             copies += n
             covered.update(range(pos, record_end(r) + 1))
             gqs.append(fmt.get("GQ", "."))
@@ -160,9 +170,7 @@ def read_g2(records, kind):
                 "text": "G2 (rs71785313): the reference over the whole deletion span, no G2 copy."}
     if kind == "vcf" and not seen:
         return {"status": "no_call_record", "copies": 0, "gq": ".",
-                "text": "G2 (rs71785313): no G2 deletion among the VCF's calls. A VCF without reference "
-                        "blocks cannot tell a reference base from a position with no reads, so this rests "
-                        "on the absence of a call."}
+                "text": "G2 (rs71785313): no G2 deletion among the VCF's calls."}
     return {"status": "not_covered", "copies": None, "gq": gq,
             "text": "G2 (rs71785313) not read: no genotype over part of the deletion span."}
 

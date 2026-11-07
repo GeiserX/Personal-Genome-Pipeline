@@ -11,7 +11,8 @@ Checks:
      reference block over the span gives 0 copies, called, with its GQ; a
      variant-only VCF with no record gives no_call_record; a gVCF with no record
      gives not_covered; a no-call, a filtered G2 call, an SNV inside the span, a
-     5-base deletion and a REF that is not GRCh38 give not_read; a record outside
+     5-base deletion, a REF that is not GRCh38 and two het records of the one
+     deletion give not_read; a record outside
      the span is skipped; control: a 6-base deletion just outside the span is not G2;
   3. combine: every G1 x G2 count gives its label and risk-copy reading; three risk
      copies are not read; a G1 rule not called is not read, unless G2 has two copies
@@ -80,6 +81,9 @@ def read_checks():
         for gt, n in (("0/1", 1), ("1|1", 2)):
             g = m.read_g2([rec(p, r, a, gt)], "vcf")
             check(f"2. {name} G2 {gt}: {n} copies", (g["status"], g["copies"]) == ("called", n), g)
+    g = m.read_g2([rec(*LEFT, "0/1"), rec(*RIGHT, "0/1")], "vcf")
+    check("two het records of the one deletion (left-aligned and shifted): not read, never two copies",
+          (g["status"], g["copies"]) == ("not_read", None) and "more than one record" in g["text"], g)
     g = m.read_g2([BLOCK], "gvcf")
     check("a gVCF reference block over the span: 0 copies, called, its GQ",
           (g["status"], g["copies"], g["gq"]) == ("called", 0, "50"), g)
