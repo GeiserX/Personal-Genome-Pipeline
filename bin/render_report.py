@@ -1445,7 +1445,8 @@ def text_report(s):
     m = s["manifest"]
     if m:
         commit = next((r[2] for r in m if r[0] == "run" and r[1] == "git_commit"), "unknown")
-        w(f"Run manifest: run_manifest.tsv (pipeline commit {commit}, "
+        release = next((r[2] for r in m if r[0] == "run" and r[1] == "pipeline_version"), None)
+        w(f"Run manifest: run_manifest.tsv ({f'OwnGenome {release}, ' if release else ''}pipeline commit {commit}, "
           f"{sum(1 for r in m if r[0] == 'image')} images)")
     w("=" * 80)
     w("  DISCLAIMER: This is NOT a clinical report. Discuss findings with a")
@@ -3134,6 +3135,8 @@ def html_page(s, parts, index=None):
     S = s["sections"]
     m = s["manifest"]
     commit = next((r[2] for r in m if r[0] == "run" and r[1] == "git_commit"), None) if m else None
+    # The OwnGenome release the run declared (nextflow.config's manifest.version), when the manifest records it.
+    release = next((r[2] for r in m if r[0] == "run" and r[1] == "pipeline_version"), None) if m else None
     db = s["databases"]
     ns = s.get("new_since") or {}
     changed = set(ns.get("sections") or [])
@@ -3180,7 +3183,8 @@ def html_page(s, parts, index=None):
            f"    Sample: <strong>{E(s['sample'])}</strong> &nbsp;|&nbsp; Generated: {E(s['generated_utc'])}"
            + (f" &nbsp;|&nbsp; Latest run: {E(s['run']['started_utc'])}" if s["run"]["started_utc"] else ""),
            "  </div>", '  <div class="meta">',
-           f"    Pipeline commit: {E(commit or 'unknown')} &nbsp;|&nbsp; ClinVar file: {E(db['clinvar_release'] or 'unknown')}"
+           (f"    OwnGenome release: {E(release)} &nbsp;|&nbsp;" if release else "")
+           + f"    Pipeline commit: {E(commit or 'unknown')} &nbsp;|&nbsp; ClinVar file: {E(db['clinvar_release'] or 'unknown')}"
            f" &nbsp;|&nbsp; ClinVar in CPSR's bundle: {E(db['cpsr_clinvar_release'] or 'unknown')}"
            f" &nbsp;|&nbsp; HLA database: {E(db['hla_database'] or 'unknown')}",
            "  </div>"] + ([f'  <div class="meta">{E(recheck_line(s["recheck"]))}</div>'] if s.get("recheck") else []) + [

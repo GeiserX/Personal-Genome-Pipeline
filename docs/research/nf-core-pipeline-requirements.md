@@ -18,7 +18,8 @@ The report below is a research snapshot. This table says which of its requiremen
 | Parameter schema validated at run time (nf-schema plugin) | unmet | no `plugins` block; `nextflow_schema.json` is draft-07 and only syntax-checked in CI |
 | `modules.config` for publishing, `meta.yml` per module, `modules.json` | unmet | every module hard-codes its `publishDir`; all modules are local |
 | nf-test tests | unmet | no `nf-test.config`; tests are the stub run, the e2e job and scripts under `tests/` |
-| `CHANGELOG.md` and `CITATIONS.md` | unmet | release notes live in GitHub releases |
+| `CHANGELOG.md` | met | `CHANGELOG.md` links each release's notes; from 1.0.0 they are hand-written in `docs/releases/` and `scripts/ci/check-release.sh` checks them |
+| `CITATIONS.md` | unmet | no `CITATIONS.md` |
 | Zero failures in `nf-core pipelines lint` | unmet | no lint job, and the repo is not built from the template |
 | Built from the nf-core template, `master`/`dev`/`TEMPLATE` branches | not planned | the pipeline predates the template; one `main` branch |
 | MIT license | not planned | GPL-3.0-or-later |
