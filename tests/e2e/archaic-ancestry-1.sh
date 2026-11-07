@@ -4,15 +4,17 @@
 #   - setup.sh --archaic builds the table for GRCh37 chr22 only
 #     (ARCHAIC_REGIONS): the three archaic chr22 files from MPI-EVA, checked
 #     against their pinned md5 lists, and the 1000 Genomes sites, lifted to
-#     GRCh38, every row inside the 1000 Genomes GRCh38 strict mask, and each
-#     archaic call outside its genome's FilterBed, in a segmental duplication
-#     or within 5 bp of a 1000 Genomes indel marked masked (code 10 to 12),
-#     which step 43 hands IBDmix as its mask;
+#     GRCh38; every archaic call outside its genome's FilterBed, outside the
+#     1000 Genomes GRCh38 strict mask, in a segmental duplication or within
+#     5 bp of a 1000 Genomes indel is marked masked (code 10 to 12), which
+#     step 43 hands IBDmix as its mask;
 #   - HG002 (GIAB's v4.2.1 genotypes on chr22): the step runs, the shares are
 #     numbers, the analysed span is most of the chromosome, and the
-#     Neanderthal total sits inside the range Chen et al.'s own released
-#     calls give Europeans on chr22 (the check that found the unmasked table
-#     calling about three times too much);
+#     Neanderthal total lies between the lowest value (51 kb) of the range
+#     Chen et al.'s own released calls give Europeans on chr22 and a 1,200 kb
+#     regression guard (the guard that catches the unmasked table calling
+#     about three times too much; the whole-genome check decides whether the
+#     share is in range);
 #   - PLANT, HG002 with one chromosome over chr22:28-29 Mb (GRCh38) copied
 #     from Vindija 33.19 (0/1 wherever Vindija carries the ALT, no record
 #     where it does not): a Neanderthal segment covers 70% of that window or
@@ -75,20 +77,26 @@ check "every row is on GRCh38 chr22" \
   bash -c 'gzip -dc "$1" | awk -F"\t" "NR > 1 && \$1 != \"chr22\" {bad = 1} END {exit bad}"' _ "$TABLE"
 check_ge "rows where Vindija carries the ALT inside the plant window" \
   "$(gzip -dc "$TABLE" | awk -F'\t' -v f="$W_FROM" -v t="$W_TO" 'NR > 1 && $2 >= f && $2 < t && ($6 == 1 || $6 == 2) {n++} END {print n + 0}')" 100
-# The masks: every FilterBed of the chromosome is installed, and no table row
-# sits outside the 1000 Genomes GRCh38 strict mask. Without the masks the
-# table carries the sites the method cannot read, and this check goes red.
+# The masks: every FilterBed of the chromosome is installed, and every table
+# row outside the 1000 Genomes GRCh38 strict mask is kept with its archaic
+# calls marked masked (10 to 12), none left as 0, 1 or 2. A table that drops
+# those rows has no row outside the mask; one that keeps them unmarked has
+# calls 0 to 2 there. Either way this goes red.
 for f in Altai Vindija33.19 Denisova; do
   check "the FilterBed of ${f} chr22 is installed" test -s "${DATA}/mask/${f}.chr22.bed.gz"
 done
 check "the GRCh38 strict mask is installed" test -s "${DATA}/strict_GRCh38.bed"
-OUTSIDE=$(gzip -dc "$TABLE" | awk -F'\t' -v m="${DATA}/strict_GRCh38.bed" '
+gzip -dc "$TABLE" | awk -F'\t' -v m="${DATA}/strict_GRCh38.bed" '
   BEGIN { while ((getline l < m) > 0) { split(l, c, "\t"); if (c[1] == "chr22") { s[++n] = c[2]; e[n] = c[3] } } }
   NR > 1 { p = $2 - 1
            while (i < n && e[i + 1] <= p) i++
-           if (!(i < n && s[i + 1] <= p && p < e[i + 1])) bad++ }
-  END { print bad + 0 }')
-check_eq "no table row is outside the GRCh38 strict mask" "$OUTSIDE" 0
+           if (!(i < n && s[i + 1] <= p && p < e[i + 1])) {
+             out++
+             for (k = 5; k <= 7; k++) if ($k ~ /^(0|1|2)$/) open++ } }
+  END { print out + 0, open + 0 }' > "${T}/strict-counts.txt"
+read -r OUT_ROWS OUT_OPEN < "${T}/strict-counts.txt"
+check_ge "table rows outside the GRCh38 strict mask are kept" "$OUT_ROWS" 7000
+check_eq "none of them has an unmarked archaic call" "$OUT_OPEN" 0
 # The excluded regions: segmental duplications and the 5 bp around a 1000
 # Genomes indel. GRCh37 coordinates, so the test lifts nothing: it checks the
 # GRCh37 positions of the rejected sites are gone from the GRCh37 input, by
@@ -115,15 +123,15 @@ check_ge "analysed span (bp) covers most of chr22" "$(kv "$H" analysed_bp)" 3000
 # on the 1000 Genomes phase 3 genomes (LOD 4, union of the Altai and Vindija
 # segments of 50 kb or more). Over the 497 people of CEU, TSI, GBR, FIN and
 # IBS, chr22 gives 51 kb at the lowest, 153 kb at the 5th percentile, 541 kb
-# at the median, 1,132 kb at the 95th and 1,716 kb at the highest. The gate is
-# that spread: a run of this step before the masks landed gave HG002 1,748 kb
-# on chr22, more than every one of those 497 people. Where HG002 sits inside
-# the spread is printed, not gated: one person's chromosome is one draw, and
-# the published calls come from imputed low-coverage genotypes while HG002 is
-# a high-coverage benchmark.
+# at the median, 1,132 kb at the 95th and 1,716 kb at the highest. One
+# chromosome of one person varies widely, so the gate is a regression guard,
+# not a claim about the range: 51 kb to 1,200 kb. Runs before the strict-mask
+# rows were kept marked gave 1,748 kb (no masks) and 1,177 to 1,190 kb (masked
+# codes, rows dropped); the marked table gave 1,138 kb. The published figures
+# are printed beside the measured value, and the whole-genome check decides.
 NEA=$(kv "$H" neanderthal_bp)
 check_ge "HG002's chr22 Neanderthal total is not under the published lowest (51 kb)" "${NEA:-0}" 51000
-check "and not over the published highest (1,716 kb)" test "${NEA:-0}" -le 1716000
+check "and not over the chr22 regression guard (1,200 kb)" test "${NEA:-0}" -le 1200000
 echo "  chr22 Neanderthal bp: ${NEA} (published EUR: lowest 51000, p5 153000, median 541000, p95 1132000, highest 1716000)"
 printf '#### Step 43 HG002 chr22 Neanderthal\n\n%s bp. Published EUR calls of Chen et al. on chr22: lowest 51000, median 541000, 95th 1132000, highest 1716000 bp.\n\n' \
   "${NEA:-0}" >> "$E2E_NOTES"

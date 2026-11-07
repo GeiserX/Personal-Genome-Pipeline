@@ -9,6 +9,8 @@ Checks:
      site no archaic genome was called at, or only called as reference with
      no modern variation, is left out; a position given twice by 1000 Genomes
      is left out;
+  1b. strict: a lifted row outside the GRCh38 strict mask is kept once per
+     position with every archaic call marked masked (9 stays 9), not dropped;
   2. genotypes: a masked archaic call (10 to 12) goes to IBDmix as its ALT
      count and its position into that genome's mask file; the stand-in
      columns carry the population's ALT count; your column is your ALT
@@ -162,6 +164,30 @@ write(f"{TMP}/other.bed", "7\t50\t150\n")
 r = run(*common, "--mask", f"Altai={TMP}/other.bed", "--out", f"{TMP}/x.vcf")
 check("a mask with no interval on the chromosome stops the build, instead of emptying the table",
       r.returncode == 1 and "no interval" in r.stderr, r.stderr)
+
+# --- 1b. strict: rows outside the GRCh38 strict mask are marked, not dropped -------
+# Lifted rows (13 columns, no header). Strict mask 1-based 101-300 on chr22:
+# 100 is outside, 150 and 300 inside, 301 outside. A duplicate position keeps
+# the first row. Codes 0, 1, 2 outside become 10, 11, 12; 9 stays 9; a code
+# already masked is not marked twice.
+rows = ["chr22\t100\tA\tG\t2\t0\t9\t0.5\t0\t0\t0\t0\t0",
+        "chr22\t150\tA\tG\t1\t1\t1\t0.5\t0\t0\t0\t0\t0",
+        "chr22\t301\tC\tT\t0\t10\t12\t0.5\t0\t0\t0\t0\t0",
+        "chr22\t301\tC\tT\t2\t2\t2\t0.5\t0\t0\t0\t0\t0",
+        "chr22\t300\tG\tA\t0\t0\t0\t0.5\t0\t0\t0\t0\t0"]
+write(f"{TMP}/lifted.tsv", "\n".join(rows) + "\n")
+write(f"{TMP}/strict.bed", "chr22\t100\t300\n")
+r = run("strict", "--chrom", "22", "--strict", f"{TMP}/strict.bed", "--rows", f"{TMP}/lifted.tsv", "--out", f"{TMP}/marked.tsv")
+check("strict exits 0", r.returncode == 0, r.stderr)
+got = [l.rstrip("\n").split("\t") for l in open(f"{TMP}/marked.tsv")]
+by = {int(c[1]): c[4:7] for c in got}
+check("every position is kept, once", [int(c[1]) for c in got] == [100, 150, 301, 300], [c[1] for c in got])
+check("outside the strict mask 2, 0 and unknown become 12, 10 and 9", by[100] == ["12", "10", "9"], by.get(100))
+check("inside the strict mask the calls are untouched (last base 300 too)", by[150] == ["1", "1", "1"] and by[300] == ["0", "0", "0"], (by.get(150), by.get(300)))
+check("a masked call stays as it is, and the first of a duplicate wins", by[301] == ["10", "10", "12"], by.get(301))
+write(f"{TMP}/strict_other.bed", "chr21\t0\t10\n")
+r = run("strict", "--chrom", "22", "--strict", f"{TMP}/strict_other.bed", "--rows", f"{TMP}/lifted.tsv", "--out", f"{TMP}/marked2.tsv")
+check("a strict mask with no interval on the chromosome stops the step", r.returncode != 0 and "no interval" in r.stderr, r.stderr)
 
 # --- 2. genotypes ------------------------------------------------------------------
 tdir = f"{TMP}/table"
