@@ -30,7 +30,7 @@ A deletion in a repeat can be written at several positions. A record is G2
 when applying its allele to GRCh38_CONTEXT gives the same sequence as G2, so a
 left-aligned and a right-shifted record both count. The pinned dbSNP record,
 DBSNP, is what NCBI's Variation API gave for rs71785313 on 2026-11-06 (the VCF
-fields of NC_000022.11:36265995:ATAATTATAA:ATAA); tests/e2e/genotype-rules-2-g2-dbsnp.sh
+fields of NC_000022.11:36265995:ATAATTATAA:ATAA); tests/e2e/genotype-rules-2-g2.sh
 compares it with dbSNP's VCF of the build versions.env pins, and
 tests/test_genotype_rules_indels.py checks the marker against it and against
 GRCh38_CONTEXT. Standard library only.
@@ -167,22 +167,29 @@ def read_g2(records, kind):
             "text": "G2 (rs71785313) not read: no genotype over part of the deletion span."}
 
 
+TWO_COPIES = ("Two APOL1 risk copies ({label}): the high-risk genotype of Genovese 2010, which went with "
+              "focal segmental glomerulosclerosis and hypertension-attributed kidney failure in African "
+              "Americans. A risk factor, not a diagnosis.")
+
+
 def combine(line, g2):
     """{result, reading} of G1 and G2 together, from step 42's APOL1 line and read_g2's answer."""
     g1 = G1_COPIES.get(line.get("result")) if line.get("status") == "called" else None
+    if g1 is None and g2["status"] == "called" and g2["copies"] == 2:
+        # Two G2 copies fill both copies of the gene: G2/G2 whatever the G1 sites read.
+        return {"result": "G2/G2", "reading": TWO_COPIES.format(label="G2/G2") + " The G1 sites were not read, "
+                "but two G2 copies leave no copy for G1."}
     if g1 is None:
         return {"result": ".", "reading": "Not read: the G1 sites of the APOL1 rule were not read."}
     if g2["copies"] is None:
-        return {"result": ".", "reading": g2["text"] + " The G1 result above stands on its own."}
+        return {"result": ".", "reading": "The G1 result above stands on its own."}
     c = g2["copies"]
     if g1 + c > 2:
         return {"result": ".", "reading": f"{g1} G1 and {c} G2 copies do not fit two copies of the gene "
                                           "(G1 and G2 never share a copy): not read. Check the calls."}
     label = "/".join(["G0"] * (2 - g1 - c) + ["G1"] * g1 + ["G2"] * c)
     if g1 + c == 2:
-        reading = (f"Two APOL1 risk copies ({label}): the high-risk genotype of Genovese 2010, which went with "
-                   "focal segmental glomerulosclerosis and hypertension-attributed kidney failure in African "
-                   "Americans. A risk factor, not a diagnosis.")
+        reading = TWO_COPIES.format(label=label)
     elif g1 + c == 1:
         reading = (f"One APOL1 risk copy ({label}): one copy did not raise the risk in Genovese 2010 "
                    "(a recessive pattern).")

@@ -14,8 +14,9 @@ Checks:
      5-base deletion and a REF that is not GRCh38 give not_read; a record outside
      the span is skipped; control: a 6-base deletion just outside the span is not G2;
   3. combine: every G1 x G2 count gives its label and risk-copy reading; three risk
-     copies are not read; a G1 rule not called is not read; G2 not read keeps the G1
-     result alone; no_call_record says the count rests on the absence of a call;
+     copies are not read; a G1 rule not called is not read, unless G2 has two copies
+     (G2/G2); G2 not read keeps the G1 result alone; a '.' result renders 'not read';
+     no_call_record says the count rests on the absence of a call;
   4. collect_summary reads G2 from the sample's gVCF (bgzipped with a .tbi, and
      plain gzip without one) or its VCF, and puts it on the APOL1 rule line only;
      render_report shows "With G2" in the HTML and the text report; control: the
@@ -33,6 +34,7 @@ import tempfile
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "bin"))
 import genotype_rules_indels as m  # noqa: E402
+import render_report as rr  # noqa: E402
 
 FAILS = 0
 
@@ -119,9 +121,16 @@ def combine_checks():
           res)
     res = m.combine({"status": "not_covered", "result": "."}, {"status": "called", "copies": 1, "text": "t"})
     check("the G1 rule not called: not read", res["result"] == ".", res)
+    res = m.combine({"status": "not_covered", "result": "."}, {"status": "called", "copies": 2, "text": "t"})
+    check("the G1 rule not called with two G2 copies: G2/G2, two risk copies",
+          res["result"] == "G2/G2" and "Two APOL1 risk copies" in res["reading"], res)
     res = m.combine({"status": "called", "result": "G0/G1"}, {"status": "not_read", "copies": None, "text": "G2 x."})
-    check("G2 not read: the G1 result stands alone", res["result"] == "." and "stands on its own" in res["reading"],
-          res)
+    check("G2 not read: the G1 result stands alone, without repeating G2's text",
+          res["result"] == "." and "stands on its own" in res["reading"] and "G2 x." not in res["reading"], res)
+    for res in (m.combine({"status": "called", "result": "G1/G1"}, {"status": "called", "copies": 1, "text": "t"}),
+                m.combine({"status": "not_covered", "result": "."}, {"status": "called", "copies": 1, "text": "t"})):
+        shown = rr.g2_result({"g2": dict(res, status="called", text="t")})
+        check(f"render_report: a '.' result shows 'not read' ({res['reading'][:30]})", shown == "not read", shown)
     res = m.combine({"status": "called", "result": "G0/G1"}, m.read_g2([], "vcf"))
     check("no_call_record: the label says no G2 call and the reading why",
           res["result"] == "G0/G1 (no G2 call)" and "no reference blocks" in res["reading"], res)

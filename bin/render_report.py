@@ -657,7 +657,7 @@ def traits_text(d, sample):
             out.append(f"    {r['trait']} ({r['gene']} {r['rsids'].replace(',', ', ')}): {rule_result(r)}. "
                        f"{r['reading']} (PMID {r['pmids']})")
             if r.get("g2"):
-                out.append(f"      With G2 (rs71785313): {g2_result(r)}. {r['g2']['reading']} {r['g2']['text']}")
+                out.append(f"      With G2 (rs71785313): {g2_result(r)}. {r['g2']['text']} {r['g2']['reading']}")
     if d.get("apoe"):
         out.append(f"  {APOE_WARNING}")
         for r in d["apoe"]:
@@ -681,7 +681,7 @@ def g2_result(r):
     g2 = r.get("g2")
     if not g2:
         return None
-    return g2["result"] if g2["result"] != "." else "G2 " + g2["status"].replace("_", " ")
+    return g2["result"] if g2["result"] != "." else "not read"
 
 
 def g2_result_html(r):
