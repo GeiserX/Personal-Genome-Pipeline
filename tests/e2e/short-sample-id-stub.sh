@@ -47,7 +47,9 @@ check_eq "S1 with TELOMERE_HUNTER failing: the run exits 0" "$RC" 0
 O="${DIR}/out/S1"
 check "CPSR's HTML is named after the sample" test -e "${O}/cpsr/S1.cpsr.grch38.html"
 check "CPSR's classification is named after the sample" test -e "${O}/cpsr/S1.cpsr.grch38.classification.tsv.gz"
-check "no CPSR file is named after the padded id" test -z "$(find "${O}/cpsr" -name 'S1_cpsr*' 2>/dev/null)"
+# CPSR's own files under the padded id would read S1_cpsr.cpsr.grch38.*; the read check's
+# S1_cpsr_cdna_check.tsv is named after the sample on purpose and must not match.
+check "no CPSR file is named after the padded id" test -z "$(find "${O}/cpsr" -name 'S1_cpsr.*' 2>/dev/null)"
 CPSR_SH=$(find "${DIR}/work" -name .command.sh -exec grep -l 'cpsr_sample_id' {} + 2>/dev/null | head -n 1)
 check "the CPSR task ran bin/cpsr_sample_id" test -n "$CPSR_SH"
 check "the planted failure ran (TelomereHunter's task failed)" has 'TELOMERE_HUNTER.*(Error is ignored|terminated with an error)' "$LOG"
