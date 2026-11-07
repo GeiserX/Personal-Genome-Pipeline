@@ -437,11 +437,39 @@ jobs:
           echo "$cpu"
           echo "Runner: ${cpu}" >> "$GITHUB_STEP_SUMMARY"
 
+      # Some runners come with a 72 GB root disk and a second, blank NVMe
+      # disk: 220.7 GB with no partition and no file system on an
+      # ubuntu-26.04 runner (probe run 42037810203 on the geiresx fork); the
+      # 145 GB runners have none. On a 72 GB runner a heavy leg ran out of
+      # disk with 16 GB free before its cases (run 42018365546, shard 1),
+      # where the same cases need about 26 GB (run 41995719742, shard 1).
+      # A blank disk is formatted and mounted at /mnt, where the steps below
+      # put the work area and Docker's images.
+      - name: Mount a spare disk
+        run: |
+          if mountpoint -q /mnt; then echo "/mnt is already a mount"; df -h /mnt; exit 0; fi
+          disk=""
+          while read -r name type; do
+            [ "$type" = disk ] || continue
+            # Blank: no partition, no file system, nothing mounted.
+            [ "$(lsblk -nro NAME "$name" | wc -l)" -eq 1 ] || continue
+            [ -z "$(lsblk -ndro FSTYPE,MOUNTPOINT "$name" | tr -d ' ')" ] || continue
+            disk=$name
+          done < <(lsblk -dnpo NAME,TYPE)
+          if [ -z "$disk" ]; then echo "No blank disk on this runner"; exit 0; fi
+          echo "Formatting ${disk} ($(lsblk -ndo SIZE "$disk")) and mounting it at /mnt"
+          sudo mkfs.ext4 -q -F -E nodiscard "$disk"
+          sudo mkdir -p /mnt
+          sudo mount -o noatime "$disk" /mnt
+          df -h / /mnt
+          echo "Spare disk: ${disk}, $(df -h --output=avail /mnt | tail -1 | tr -d ' ') free at /mnt" >> "$GITHUB_STEP_SUMMARY"
+
       # Before anything is pulled or restored: the legs ran out of disk on
       # 2026-11-04 with only part of the preinstalled software removed.
       - uses: ./.github/actions/free-disk
 
-      # Images go to /var/lib/docker on /; the work area goes to whichever of
+      # Images go to /var/lib/docker on / (on /mnt when /mnt is a spare
+      # disk, see "Docker image store"); the work area goes to whichever of
       # / and /mnt has more room, so the two do not compete for one disk. The
       # base outputs unpack only under the work area they were packed in, so
       # a shard leg takes the base leg's choice when its artifact arrives.
@@ -479,21 +507,31 @@ jobs:
       # 72 GB runner (48 GB free) ran out in the pre-pull (run 41938436657,
       # shards 2 and 5). Runs before any image is restored or pulled; the
       # images already in the containerd store are pruned first, as overlay2
-      # would not see them.
+      # would not see them. When /mnt is a spare disk with more room than /,
+      # Docker's data root moves there too.
       - name: Docker image store
         run: |
+          change=.
           if docker info -f '{{json .DriverStatus}}' | grep -q io.containerd.snapshotter; then
+            change+=' | .features["containerd-snapshotter"] = false'
+          fi
+          if mountpoint -q /mnt && [ "$(df --output=avail -k /mnt | tail -1)" -gt "$(df --output=avail -k / | tail -1)" ]; then
+            change+=' | .["data-root"] = "/mnt/docker"'
+          fi
+          if [ "$change" != . ]; then
             docker image prune -a -f > /dev/null
             f=/etc/docker/daemon.json
-            { [ -s "$f" ] && sudo cat "$f" || echo '{}'; } \
-              | jq '.features["containerd-snapshotter"] = false' | sudo tee "${f}.new" > /dev/null
+            { [ -s "$f" ] && sudo cat "$f" || echo '{}'; } | jq "$change" | sudo tee "${f}.new" > /dev/null
             sudo mv "${f}.new" "$f"
             sudo systemctl restart docker
           fi
-          driver=$(docker info -f '{{.Driver}}')
-          echo "Docker $(docker version -f '{{.Server.Version}}'), storage driver ${driver}" | tee -a "$GITHUB_STEP_SUMMARY"
+          driver=$(docker info -f '{{.Driver}}') root=$(docker info -f '{{.DockerRootDir}}')
+          echo "Docker $(docker version -f '{{.Server.Version}}'), storage driver ${driver}, data root ${root}" | tee -a "$GITHUB_STEP_SUMMARY"
           [ "$driver" = overlay2 ] || { echo "::error::Docker's storage driver is ${driver}, not overlay2."; exit 1; }
-          df -h /
+          if mountpoint -q /mnt && [[ "$change" == *data-root* ]] && [ "$root" != /mnt/docker ]; then
+            echo "::error::Docker's data root is ${root}, not /mnt/docker on the spare disk."; exit 1
+          fi
+          df -h / /mnt
 
       # Images are cached in four entries, one per group of
       # `scripts/ci/e2e-run.sh --image-groups`, each keyed on its own image

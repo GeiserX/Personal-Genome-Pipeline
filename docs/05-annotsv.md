@@ -112,6 +112,7 @@ AnnotSV gives class 4 or 5 to some calls that are not a rare deletion: a call on
 | `AnnotSV_class` | AnnotSV's own class (4 or 5). `ACMG_class` is the class after the checks below: 3 when one of them moved the call, else AnnotSV's |
 | `Depth_support` | for a deletion or duplication, whether its read depth shows the change (below); `.` for other types |
 | `Rule`, `Rule_detail` | each check that fired (`no_depth_support`, `tandem_repeat`, `ig_tr_locus`, `mhc`, `gene_alias`) and why, in words |
+| `FORMAT`, `<sample>` | the last two columns, as AnnotSV's input has them: the caller's FORMAT keys and the sample's values, with `GT` and, when the caller phased the call, `PS`. The reports pair a deletion with a small variant of the same gene by that phase (in trans when both sit in one phase set on different copies), and a deletion genotyped `0/0` pairs with nothing. An input without FORMAT, or a table with no class 4 or 5 SV, writes neither. A sample named like a column of this table stops the step with an error, since its `GT` and `PS` would be lost |
 
 ### Calls the table moves to class 3
 

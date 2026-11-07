@@ -6,9 +6,10 @@
     scripts/43-archaic.sh:
       ARCHAIC_GENOTYPES  bin/archaic_report.py genotypes: IBDmix's genotype file of
                          each chromosome (the archaic genomes, the sample's VCF and
-                         the 1000 Genomes stand-ins of --archaic_pop)
+                         the 1000 Genomes stand-ins of --archaic_pop), and each
+                         archaic genome's mask
       ARCHAIC_IBDMIX     IBDmix against each archaic genome, LOD 4, the options of
-                         Chen et al. 2020
+                         Chen et al. 2020, with that genome's mask
       ARCHAIC_REPORT     bin/archaic_report.py report: the segments of 50 kb or
                          more, the share, the ten longest with their genes
 
@@ -70,7 +71,7 @@ process ARCHAIC_IBDMIX {
 
     script:
     // One chromosome after another, the three archaic genomes of each; the
-    // same options as scripts/43-archaic.sh.
+    // same options and per-genome mask (-r) as scripts/43-archaic.sh.
     """
     mkdir ibdmix
     cp ${gt}/spans.tsv ibdmix/spans.tsv
@@ -78,7 +79,7 @@ process ARCHAIC_IBDMIX {
         c=\$(basename "\$f" .gt.gz)
         gzip -dc "\$f" > "\$c.gt"
         for a in Altai Vindija Denisova; do
-            ibdmix -g "\$c.gt" -s ${gt}/samples.txt -n "\$a" -o "ibdmix/\$c.\$a.txt" \\
+            ibdmix -g "\$c.gt" -s ${gt}/samples.txt -n "\$a" -r "${gt}/\$c.\$a.mask.bed" -o "ibdmix/\$c.\$a.txt" \\
                 -d 4 -m 1 -a 0.01 -e 0.002 -c 2
         done
         rm -f "\$c.gt"
