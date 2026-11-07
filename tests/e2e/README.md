@@ -29,6 +29,8 @@ parallel jobs by `scripts/ci/e2e-shards.sh`, and each case runs at most once.
 - `lib.sh` holds the shared checks (`check`, `check_eq`, `check_ge`, `has`,
   `lacks`, `vcf_count`, ...). Every check is a count, a column or a content
   match, never an exit code alone.
+- A case gets 3600 seconds (`CASE_TIMEOUT` of `scripts/ci/e2e-run.sh`). One
+  that needs longer says so in a line `# case-timeout: SECONDS` of its file.
 - `bin/docker` lowers `--cpus` to what the runner has; everything else passes
   through to the real Docker.
 

@@ -65,7 +65,7 @@ if [ "${1:-}" = --download ]; then
 fi
 
 if ! measure_on; then
-  echo "the 1000 Genomes panel measurement runs on an E2E run dispatched on a branch other than main, or with PGSC_MEASURE=1."
+  NO_CHECKS_REASON="the 1000 Genomes panel measurement runs on an E2E run dispatched on a branch other than main, or with PGSC_MEASURE=1"
   finish
 fi
 command -v nextflow >/dev/null || { fail "nextflow is not on PATH"; finish; }

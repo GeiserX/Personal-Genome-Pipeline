@@ -3,9 +3,16 @@
 # where bin/annotsv_postfilter.py overrides AnnotSV's class 4 or 5.
 #
 # Usage: scripts/ci/build-sv-rule-regions.sh [OUT]   (default: assets/sv_rule_regions.tsv)
+#        scripts/ci/build-sv-rule-regions.sh --check [FILE]   exit 1 when FILE
+#            (default: assets/sv_rule_regions.tsv) is not what the downloads
+#            give, byte for byte, and show the first lines that differ
+#        scripts/ci/build-sv-rule-regions.sh --list   the downloads, one
+#            "NAME URL SHA256" per line
 #
 # Downloads four pinned files (about 145 MB, each checked against its sha256)
-# into a temporary folder, writes OUT and deletes the downloads:
+# into a temporary folder, or reads them from SV_RULE_CACHE when that folder
+# holds them with the right sha256 (and keeps what it downloads there), writes
+# OUT and deletes the downloads:
 #
 #   TRExplorer v2.1's GRCh38 tandem repeat catalog (broadinstitute/trexplorer-catalog)
 #   GENCODE 50's basic annotation (the release scripts/lib/common.sh pins)
@@ -33,7 +40,12 @@
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
-OUT=${1:-${REPO}/assets/sv_rule_regions.tsv}
+CHECK=""
+case "${1:-}" in
+  --list) ;;
+  --check) CHECK=${2:-${REPO}/assets/sv_rule_regions.tsv} ;;
+  *) OUT=${1:-${REPO}/assets/sv_rule_regions.tsv} ;;
+esac
 
 TRX_URL=https://github.com/broadinstitute/trexplorer-catalog/releases/download/v2.1/TRExplorer.repeat_catalog_v2.1.hg38.1_to_1000bp_motifs.bed.gz
 TRX_SHA256=4eb0fbbd36d40a801c2d764cdda247fea8edfae1604087526459064624ec1417
@@ -44,22 +56,41 @@ HGNC_SHA256=8bf6f686e640dbc864a346484626953621b0500d900d26cd085a35c2782d725d
 REGIONS_URL=https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/GCA_000001405.15_GRCh38_assembly_regions.txt
 REGIONS_SHA256=6b91d2c7961a322936db8fd09b7fb4a9143a590882f28c0a628a4ef26897f6c7
 
+if [ "${1:-}" = --list ]; then
+  echo "trx.bed.gz ${TRX_URL} ${TRX_SHA256}"
+  echo "gencode.gtf.gz ${GENCODE_URL} ${GENCODE_SHA256}"
+  echo "hgnc.txt ${HGNC_URL} ${HGNC_SHA256}"
+  echo "regions.txt ${REGIONS_URL} ${REGIONS_SHA256}"
+  exit 0
+fi
+
 sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
 }
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
+[ -z "$CHECK" ] || OUT="${WORK}/rebuilt.tsv"
 
-# get NAME URL SHA256: download URL to WORK/NAME and stop unless it matches.
+# get NAME URL SHA256: WORK/NAME from SV_RULE_CACHE when it matches, else
+# downloaded; stop unless it matches.
 get() {
+  local cached="${SV_RULE_CACHE:-}/$1" got
+  if [ -n "${SV_RULE_CACHE:-}" ] && [ -f "$cached" ] && [ "$(sha256 "$cached")" = "$3" ]; then
+    cp "$cached" "${WORK}/$1"
+    return
+  fi
   echo "Downloading $2" >&2
-  curl -fsSL --retry 3 -o "${WORK}/$1" "$2"
-  local got
+  # Tries spread over about five minutes: EBI's FTP server refused every
+  # connection for minutes at a time (curl exit 7, 2026-11-06).
+  curl -fsSL --retry 6 --retry-all-errors --retry-delay 30 --retry-max-time 300 -o "${WORK}/$1" "$2"
   got=$(sha256 "${WORK}/$1")
   if [ "$got" != "$3" ]; then
     echo "ERROR: $1 has sha256 ${got}, want $3" >&2
     exit 1
+  fi
+  if [ -n "${SV_RULE_CACHE:-}" ]; then
+    mkdir -p "$SV_RULE_CACHE" && cp "${WORK}/$1" "$cached"
   fi
 }
 get trx.bed.gz "$TRX_URL" "$TRX_SHA256"
@@ -188,4 +219,13 @@ with open(out, "w") as f:
 print("Rows: " + ", ".join(f"{k} {counts[k]}" for k in sorted(counts)), file=sys.stderr)
 PY
 mv "${OUT}.part" "$OUT"
+if [ -n "$CHECK" ]; then
+  if cmp -s "$OUT" "$CHECK"; then
+    echo "${CHECK} is what the pinned downloads give, byte for byte" >&2
+    exit 0
+  fi
+  echo "ERROR: ${CHECK} is not what the pinned downloads give; rebuild it with scripts/ci/build-sv-rule-regions.sh. The first differences (< the file, > the rebuild):" >&2
+  diff "$CHECK" "$OUT" | head -n 20 >&2 || true
+  exit 1
+fi
 echo "Wrote ${OUT}" >&2

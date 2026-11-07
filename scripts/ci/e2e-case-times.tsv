@@ -64,6 +64,7 @@ bumps-drop-in-baseline	shard	4	bash-step-11-roh,bash-step-14-imputation,bash-ste
 callability-1-catalog	shard	74	-
 callability-2-genes	shard	32	-
 chip-clonal-1	shard	277	-
+ci-e2e-2-locityper	shard	2289	-
 clinical-filter-mane-and-quality-1-tiers	shard	14	-
 clinical-filter-mane-and-quality-2-vep-norm	shard	2	-
 clinical-filter-mane-and-quality-3-modules	shard	8	clinical-filter-mane-and-quality-1-tiers

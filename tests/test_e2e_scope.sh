@@ -3,8 +3,8 @@
 # required e2e check trusts it: a case it leaves out never runs. Each check
 # here is run against a planted fault first: a case with no paths row, a
 # second row, a row for no case, a base row with globs, a glob that matches
-# no file. Then the picks: nothing for a path outside the scope, every case
-# for shared wiring, the smoke cases plus the matching ones for a helper,
+# no file, a glob that matches a file outside the e2e scope. Then the
+# picks: nothing for a path outside the scope, every case for shared wiring, the smoke cases plus the matching ones for a helper,
 # the case whose file or row changed, the cases those need, never a base
 # case. Last, the real table must pass the check.
 set -euo pipefail
@@ -57,6 +57,10 @@ broken "a glob that matches no file" "bin/no_such_helper.py matches no tracked f
 broken "a module glob that matches no file" "modules/local/nope/\\* matches no tracked file" "^lpa-1${TAB}" \
   "lpa-1${TAB}modules/local/nope/*"
 broken "a row of one column" "has 1 columns" "^traits-2${TAB}" "traits-2"
+broken "a glob that matches a file outside the e2e scope" "docs/testing.md matches docs/testing.md, which is outside the e2e scope" \
+  "^traits-2${TAB}" "traits-2${TAB}bin/traits_report.py docs/testing.md"
+broken "a wildcard glob that reaches outside the e2e scope" "docs/\\* matches docs/" "^traits-2${TAB}" \
+  "traits-2${TAB}bin/traits_report.py docs/*"
 mkdir -p "${WORK}/nosmoke"
 cp "${E2E_CASE_DIR}"/*.sh "${WORK}/nosmoke/"
 rm "${WORK}/nosmoke/nextflow-from-fastq-2-nextflow.sh"

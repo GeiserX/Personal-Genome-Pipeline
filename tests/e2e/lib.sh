@@ -7,6 +7,8 @@
 # A case never stops at the first failed check: it runs them all, prints one
 # [PASS] or [FAIL] line each, and `finish` exits 1 if any failed. Every check is
 # a count, a column or a content match; an exit code alone is never enough.
+# A case that ran no check at all fails too, unless it set NO_CHECKS_REASON
+# before `finish` (a case that has nothing to do on this run says why).
 
 set -uo pipefail
 : "${REPO:?run the cases through scripts/ci/e2e-run.sh}"
@@ -18,11 +20,13 @@ CASE_NAME="$(basename "$0" .sh)"
 CASE_TMP="${E2E_WORK}/tmp/${CASE_NAME}"
 mkdir -p "$CASE_TMP"
 FAILS=0
+CHECKS=0
+NO_CHECKS_REASON=""
 STEP_RC=""
 STEP_LOG="${CASE_TMP}/step.log"
 
-pass() { echo "[PASS] $*"; }
-fail() { echo "[FAIL] $*"; FAILS=$((FAILS + 1)); }
+pass() { echo "[PASS] $*"; CHECKS=$((CHECKS + 1)); }
+fail() { echo "[FAIL] $*"; CHECKS=$((CHECKS + 1)); FAILS=$((FAILS + 1)); }
 
 # check <description> <command...>: passes when the command succeeds.
 check() {
@@ -180,11 +184,22 @@ setup_ancestry_panel() {
   echo "${CASE_NAME}: ancestry panel from ${from:-EBI}" >> "$E2E_NOTES"
 }
 
+# finish: exit 1 when a check failed, or when no check ran and the case gave
+# no NO_CHECKS_REASON; scripts/ci/e2e-run.sh reads the last line it prints.
 finish() {
   if [ "$FAILS" -gt 0 ]; then
     echo "${CASE_NAME}: ${FAILS} check(s) failed"
     exit 1
   fi
-  echo "${CASE_NAME}: all checks passed"
+  if [ "$CHECKS" -eq 0 ]; then
+    if [ -n "$NO_CHECKS_REASON" ]; then
+      echo "${CASE_NAME}: no checks run: ${NO_CHECKS_REASON}"
+      echo "${CASE_NAME}: no checks run: ${NO_CHECKS_REASON}" >> "$E2E_NOTES"
+      exit 0
+    fi
+    echo "${CASE_NAME}: no check ran, so the case proves nothing (set NO_CHECKS_REASON when that is meant)"
+    exit 1
+  fi
+  echo "${CASE_NAME}: all ${CHECKS} checks passed"
   exit 0
 }

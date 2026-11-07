@@ -49,6 +49,7 @@ flanks within 1.5x of each other; cross_check cnvpytor:cnvs (step 18).
 
 Usage:
   scripts/ci/build-cn-intervals.py [--catalog bin/cn_loci.tsv] [--cache DIR] [--check]
+  scripts/ci/build-cn-intervals.py --list   the downloads, one "NAME URL SHA256" per line
 
 Rewrites the catalog's rows from the marker line on (MARKER), or with --check
 exits 1 when the catalog is not what the downloads give. The downloads (about
@@ -62,6 +63,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import urllib.request
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -140,8 +142,10 @@ def fetch(name, url, want, folder):
                 os.replace(path + ".part", path)
                 break
             except OSError as e:
-                if i == 2:
+                # A missing or forbidden file stays so: no point waiting.
+                if i == 2 or getattr(e, "code", None) in (403, 404):
                     raise BuildError(f"cannot download {url}: {e}")
+                time.sleep(30)
     got = sha256(path)
     if got != want:
         raise BuildError(f"{url}: sha256 {got}, pinned {want}")
@@ -369,7 +373,20 @@ def main(argv=None):
     ap.add_argument("--catalog", default=os.path.join(REPO, "bin", "cn_loci.tsv"))
     ap.add_argument("--cache")
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--list", action="store_true")
     a = ap.parse_args(argv)
+    if a.list and a.check:
+        ap.error("--list and --check do not go together")
+    if a.list:
+        try:
+            files = [("clingen_recurrent_cnv.bed", versions_env("CLINGEN_RECURRENT_CNV_URL"),
+                      versions_env("CLINGEN_RECURRENT_CNV_SHA256"))] + MASKS
+        except BuildError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 2
+        for n, u, h in files:
+            print(n, u, h)
+        return 0
     try:
         with tempfile.TemporaryDirectory() as tmp:
             folder = a.cache or tmp

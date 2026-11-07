@@ -3,15 +3,20 @@
 # from its pinned downloads, byte for byte: a hand edit, or a change to
 # assets/paralog_loci.tsv, assets/pgx_genes.tsv or bin/cn_loci.tsv that moves
 # an owner without a rebuild, fails here. Control: a copy of the committed
-# file with one owner cell changed must differ from the rebuild.
+# file with one owner cell changed must differ from the rebuild. The
+# downloads come from the e2e data cache when the runner filled it (entry
+# catalogs, mirror first; scripts/ci/e2e-run.sh), else from their sources.
 . "$(dirname "$0")/lib.sh"
 
 OUT="${CASE_TMP}/callability_genes.tsv"
 COMMITTED="${REPO}/assets/callability_genes.tsv"
 rm -f "$OUT"
 echo "+ scripts/ci/build-callability.sh"
-CALLABILITY_CACHE="${CASE_TMP}/downloads" bash "${REPO}/scripts/ci/build-callability.sh" "$OUT" 2>&1 | tee "$STEP_LOG"
+CACHE="${CASE_TMP}/downloads"
+[ -z "${E2E_DATA_CACHE:-}" ] || CACHE="${E2E_DATA_CACHE}/catalogs/callability"
+CALLABILITY_CACHE="$CACHE" bash "${REPO}/scripts/ci/build-callability.sh" "$OUT" 2>&1 | tee "$STEP_LOG"
 check_eq "build-callability.sh exits 0" "${PIPESTATUS[0]}" 0
+echo "${CASE_NAME}: $(grep -c '^Downloading ' "$STEP_LOG") of 7 downloads not found in ${CACHE}" >> "$E2E_NOTES"
 
 # same A B: the two files hold the same bytes
 same() { cmp -s "$1" "$2"; }

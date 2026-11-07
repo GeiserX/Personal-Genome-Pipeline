@@ -5,6 +5,7 @@
 # not read).
 #
 # Usage: scripts/ci/build-callability.sh [OUT]   (default: assets/callability_genes.tsv)
+#        scripts/ci/build-callability.sh --list    the downloads, one "NAME URL SHA256" per line
 #
 # Downloads seven pinned files (about 85 MB, each checked against its
 # sha256) into a temporary folder, or reads them from CALLABILITY_CACHE when
@@ -72,6 +73,14 @@ FILES=(
   "report.txt|https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/GCA_000001405.15_GRCh38_assembly_report.txt|aa733ce92719f6339b3a4540137d4322894434363314c4b7704ba6691e9eab66"
 )
 
+if [ "${1:-}" = --list ]; then
+  for f in "${FILES[@]}"; do
+    IFS='|' read -r name url sum <<<"$f"
+    echo "${name} ${url} ${sum}"
+  done
+  exit 0
+fi
+
 sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
 }
@@ -88,7 +97,9 @@ get() {
     return
   fi
   echo "Downloading $2" >&2
-  curl -fsSL --retry 3 --retry-all-errors -o "${WORK}/$1" "$2"
+  # Tries spread over about five minutes: EBI's FTP server refused every
+  # connection for minutes at a time (curl exit 7, 2026-11-06).
+  curl -fsSL --retry 6 --retry-all-errors --retry-delay 30 --retry-max-time 300 -o "${WORK}/$1" "$2"
   got=$(sha256 "${WORK}/$1")
   if [ "$got" != "$3" ]; then
     echo "ERROR: $1 has sha256 ${got}, want $3" >&2

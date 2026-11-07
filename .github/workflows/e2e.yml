@@ -65,6 +65,7 @@ on:
       - 'nextflow_schema.json'
       - 'versions.env'
       - '.github/workflows/e2e.yml'
+      - '.github/actions/**'
       - 'tests/fixtures/annotsv/class45.sh'
       - 'tests/fixtures/comphet/make_fixture.py'
       - 'tests/fixtures/consumer_export/sites.tsv.gz'
@@ -636,6 +637,7 @@ jobs:
           grep -qx archaic-ancestry-1 "$list" && echo "data_archaic=true" >> "$GITHUB_OUTPUT"
           grep -qx bash-step-08-hla "$list" && echo "data_hla=true" >> "$GITHUB_OUTPUT"
           grep -qx prs-scores-and-run-options-1-strand-sex "$list" && echo "data_pgs=true" >> "$GITHUB_OUTPUT"
+          grep -qxE 'callability-1-catalog|cn-intervals-1-catalog' "$list" && echo "data_catalogs=true" >> "$GITHUB_OUTPUT"
           echo "list=${list}" >> "$GITHUB_OUTPUT"
 
       # Before the base outputs: the base leg pulled the same images.
@@ -691,6 +693,10 @@ jobs:
       # of two IPD-IMGT/HLA releases and GENCODE's genes and exons
       # (bash-step-08-hla, which then runs with the network blocked), and the
       # four real PGS Catalog score files of prs-scores-and-run-options-1.
+      # A third keyed the same way: the pinned downloads of the two table
+      # builders (GENCODE's GTF from EBI among them) that
+      # callability-1-catalog and cn-intervals-1-catalog rebuild their
+      # tables from.
       - name: Data cache keys
         id: data-keys
         run: |
@@ -699,6 +705,7 @@ jobs:
           echo "archaic=e2e-data-1kg-sites-${ARCHAIC_1KG_SITES_MD5}" | tee -a "$GITHUB_OUTPUT"
           echo "hla=$(scripts/ci/e2e-run.sh --data-key hla)" | tee -a "$GITHUB_OUTPUT"
           echo "pgs=$(scripts/ci/e2e-run.sh --data-key pgs)" | tee -a "$GITHUB_OUTPUT"
+          echo "catalogs=$(scripts/ci/e2e-run.sh --data-key catalogs)" | tee -a "$GITHUB_OUTPUT"
 
       - name: Restore cached data, MoChA panel
         id: data-mocha
@@ -731,6 +738,14 @@ jobs:
         with:
           path: ${{ env.E2E_DATA_CACHE }}/pgs
           key: ${{ steps.data-keys.outputs.pgs }}
+
+      - name: Restore cached data, table builders' downloads
+        id: data-catalogs
+        if: steps.cases-list.outputs.data_catalogs == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/catalogs
+          key: ${{ steps.data-keys.outputs.catalogs }}
 
       # The PGS Catalog's synthetic HAPNEST panel (prs-2-ancestry and
       # prs-scores-and-run-options-2, 268 MB), from EBI's FTP server, keyed
@@ -778,15 +793,16 @@ jobs:
           E2E_BASE_OUT: ${{ matrix.job == 'base' && format('{0}/base.tar.zst', runner.temp) || '' }}
           E2E_BASE_IN: ${{ matrix.job != 'base' && format('{0}/e2e-base/base.tar.zst', runner.temp) || '' }}
           # Keep the downloads to the end of the job only when a save step uses them.
-          E2E_DATA_KEEP: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && ((steps.cases-list.outputs.data_mocha == 'true' && steps.data-mocha.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_archaic == 'true' && steps.data-archaic.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_hla == 'true' && steps.data-hla.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_pgs == 'true' && steps.data-pgs.outputs.cache-hit != 'true')) && 'true' || 'false' }}
+          E2E_DATA_KEEP: ${{ (github.ref == 'refs/heads/main' || inputs.save_images) && ((steps.cases-list.outputs.data_mocha == 'true' && steps.data-mocha.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_archaic == 'true' && steps.data-archaic.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_hla == 'true' && steps.data-hla.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_pgs == 'true' && steps.data-pgs.outputs.cache-hit != 'true') || (steps.cases-list.outputs.data_catalogs == 'true' && steps.data-catalogs.outputs.cache-hit != 'true')) && 'true' || 'false' }}
           HIT_MOCHA: ${{ steps.data-mocha.outputs.cache-hit || 'false' }}
           HIT_ARCHAIC: ${{ steps.data-archaic.outputs.cache-hit || 'false' }}
           HIT_HLA: ${{ steps.data-hla.outputs.cache-hit || 'false' }}
           HIT_PGS: ${{ steps.data-pgs.outputs.cache-hit || 'false' }}
-          DATA_ANY: ${{ steps.cases-list.outputs.data_mocha || steps.cases-list.outputs.data_archaic || steps.cases-list.outputs.data_hla || steps.cases-list.outputs.data_pgs || 'false' }}
+          HIT_CATALOGS: ${{ steps.data-catalogs.outputs.cache-hit || 'false' }}
+          DATA_ANY: ${{ steps.cases-list.outputs.data_mocha || steps.cases-list.outputs.data_archaic || steps.cases-list.outputs.data_hla || steps.cases-list.outputs.data_pgs || steps.cases-list.outputs.data_catalogs || 'false' }}
         run: |
           if [ "$DATA_ANY" = true ]; then
-            echo "Data cache (${JOB}): exact key hit, MoChA panel ${HIT_MOCHA}, 1000 Genomes sites ${HIT_ARCHAIC}, IPD-IMGT/HLA and GENCODE ${HIT_HLA}, PGS scores ${HIT_PGS}" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "Data cache (${JOB}): exact key hit, MoChA panel ${HIT_MOCHA}, 1000 Genomes sites ${HIT_ARCHAIC}, IPD-IMGT/HLA and GENCODE ${HIT_HLA}, PGS scores ${HIT_PGS}, table builders ${HIT_CATALOGS}" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
           scripts/ci/e2e-run.sh
 
@@ -802,6 +818,7 @@ jobs:
           HIT_ARCHAIC: ${{ steps.data-archaic.outputs.cache-hit }}
           HIT_HLA: ${{ steps.data-hla.outputs.cache-hit }}
           HIT_PGS: ${{ steps.data-pgs.outputs.cache-hit }}
+          HIT_CATALOGS: ${{ steps.data-catalogs.outputs.cache-hit }}
         run: |
           d=$E2E_DATA_CACHE
           if [ "$HIT_MOCHA" != true ] && [ -s "${d}/mocha/manifest.txt" ] \
@@ -812,7 +829,7 @@ jobs:
             echo "archaic=true" >> "$GITHUB_OUTPUT"
           fi
           # Whole and checked (data_ok in e2e-run.sh), or not saved.
-          for n in hla pgs; do
+          for n in hla pgs catalogs; do
             hit=HIT_${n^^}
             if [ "${!hit}" != true ] && [ -d "${d}/${n}" ] && scripts/ci/e2e-run.sh --data-check "$n"; then
               echo "${n}=true" >> "$GITHUB_OUTPUT"
@@ -843,6 +860,12 @@ jobs:
         with:
           path: ${{ env.E2E_DATA_CACHE }}/pgs
           key: ${{ steps.data-keys.outputs.pgs }}
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.data-save.outputs.catalogs == 'true'
+        with:
+          path: ${{ env.E2E_DATA_CACHE }}/catalogs
+          key: ${{ steps.data-keys.outputs.catalogs }}
 
       # The case leaves the panel there only once its sha256 matched.
       - name: Data cache, HAPNEST panel, what to save
@@ -936,9 +959,10 @@ jobs:
       # Each group keeps its smallest images up to GROUP_BUDGET_MB of zstd
       # output; the rest are pulled on every run. Four groups of 1500 MB are
       # 5.9 GB, and while main replaces one group the old and the new entry
-      # both count: 7.3 GB. With the five data entries above (about 2.3 GB:
-      # MoChA 0.64, 1000 Genomes sites 1.36, HAPNEST 0.27, hla and GENCODE
-      # 0.03, PGS a few KB) that is 9.6 GB, under the 10 GB limit. An image pinned by digest
+      # both count: 7.3 GB. With the six data entries above (about 2.4 GB:
+      # MoChA 0.64, 1000 Genomes sites 1.36, HAPNEST 0.27, the table
+      # builders' downloads 0.08, hla and GENCODE 0.03, PGS a few KB) that is
+      # 9.7 GB, under the 10 GB limit. An image pinned by digest
       # is never saved: docker load gives it back without its digest, so
       # e2e-run.sh would pull it again anyway.
       - name: Image sizes, and save images for the next run
