@@ -51,6 +51,7 @@ We left C4, AMY1 and LPA out. They are not in the authors' database, and on the 
 ## Input
 
 - `${SAMPLE}/aligned/${SAMPLE}_sorted.bam` with its `.bai`, aligned to `REF_FASTA`, the reference the database was built from. Locityper reads the BAM's contigs by their order in the reference.
+- The database `setup.sh --locityper-data` built, with its `DONE` (written last). `DONE` names the sha256 of the `.fai` and of the FASTA it was built from. Step 53 and the Nextflow `LOCITYPER` stop before Locityper runs when `DONE` is missing or names another `.fai` or FASTA: a FASTA with the same contigs and other bases is another reference. Hashing a GRCh38 FASTA takes about 10 to 20 seconds.
 
 ## Command
 
@@ -66,7 +67,7 @@ With `run-all.sh`: `TOOLS=...,locityper`. It is opt-in, so a run lists step 53 o
 
 `bin/locityper_report.py` reads `gt/loci/<locus>/res.json.gz` and writes one row per locus. A locus Locityper did not finish reads "not called", with Locityper's exit code when it stopped.
 
-The filter is the one the authors used for their HLA and KIR benchmark (Zenodo 15879519, README): a call passes with no Locityper warning, a weighted distance of 30 or less, and fewer than 1000 or fewer than 20% unexplained reads. The weighted distance is the edit distance from the call to the other likely genotypes, weighted by their probability: a high value means the reads fit very different genotypes about as well.
+The filter is the one the authors used for their HLA and KIR benchmark (Zenodo 15879519, README): a call passes with no Locityper warning, a weighted distance of 30 or less, and fewer than 1000 or fewer than 20% unexplained reads. A call whose result gives no read counts fails it, and its `total_reads` and `unexplained_reads` read `.`. The weighted distance is the edit distance from the call to the other likely genotypes, weighted by their probability: a high value means the reads fit very different genotypes about as well.
 
 Locityper names haplotypes of panel people, such as `HG00733.1`, not alleles. The two callers are shown side by side and not compared: an allele name from T1K and a panel haplotype are not the same kind of answer.
 
