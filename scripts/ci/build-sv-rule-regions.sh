@@ -36,7 +36,9 @@ REPO=$(cd "$(dirname "$0")/../.." && pwd)
 OUT=${1:-${REPO}/assets/sv_rule_regions.tsv}
 
 TRX_URL=https://github.com/broadinstitute/trexplorer-catalog/releases/download/v2.1/TRExplorer.repeat_catalog_v2.1.hg38.1_to_1000bp_motifs.bed.gz
-TRX_SHA256=4eb0fbbd36d40a801c2d764cdda247fea8edfae1604087526459064624ec1417
+# Upstream rebuilt this v2.1 asset in place on 2026-10-30 (it had dropped
+# loci); the sha256 is that of the rebuilt file, the only one still served.
+TRX_SHA256=df9c23c4c66ae798759a00f1b042a255819dd95e6b5f2ac68b37e5072117642b
 GENCODE_URL=https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_50/gencode.v50.basic.annotation.gtf.gz
 GENCODE_SHA256=5b9ad9aa71f6ab5d55123c51f74723644a895bc0cbaa9cee8fbc11bb9dec0bf7
 HGNC_URL=https://storage.googleapis.com/public-download-files/hgnc/archive/archive/monthly/tsv/hgnc_complete_set_2026-10-06.txt

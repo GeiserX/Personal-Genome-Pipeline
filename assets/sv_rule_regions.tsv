@@ -1,7 +1,7 @@
 # assets/sv_rule_regions.tsv: the GRCh38 regions where bin/annotsv_postfilter.py overrides AnnotSV's class 4
 # or 5. Written by scripts/ci/build-sv-rule-regions.sh, which says how each rule's rows are chosen;
 # rebuild it there, do not edit it by hand. start is 0-based and end 1-based, as in a BED file.
-# Rows: gene_alias 10, ig_tr_locus 6, mhc 1, tandem_repeat 2349.
+# Rows: gene_alias 10, ig_tr_locus 6, mhc 1, tandem_repeat 2409.
 #chrom	start	end	rule	action	name	source
 chr1	939398	939508	tandem_repeat	class_3	SAMD11:48bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	939398	939508	tandem_repeat	class_3	SAMD11:49bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -25,6 +25,7 @@ chr1	1627822	1627955	tandem_repeat	class_3	MIB2:36bp motif	TRExplorer v2.1; GENC
 chr1	1645138	1645235	tandem_repeat	class_3	CDK11B:24bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	1699941	1701782	gene_alias	remap_gene	MMP21|MMP23A|HGNC:7170|HGNC:14357	HGNC 2026-10-06; GENCODE 50
 chr1	1944168	1944341	tandem_repeat	class_3	CFAP74:76bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr1	2228933	2229017	tandem_repeat	class_3	SKI:GCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	2304281	2304339	tandem_repeat	class_3	SKI:TTCCTCCTCAG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	2478341	2478478	tandem_repeat	class_3	PLCH2:42bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	2529731	2529808	tandem_repeat	class_3	HES5:CGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -33,6 +34,7 @@ chr1	3625128	3625187	tandem_repeat	class_3	TPRG1L:GGC	TRExplorer v2.1; GENCODE 5
 chr1	3625270	3625355	tandem_repeat	class_3	TPRG1L:16bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	3826647	3826718	tandem_repeat	class_3	CEP104:17bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	6134534	6134734	tandem_repeat	class_3	CHD5:87bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr1	6448957	6449035	tandem_repeat	class_3	ESPN:GCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	7829887	7830127	tandem_repeat	class_3	PER3:54bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	8358571	8358632	tandem_repeat	class_3	RERE:CTCCCGCAG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	8358581	8358640	tandem_repeat	class_3	RERE:15bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -44,6 +46,7 @@ chr1	15935961	15936019	tandem_repeat	class_3	SPEN:17bp motif	TRExplorer v2.1; GE
 chr1	18955933	18955990	tandem_repeat	class_3	IFFO2:GGCGCCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	23417323	23417374	tandem_repeat	class_3	TCEA3:CCTTTTTCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	24671424	24671486	tandem_repeat	class_3	SRRM1:AAGAAGCAC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr1	25800119	25800390	tandem_repeat	class_3	SELENON:CCCCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	26282320	26282417	tandem_repeat	class_3	UBXN11:CCGGGA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	26282328	26282405	tandem_repeat	class_3	UBXN11:24bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	26344750	26345275	tandem_repeat	class_3	CRYBG2:51bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -72,6 +75,7 @@ chr1	46402196	46402269	tandem_repeat	class_3	FAAH:36bp motif	TRExplorer v2.1; GE
 chr1	46533436	46533492	tandem_repeat	class_3	TMEM275:GCGCCGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	46696494	46696568	tandem_repeat	class_3	EFCAB14:35bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	47417022	47417094	tandem_repeat	class_3	FOXE3:CGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr1	50421423	50421504	tandem_repeat	class_3	DMRTA2:GCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	51790984	51791037	tandem_repeat	class_3	NRDC:26bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	52436909	52436959	tandem_repeat	class_3	TUT4:TCTTTCTCT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	53459681	53459742	tandem_repeat	class_3	DMRTB1:CCCGTC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -102,6 +106,7 @@ chr1	149539568	149539656	tandem_repeat	class_3	NBPF19:20bp motif	TRExplorer v2.1
 chr1	149544305	149544393	tandem_repeat	class_3	NBPF19:20bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	149549042	149549130	tandem_repeat	class_3	NBPF19:20bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	149553779	149553867	tandem_repeat	class_3	NBPF19:20bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr1	150226675	150226798	tandem_repeat	class_3	ANP32E:CTTCAT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	150876558	150876629	tandem_repeat	class_3	ARNT:CGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	152109597	152110502	tandem_repeat	class_3	TCHH:90bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr1	152111167	152111275	tandem_repeat	class_3	TCHH:20bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -241,6 +246,7 @@ chr2	67404538	67404713	tandem_repeat	class_3	ETAA1:87bp motif	TRExplorer v2.1; G
 chr2	73490571	73490863	tandem_repeat	class_3	ALMS1:126bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	85326978	85327574	tandem_repeat	class_3	TGOLN2:41bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	85754659	85754714	tandem_repeat	class_3	ATOH8:18bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr2	88452385	88452489	tandem_repeat	class_3	FOXI3:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	88857160	90315836	ig_tr_locus	class_3	IGK	GENCODE 50 IG and TR genes
 chr2	99364278	99364330	tandem_repeat	class_3	EIF5B:GGAACAA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	101698133	101698224	tandem_repeat	class_3	MAP4K4:27bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -260,6 +266,9 @@ chr2	165389748	165389838	tandem_repeat	class_3	SCN2A:AGAAAA	TRExplorer v2.1; GEN
 chr2	168163597	168163795	tandem_repeat	class_3	STK39:97bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	169827685	169827764	tandem_repeat	class_3	UBR3:CGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	173963714	173963799	tandem_repeat	class_3	SP3:GGCGGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr2	174336897	174336959	tandem_repeat	class_3	SP9:CGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr2	176080210	176080304	tandem_repeat	class_3	EVX2:CGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr2	176107581	176107726	tandem_repeat	class_3	HOXD11:GCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	178653488	178654118	tandem_repeat	class_3	TTN:195bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	178677703	178677834	tandem_repeat	class_3	TTN:21bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	178777861	178777948	tandem_repeat	class_3	TTN:15bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -268,6 +277,8 @@ chr2	200571700	200571754	tandem_repeat	class_3	SGO2:21bp motif	TRExplorer v2.1; 
 chr2	201493914	201494095	tandem_repeat	class_3	CATSPERT:45bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	209820568	209820642	tandem_repeat	class_3	UNC80:GGA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	218643450	218643630	tandem_repeat	class_3	ZNF142:60bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr2	218960281	218960346	tandem_repeat	class_3	CDK5R2:GCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr2	218981918	218981984	tandem_repeat	class_3	FEV:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	219004140	219004202	tandem_repeat	class_3	CFAP65:TCCTCCTCTTCT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	219178293	219178375	tandem_repeat	class_3	RETREG2:GCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	219178465	219178568	tandem_repeat	class_3	RETREG2:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -318,6 +329,7 @@ chr2	240918871	240919209	tandem_repeat	class_3	CROCC2:42bp motif	TRExplorer v2.1
 chr2	241052431	241052487	tandem_repeat	class_3	SNED1:27bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	241052432	241052904	tandem_repeat	class_3	SNED1:51bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	241052432	241052904	tandem_repeat	class_3	SNED1:52bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr2	241096004	241096127	tandem_repeat	class_3	MTERF4:TCCTCA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	241097136	241097250	tandem_repeat	class_3	MTERF4:37bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	241201189	241201304	tandem_repeat	class_3	ANO7:38bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr2	241570279	241571056	tandem_repeat	class_3	BOK:153bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -353,6 +365,7 @@ chr3	62557362	62557421	tandem_repeat	class_3	CADPS:23bp motif	TRExplorer v2.1; G
 chr3	65379375	65379426	tandem_repeat	class_3	MAGI1:GCCGCT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr3	65439885	65439945	tandem_repeat	class_3	MAGI1:CTG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr3	71774445	71774498	tandem_repeat	class_3	PROK2:22bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr3	88467180	88467319	tandem_repeat	class_3	CSNK2A2IP:CTC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr3	108553654	108553710	tandem_repeat	class_3	CIP2A:CTTATGTT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr3	112038114	112038176	tandem_repeat	class_3	TMPRSS7:21bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr3	119146848	119146967	tandem_repeat	class_3	TEX55:48bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -379,6 +392,7 @@ chr3	184710915	184710976	tandem_repeat	class_3	MAGEF1:GGCCCT	TRExplorer v2.1; GE
 chr3	186677371	186677525	tandem_repeat	class_3	HRG:15bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr3	187725437	187725501	tandem_repeat	class_3	BCL6:17bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr3	188484702	188484758	tandem_repeat	class_3	LPP:28bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr3	194137860	194137947	tandem_repeat	class_3	HES1:GCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr3	194359547	194359597	tandem_repeat	class_3	LRRC15:17bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr3	194359547	194359597	tandem_repeat	class_3	LRRC15:18bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr3	194633184	194633242	tandem_repeat	class_3	TMEM44:CGCGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -414,6 +428,7 @@ chr4	3074876	3074933	tandem_repeat	class_3	HTT:CAG	TRExplorer v2.1; GENCODE 50 M
 chr4	5892752	5892804	tandem_repeat	class_3	CRMP1:CCGCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr4	6716366	6716430	tandem_repeat	class_3	BLOC1S4:TGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr4	7042541	7042600	tandem_repeat	class_3	CFAP184:28bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr4	8871368	8871438	tandem_repeat	class_3	HMX1:CCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr4	15003832	15003932	tandem_repeat	class_3	CPEB2:AGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr4	25030663	25030744	tandem_repeat	class_3	LGI2:CGCTC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr4	41745972	41746030	tandem_repeat	class_3	PHOX2B:15bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -488,6 +503,7 @@ chr5	139847878	139847928	tandem_repeat	class_3	NRG2:21bp motif	TRExplorer v2.1; 
 chr5	139848227	139848311	tandem_repeat	class_3	NRG2:GCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr5	140042908	140043014	tandem_repeat	class_3	NRG2:18bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr5	140042926	140042998	tandem_repeat	class_3	NRG2:CTG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr5	140402110	140402189	tandem_repeat	class_3	ANKHD1:CGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr5	140659053	140659112	tandem_repeat	class_3	IK:CGAGAG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr5	141680190	141680246	tandem_repeat	class_3	ARAP3:26bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr5	146233607	146233666	tandem_repeat	class_3	RBM27:CCAGGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -505,20 +521,24 @@ chr5	177524755	177524819	tandem_repeat	class_3	FAM193B:31bp motif	TRExplorer v2.
 chr5	177724159	177724214	tandem_repeat	class_3	FAM153A:21bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr5	178204922	178204975	tandem_repeat	class_3	HNRNPAB:24bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr5	178210178	178210271	tandem_repeat	class_3	HNRNPAB:GGCTAC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr5	178590105	178590177	tandem_repeat	class_3	COL23A1:CCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr5	178712117	178712341	tandem_repeat	class_3	ZNF354A:84bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr5	180101972	180102086	tandem_repeat	class_3	RASGEF1C:56bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr5	180849038	180849856	tandem_repeat	class_3	ZFP62:336bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	2765888	2765949	tandem_repeat	class_3	WRNIP1:15bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	7585725	7585788	tandem_repeat	class_3	DSP:24bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	12718772	12718827	tandem_repeat	class_3	PHACTR1:27bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr6	13711208	13711292	tandem_repeat	class_3	RANBP9:CGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	13711230	13711292	tandem_repeat	class_3	RANBP9:GGGGGAGGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	16327633	16327723	tandem_repeat	class_3	ATXN1:TGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr6	21595017	21595099	tandem_repeat	class_3	SOX4:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	21595227	21595297	tandem_repeat	class_3	SOX4:GCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	24495061	24495130	tandem_repeat	class_3	ALDH5A1:CCGCCT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	27400685	27401396	tandem_repeat	class_3	ZNF391:83bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	27401091	27401275	tandem_repeat	class_3	ZNF391:84bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	28245512	28245745	tandem_repeat	class_3	ZKSCAN4:84bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	28510119	33480577	mhc	class_3	MHC	GRCh38 assembly regions (GCA_000001405.15)
+chr6	30546146	30546242	tandem_repeat	class_3	GNL1:CTC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	30602093	30602431	tandem_repeat	class_3	PPP1R10:48bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	30704163	30705813	tandem_repeat	class_3	MDC1:123bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	30707374	30707430	tandem_repeat	class_3	MDC1:27bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -562,6 +582,7 @@ chr6	113860201	113860272	tandem_repeat	class_3	MARCKS:20bp motif	TRExplorer v2.1
 chr6	116121662	116121729	tandem_repeat	class_3	COL10A1:TCCAGCCGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	116627834	116627922	tandem_repeat	class_3	RSPH4A:GGAAGATGAAGA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	116658817	116658870	tandem_repeat	class_3	ZUP1:TTC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr6	117907699	117907783	tandem_repeat	class_3	SLC35F1:CAG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	124962502	124962582	tandem_repeat	class_3	RNF217:CGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	130956006	130956057	tandem_repeat	class_3	EPB41L2:24bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	136279785	136279851	tandem_repeat	class_3	BCLAF1:AGATCTTGATCT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -581,6 +602,7 @@ chr6	160068372	160068775	tandem_repeat	class_3	IGF2R:60bp motif	TRExplorer v2.1;
 chr6	165302195	165302283	tandem_repeat	class_3	C6orf118:42bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	168029510	168029662	tandem_repeat	class_3	KIF25:76bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	168078670	168078888	tandem_repeat	class_3	FRMD1:46bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr6	169723917	169724150	tandem_repeat	class_3	PHF10:GCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	170318384	170318878	tandem_repeat	class_3	FAM120B:36bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr6	170561906	170562017	tandem_repeat	class_3	TBP:GCA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	193591	193664	tandem_repeat	class_3	FAM20C:CCCCGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -609,6 +631,7 @@ chr7	5312881	5312995	tandem_repeat	class_3	TNRC18:GAA	TRExplorer v2.1; GENCODE 5
 chr7	5312914	5313034	tandem_repeat	class_3	TNRC18:GAT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	5313159	5313216	tandem_repeat	class_3	TNRC18:GCT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	5898783	5898844	tandem_repeat	class_3	CCZ1:25bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr7	6642491	6642691	tandem_repeat	class_3	ZNF316:AGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	6653816	6654001	tandem_repeat	class_3	ZNF316:84bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	6826156	6826219	tandem_repeat	class_3	CCZ1B:GCCCAG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	10982594	10982671	tandem_repeat	class_3	PHF14:AAAGGA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -617,10 +640,12 @@ chr7	19117128	19117246	tandem_repeat	class_3	TWIST1:CGC	TRExplorer v2.1; GENCODE
 chr7	20785520	20785577	tandem_repeat	class_3	SP8:GCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	26195859	26195909	tandem_repeat	class_3	HNRNPA2B1:TCCATA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	27199678	27199732	tandem_repeat	class_3	HOXA13:NGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr7	27199826	27199967	tandem_repeat	class_3	HOXA13:GCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	28804302	28804491	tandem_repeat	class_3	CREB5:47bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	30285541	30285598	tandem_repeat	class_3	ZNRF2:CCGCGGCGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	33095288	33095344	tandem_repeat	class_3	RP9:TTCTTT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	38239579	38368169	ig_tr_locus	class_3	TRG	GENCODE 50 IG and TR genes
+chr7	39950791	39950869	tandem_repeat	class_3	CDK13:GCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	44007334	44007548	tandem_repeat	class_3	SPDYE1:75bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	44106630	44106784	tandem_repeat	class_3	AEBP1:33bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	44114045	44114162	tandem_repeat	class_3	AEBP1:24bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -691,6 +716,7 @@ chr7	134933722	134933887	tandem_repeat	class_3	CALD1:21bp motif	TRExplorer v2.1;
 chr7	135245375	135245458	tandem_repeat	class_3	STRA8:GAGGAA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	137846557	137846671	tandem_repeat	class_3	DGKI:GCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	137846563	137846671	tandem_repeat	class_3	DGKI:C	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr7	140176844	140176928	tandem_repeat	class_3	KDM7A:CGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	142008505	142008627	tandem_repeat	class_3	MGAM:24bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr7	142299176	142813399	ig_tr_locus	class_3	TRB	GENCODE 50 IG and TR genes
 chr7	142866598	142866756	tandem_repeat	class_3	EPHB6:79bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -739,6 +765,7 @@ chr8	22156502	22156589	tandem_repeat	class_3	LGI3:GCCCCG	TRExplorer v2.1; GENCOD
 chr8	23017402	23017456	tandem_repeat	class_3	RHOBTB2:CTC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr8	23116732	23116959	tandem_repeat	class_3	TNFRSF10C:45bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr8	24917688	24917922	tandem_repeat	class_3	NEFM:39bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr8	24952855	24952935	tandem_repeat	class_3	NEFL:TCT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr8	38974379	38974434	tandem_repeat	class_3	HTRA4:27bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr8	41933192	41933283	tandem_repeat	class_3	KAT6A:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr8	42330956	42331090	tandem_repeat	class_3	IKBKB:52bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -877,10 +904,12 @@ chr10	21516537	21516589	tandem_repeat	class_3	SKIDA1:CCT	TRExplorer v2.1; GENCOD
 chr10	21517090	21517148	tandem_repeat	class_3	SKIDA1:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	21517090	21517150	tandem_repeat	class_3	SKIDA1:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	21733694	21733786	tandem_repeat	class_3	MLLT10:45bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr10	23192931	23193054	tandem_repeat	class_3	PTF1A:GCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	23193206	23193261	tandem_repeat	class_3	PTF1A:18bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	35608498	35608578	tandem_repeat	class_3	GJD4:AGCAGCCCTC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	35640306	35640389	tandem_repeat	class_3	FZD8:CCGCGCCCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	35640324	35640377	tandem_repeat	class_3	FZD8:CGCCCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr10	35640752	35640852	tandem_repeat	class_3	FZD8:CCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	37141732	37141909	tandem_repeat	class_3	ANKRD30A:33bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	37141958	37142170	tandem_repeat	class_3	ANKRD30A:102bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	42592847	42593974	tandem_repeat	class_3	ZNF33B:84bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -899,12 +928,15 @@ chr10	75022066	75022171	tandem_repeat	class_3	KAT6B:GAA	TRExplorer v2.1; GENCODE
 chr10	75022075	75022147	tandem_repeat	class_3	KAT6B:GAG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	75028874	75028953	tandem_repeat	class_3	KAT6B:GAGGAA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	77637463	77637526	tandem_repeat	class_3	KCNMA1:GAG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr10	81875415	81875477	tandem_repeat	class_3	NRG3:GCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	86716372	86716516	tandem_repeat	class_3	LDB3:44bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	86716377	86716495	tandem_repeat	class_3	LDB3:24bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	86970565	86970634	tandem_repeat	class_3	ADIRF:34bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr10	97319463	97319521	tandem_repeat	class_3	FRAT1:AGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	97319637	97319691	tandem_repeat	class_3	FRAT1:21bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	97334322	97334374	tandem_repeat	class_3	FRAT2:CCGCCGGCA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	102397405	102397463	tandem_repeat	class_3	NFKB2:24bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr10	102743971	102744068	tandem_repeat	class_3	WBP1L:GAG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	102869497	102869609	tandem_repeat	class_3	AS3MT:36bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	103368201	103368258	tandem_repeat	class_3	TAF5:CGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr10	103368446	103368497	tandem_repeat	class_3	TAF5:14bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1000,6 +1032,7 @@ chr11	3359111	3359886	tandem_repeat	class_3	ZNF195:247bp motif	TRExplorer v2.1; 
 chr11	9839650	9839932	tandem_repeat	class_3	SBF2:95bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	19933689	19933752	tandem_repeat	class_3	NAV2:GAAAGGCAATGA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	32699323	32699483	tandem_repeat	class_3	CCDC73:79bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr11	32893160	32893275	tandem_repeat	class_3	QSER1:CGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	32893257	32893317	tandem_repeat	class_3	QSER1:AGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	33741974	33742073	tandem_repeat	class_3	FBXO3:TCA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	35618779	35618837	tandem_repeat	class_3	FJX1:CGCGCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1025,6 +1058,7 @@ chr11	64353137	64353206	tandem_repeat	class_3	CCDC88B:21bp motif	TRExplorer v2.1
 chr11	64836372	64836428	tandem_repeat	class_3	CDC42BPG:CTCACCCAC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	65625595	65625661	tandem_repeat	class_3	PCNX3:25bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	65654783	65654896	tandem_repeat	class_3	RELA:GGGGCT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr11	65961812	65961874	tandem_repeat	class_3	SART1:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	66859974	66860031	tandem_repeat	class_3	LRFN4:GCCCCA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	67629811	67629892	tandem_repeat	class_3	NUDT8:CCGCGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	68120912	68121022	tandem_repeat	class_3	CHKA:GCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1051,6 +1085,7 @@ chr11	75588023	75588120	tandem_repeat	class_3	MAP6:33bp motif	TRExplorer v2.1; G
 chr11	77197581	77197794	tandem_repeat	class_3	MYO7A:70bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	78200230	78200336	tandem_repeat	class_3	USP35:25bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	83168945	83169071	tandem_repeat	class_3	PCF11:39bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr11	95067556	95067618	tandem_repeat	class_3	SRSF8:CGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	96092039	96092111	tandem_repeat	class_3	MAML2:TGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	96092168	96092264	tandem_repeat	class_3	MAML2:TGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr11	96384234	96384375	tandem_repeat	class_3	CCDC82:69bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1112,11 +1147,13 @@ chr12	11393838	11393940	tandem_repeat	class_3	PRB2:30bp motif	TRExplorer v2.1; G
 chr12	14424305	14424541	tandem_repeat	class_3	ATF7IP:14bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	14788991	14789069	tandem_repeat	class_3	WBP11:GGAGGGGGACC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	15669442	15669492	tandem_repeat	class_3	EPS8:20bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr12	19439980	19440056	tandem_repeat	class_3	AEBP2:GGA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	23846192	23846300	tandem_repeat	class_3	SOX5:36bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	40105597	40105651	tandem_repeat	class_3	SLC2A13:CGCGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	41188882	41188939	tandem_repeat	class_3	PDZRN4:GGGGCGCGCGCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	47997624	47997681	tandem_repeat	class_3	COL2A1:18bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	49032879	49033001	tandem_repeat	class_3	KMT2D:TGTTGAAGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr12	49037507	49037580	tandem_repeat	class_3	KMT2D:TGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	49051088	49051498	tandem_repeat	class_3	KMT2D:27bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	49330377	49330710	tandem_repeat	class_3	TROAP:99bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	50351888	50353610	tandem_repeat	class_3	FAM186A:36bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1156,6 +1193,8 @@ chr12	90953771	90953839	tandem_repeat	class_3	CCER1:TCTTCGACCTCT	TRExplorer v2.1
 chr12	94650283	94650355	tandem_repeat	class_3	TMCC3:CCGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	94650287	94650359	tandem_repeat	class_3	TMCC3:27bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	103841053	103841192	tandem_repeat	class_3	NT5DC3:CCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr12	103938366	103938443	tandem_repeat	class_3	HSP90B1:GAA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr12	106247569	106247747	tandem_repeat	class_3	CKAP4:CGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	107319881	107319953	tandem_repeat	class_3	ABTB3:CGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	108623525	108623945	tandem_repeat	class_3	SELPLG:29bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	108623525	108623961	tandem_repeat	class_3	SELPLG:30bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1179,6 +1218,7 @@ chr12	122200581	122200650	tandem_repeat	class_3	LRRC43:23bp motif	TRExplorer v2.
 chr12	122517316	122517417	tandem_repeat	class_3	RSRC2:30bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	122622391	122622483	tandem_repeat	class_3	KNTC1:22bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	122835642	122835692	tandem_repeat	class_3	HIP1R:GCGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr12	122981634	122981701	tandem_repeat	class_3	ARL6IP4:CTC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	123533212	123533263	tandem_repeat	class_3	RILPL1:21bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	124012204	124012422	tandem_repeat	class_3	ZNF664:84bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	124340349	124340399	tandem_repeat	class_3	NCOR2:TCCCGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1186,6 +1226,7 @@ chr12	124402514	124402564	tandem_repeat	class_3	NCOR2:TGC	TRExplorer v2.1; GENCO
 chr12	124911738	124913208	tandem_repeat	class_3	UBC:227bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	124911738	124913771	tandem_repeat	class_3	UBC:228bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	125114541	125114737	tandem_repeat	class_3	AACS:39bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr12	128823827	128823975	tandem_repeat	class_3	SLC15A4:GCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	131838734	131838970	tandem_repeat	class_3	MMP17:41bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	131930130	131930274	tandem_repeat	class_3	PUS1:46bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr12	132032111	132032219	tandem_repeat	class_3	EP400:54bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1279,6 +1320,7 @@ chr14	44505834	44506041	tandem_repeat	class_3	FSCB:51bp motif	TRExplorer v2.1; G
 chr14	54530138	54530849	tandem_repeat	class_3	CGRRF1:179bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr14	55138152	55138221	tandem_repeat	class_3	LGALS3:27bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr14	57391104	57391154	tandem_repeat	class_3	NAA30:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr14	60165236	60165298	tandem_repeat	class_3	DHRS7:GCA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr14	73263765	73263911	tandem_repeat	class_3	PAPLN:29bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr14	73263765	73263965	tandem_repeat	class_3	PAPLN:33bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr14	73263765	73264065	tandem_repeat	class_3	PAPLN:34bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1294,6 +1336,7 @@ chr14	91181374	91181444	tandem_repeat	class_3	DGLUCY:35bp motif	TRExplorer v2.1;
 chr14	91461423	91461481	tandem_repeat	class_3	PPP4R3A:GATCCAGGA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr14	99175563	99175619	tandem_repeat	class_3	BCL11B:CGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr14	100148925	100148976	tandem_repeat	class_3	DEGS2:15bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr14	101964804	101964856	tandem_repeat	class_3	DYNC1H1:GCT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr14	103928649	103928706	tandem_repeat	class_3	TDRD9:GGCCCA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr14	104604468	104604543	tandem_repeat	class_3	TMEM179:GCGCCAG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr14	104941588	104953442	tandem_repeat	class_3	AHNAK2:494bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1396,6 +1439,7 @@ chr15	65077247	65077317	tandem_repeat	class_3	KBTBD13:GCCCGC	TRExplorer v2.1; GE
 chr15	65650443	65650604	tandem_repeat	class_3	SLC24A1:TGAAGGTGAAAC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr15	65650738	65650819	tandem_repeat	class_3	SLC24A1:GAG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr15	68142314	68142466	tandem_repeat	class_3	PIAS1:74bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr15	68782946	68783022	tandem_repeat	class_3	ANP32A:CTC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr15	71737759	71737816	tandem_repeat	class_3	THSD4:16bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr15	72662530	72662693	tandem_repeat	class_3	GOLGA6B:21bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr15	74074580	74074722	tandem_repeat	class_3	GOLGA6A:21bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1528,6 +1572,7 @@ chr16	29485334	29485654	tandem_repeat	class_3	NPIPB12:68bp motif	TRExplorer v2.1
 chr16	29664151	29664375	tandem_repeat	class_3	SPN:54bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr16	29664151	29664376	tandem_repeat	class_3	SPN:53bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr16	29807051	29807142	tandem_repeat	class_3	MAZ:CGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr16	29807509	29807578	tandem_repeat	class_3	MAZ:GCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr16	30195058	30195133	tandem_repeat	class_3	SLX1A:CCAGGAC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr16	30223146	30223363	tandem_repeat	class_3	NPIPB13:42bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr16	30223395	30225624	tandem_repeat	class_3	NPIPB13:126bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1728,8 +1773,10 @@ chr17	61965241	61965292	tandem_repeat	class_3	MED13:18bp motif	TRExplorer v2.1; 
 chr17	64895052	64895439	tandem_repeat	class_3	LRRC37A3:165bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr17	67959616	67959684	tandem_repeat	class_3	BPTF:18bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr17	68887294	68887356	tandem_repeat	class_3	ABCA8:ATATTGTCA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr17	74356877	74356937	tandem_repeat	class_3	BTBD17:CCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr17	74893497	74893577	tandem_repeat	class_3	FADS6:18bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr17	75040137	75040216	tandem_repeat	class_3	ATP5PD:39bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr17	75047209	75047279	tandem_repeat	class_3	KCTD2:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr17	75504134	75504221	tandem_repeat	class_3	CASKIN2:41bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr17	75504140	75504221	tandem_repeat	class_3	CASKIN2:21bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr17	75589320	75589522	tandem_repeat	class_3	MYO15B:26bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1742,6 +1789,7 @@ chr17	76292001	76293000	tandem_repeat	class_3	QRICH2:30bp motif	TRExplorer v2.1;
 chr17	76292157	76292270	tandem_repeat	class_3	QRICH2:15bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr17	76710671	76710746	tandem_repeat	class_3	MXRA7:27bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr17	78802061	78802336	tandem_repeat	class_3	USP36:35bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr17	79074983	79075080	tandem_repeat	class_3	ENGASE:CGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr17	80436125	80436356	tandem_repeat	class_3	ENDOV:43bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr17	80997318	80997393	tandem_repeat	class_3	CHMP6:36bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr17	81053736	81054369	tandem_repeat	class_3	BAIAP2:287bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1781,6 +1829,8 @@ chr18	47247847	47247905	tandem_repeat	class_3	SKOR2:GCGCC	TRExplorer v2.1; GENCO
 chr18	47248062	47248158	tandem_repeat	class_3	SKOR2:GCGCCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr18	48040619	48040691	tandem_repeat	class_3	ZBTB7C:TCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr18	50729607	50729672	tandem_repeat	class_3	MAPK4:CGCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr18	51196910	51196997	tandem_repeat	class_3	MEX3C:TCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr18	51197216	51197378	tandem_repeat	class_3	MEX3C:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr18	57435823	57435874	tandem_repeat	class_3	ONECUT2:CGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr18	62524062	62524129	tandem_repeat	class_3	ZCCHC2:14bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr18	63589667	63589743	tandem_repeat	class_3	SERPINB13:30bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1887,8 +1937,10 @@ chr19	13817793	13817847	tandem_repeat	class_3	ZSWIM4:27bp motif	TRExplorer v2.1;
 chr19	13877367	13877423	tandem_repeat	class_3	NANOS3:18bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	13929645	13930010	tandem_repeat	class_3	CC2D1A:90bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	14117526	14117646	tandem_repeat	class_3	PRKACA:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr19	15200808	15200886	tandem_repeat	class_3	NOTCH3:GCA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	15242974	15243038	tandem_repeat	class_3	BRD4:27bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	15256150	15256207	tandem_repeat	class_3	BRD4:TCTTTCCTTTT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr19	15380239	15380308	tandem_repeat	class_3	AKAP8L:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	15428254	15428321	tandem_repeat	class_3	WIZ:17bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	15645857	15645908	tandem_repeat	class_3	CYP4F3:25bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	15728459	15728518	tandem_repeat	class_3	OR10H2:19bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -1987,12 +2039,14 @@ chr19	44157529	44157748	tandem_repeat	class_3	ZNF234:84bp motif	TRExplorer v2.1;
 chr19	44273995	44274626	tandem_repeat	class_3	ZNF233:82bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	44386595	44387328	tandem_repeat	class_3	ZNF285:82bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	44891433	44891514	tandem_repeat	class_3	TOMM40:CCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr19	44955346	44955458	tandem_repeat	class_3	CLPTM1:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	45144803	45144861	tandem_repeat	class_3	PPP1R37:19bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	45145804	45145873	tandem_repeat	class_3	PPP1R37:18bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	45179731	45179790	tandem_repeat	class_3	BLOC1S3:23bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	45500544	45500613	tandem_repeat	class_3	PPM1N:16bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	45745162	45745242	tandem_repeat	class_3	MEIOSIN:39bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	45792548	45792619	tandem_repeat	class_3	DMWD:CGGAGG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr19	45804709	45804816	tandem_repeat	class_3	RSPH6A:CCT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	46493893	46493965	tandem_repeat	class_3	PNMA8B:CTCCGACGCCTC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	47071966	47072042	tandem_repeat	class_3	ZC3H4:GCATGTCTGCGT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr19	47802015	47802731	tandem_repeat	class_3	TPRX1:GGGCCT	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -2180,6 +2234,7 @@ chr21	45537389	45537772	tandem_repeat	class_3	SLC19A1:64bp motif	TRExplorer v2.1
 chr21	45537389	45537772	tandem_repeat	class_3	SLC19A1:65bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr21	46002695	46002901	tandem_repeat	class_3	COL6A1:40bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr21	46111586	46111850	tandem_repeat	class_3	COL6A2:62bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr21	46145787	46145854	tandem_repeat	class_3	FTCD:CGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr21	46334452	46334766	tandem_repeat	class_3	PCNT:39bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr21	46412982	46413396	tandem_repeat	class_3	PCNT:58bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr21	46412982	46413396	tandem_repeat	class_3	PCNT:59bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -2189,15 +2244,19 @@ chr22	15690134	15690563	tandem_repeat	class_3	POTEH:111bp motif	TRExplorer v2.1;
 chr22	17727348	17727459	tandem_repeat	class_3	BCL2L13:54bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	17831863	17831935	tandem_repeat	class_3	MICAL3:24bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	18611276	18611348	tandem_repeat	class_3	RIMBP3:33bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr22	18634430	18634512	tandem_repeat	class_3	FAM246B:CGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	19150234	19150312	tandem_repeat	class_3	GSC2:CCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	19447535	19447587	tandem_repeat	class_3	C22orf39:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr22	19760995	19761123	tandem_repeat	class_3	TBX1:CGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	20405779	20406647	tandem_repeat	class_3	ZNF74:84bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	20564477	20564654	tandem_repeat	class_3	MED15:GCA	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	20566637	20566698	tandem_repeat	class_3	MED15:CAG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	20989675	20989816	tandem_repeat	class_3	LZTR1:37bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr22	21360770	21360852	tandem_repeat	class_3	FAM246A:GCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	21550818	21550890	tandem_repeat	class_3	RIMBP3C:33bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	21636996	21637062	tandem_repeat	class_3	CCDC116:AGGATG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	22026075	22923034	ig_tr_locus	class_3	IGL	GENCODE 50 IG and TR genes
+chr22	23772879	23772978	tandem_repeat	class_3	MMP11:CTG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	24592965	24593035	tandem_repeat	class_3	LRRC75B:GGCCC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	24938221	24938387	tandem_repeat	class_3	LHFPL7:77bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	26483975	26484050	tandem_repeat	class_3	SRRD:21bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
@@ -2207,6 +2266,7 @@ chr22	29489536	29489906	tandem_repeat	class_3	NEFH:42bp motif	TRExplorer v2.1; G
 chr22	29489697	29489833	tandem_repeat	class_3	NEFH:42bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	30292426	30292495	tandem_repeat	class_3	TBC1D10A:15bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	30376487	30376577	tandem_repeat	class_3	CCDC157:24bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
+chr22	30387219	30387309	tandem_repeat	class_3	RNF215:GCG	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	30969595	30969698	tandem_repeat	class_3	TUG1:GGC	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	32150322	32150468	tandem_repeat	class_3	C22orf42:48bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
 chr22	37509579	37510229	tandem_repeat	class_3	CARD10:59bp motif	TRExplorer v2.1; GENCODE 50 MANE Select CDS
