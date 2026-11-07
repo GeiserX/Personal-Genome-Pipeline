@@ -67,7 +67,7 @@ The reads cross the network to the browser that logged in: only the byte ranges 
 - Each message is cut to what a progress view needs before it is stored: the task, its process and status, times, CPU and memory figures. Nextflow's parameters, command line and task scripts are dropped. Three paths stay on the server for later views (the output folder, the CPU and memory caps, the work directory); none of them reaches a page.
 - Messages go to `<state dir>/runs/<run>/events.jsonl` (state dir: `GENOME_DIR/.owngenome-live`, or `OWNGENOME_LIVE_STATE_DIR`). The site writes nowhere else, so `GENOME_DIR` can be mounted read-only.
 - The access log, `<state dir>/access.log`, has one tab-separated row per page or file read and per login (the genome viewer's files excepted: one row per page open, see above): time, client, the first 8 characters of a hash of the session, action, run, file, status. It never holds a query string, a request body, a result or the password. It moves to `access.log.1` past `--access-log-max-mb` (10).
-- Every page carries a Content-Security-Policy that lets it talk to this server only, and the page loads no script from anywhere else. The run's own HTML (the report, CPSR, PharmCAT, MultiQC) is sent sandboxed: no script runs and nothing outside is fetched.
+- Every page carries a Content-Security-Policy that lets it talk to this server only, and the page loads no script from anywhere else. The run's own HTML (the report, CPSR, PharmCAT, MultiQC) is sent sandboxed: no script runs and nothing outside is fetched. CPSR's report draws its variant tables with scripts, so on the live site those tables stay empty: open the file from `<sample>/cpsr/` on disk to see them.
 
 ## The password and the limits
 
