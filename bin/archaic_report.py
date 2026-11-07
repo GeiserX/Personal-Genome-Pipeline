@@ -23,16 +23,20 @@ Subcommands:
              genotypes of the Altai Neanderthal, the Vindija 33.19 Neanderthal
              and the Altai Denisovan at those sites and wherever one of the
              three carries a non-reference allele, as a sites-only VCF that
-             Picard lifts to GRCh38. Each archaic genome is read only inside
-             its own mask (--mask NAME=BED, the MPI-EVA FilterBed of that
-             genome): a site outside it is unknown (9) for that genome. A
-             site inside an excluded region (--exclude BED: segmental
-             duplications, the 5 bp around a modern indel) is left out
-             altogether. Both are the filtering Chen et al. apply before
-             IBDmix.
+             Picard lifts to GRCh38. Each archaic genome is read inside its
+             own mask (--mask NAME=BED, the MPI-EVA FilterBed of that
+             genome): a call outside it is kept as masked, code 10 plus its
+             ALT count. Every call at a site inside an excluded region
+             (--exclude BED: segmental duplications, the 5 bp around a modern
+             indel) is masked the same way. That is how Chen et al. filter:
+             the site stays in IBDmix's input and IBDmix's --mask stops it
+             scoring, except that a homozygous mismatch there still counts
+             against a segment.
   genotypes  (step 43) IBDmix's genotype file of each chromosome: the three
              archaic columns, SAMPLE (yours, from the VCF) and the stand-ins;
-             and spans.tsv, the span and site count of each chromosome.
+             the mask of each archaic genome (chrN.<genome>.mask.bed, the
+             positions where its call is masked); and spans.tsv, the span and
+             site count of each chromosome.
   report     (step 43) IBDmix's segments for SAMPLE against each archaic genome,
              kept at LOD 4 and 50 kb or longer (the cutoffs of Chen et al.),
              merged into Neanderthal and Denisovan segments, with the share of
@@ -40,7 +44,11 @@ Subcommands:
              genes in them.
 
 Codes: an archaic or modern genotype is the number of ALT alleles (0, 1, 2), or
-9 when it is unknown, the coding IBDmix's genotype file uses.
+9 when it is unknown, the coding IBDmix's genotype file uses. In the table an
+archaic call outside that genome's mask is 10, 11 or 12 (MASKED plus the ALT
+count); `genotypes` writes it to IBDmix as 0, 1 or 2 and lists the position in
+that genome's mask file (chrN.<genome>.mask.bed), which step 43 passes to
+IBDmix with -r.
 
 Used by scripts/setup.sh, scripts/43-archaic.sh and the ARCHAIC_* processes
 (bin/ is on the task PATH); tests/test_archaic_report.py checks it. Standard
@@ -57,6 +65,7 @@ ARCHAICS = ("Altai", "Vindija", "Denisova")
 NEANDERTHALS = ("Altai", "Vindija")
 POPS = ("ALL", "AFR", "AMR", "EAS", "EUR", "SAS")
 TABLE_HEADER = ["chrom", "pos", "ref", "alt", "Altai", "Vindija", "Denisova"] + [f"AF_{p}" for p in POPS]
+MASKED = 10           # table code: MASKED + ALT count, a call outside the genome's mask
 PSEUDO = 100          # stand-in modern people: 200 alleles, about one 1000 Genomes population
 MIN_LOD = 4.0         # Chen et al. 2020: LOD 4
 MIN_LENGTH = 50000    # and 50 kb
@@ -235,7 +244,7 @@ def cmd_table(a):
     out.write("##fileformat=VCFv4.2\n")
     out.write(f"##contig=<ID={chrom}>\n")
     for n in ARCHAICS:
-        out.write(f'##INFO=<ID={n},Number=1,Type=Integer,Description="ALT alleles in the {n} genome (9: unknown)">\n')
+        out.write(f'##INFO=<ID={n},Number=1,Type=Integer,Description="ALT alleles in the {n} genome (9: unknown; 10 to 12: 0 to 2 outside its mask)">\n')
     for p in POPS:
         out.write(f'##INFO=<ID=AF_{p},Number=1,Type=Float,Description="1000 Genomes phase 3 ALT frequency ({p})">\n')
     out.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
@@ -248,18 +257,19 @@ def cmd_table(a):
             return
         # Every Mask is walked for every position, before any early return,
         # because the walk only goes forward.
-        drop = [m.holds(cur) for m in excluded]
-        if any(drop):
-            return
-        # A genome is read only inside its own mask: outside it the record is
-        # dropped, so the row gets code 9 for that genome and the site cannot
-        # give it the row's ALT either.
-        inside = [None if (n in masks and not masks[n].holds(cur)) else r
-                  for n, r in zip(ARCHAICS, arch)]
-        r = table_row(cur, modern, inside)
+        excl = any([m.holds(cur) for m in excluded])
+        outside = [excl or (n in masks and not masks[n].holds(cur)) for n in ARCHAICS]
+        r = table_row(cur, modern, arch)
         if r is None:
             return
         ref, alt, codes, afs = r
+        # A genome's call outside its mask, or at an excluded site, is kept but
+        # marked masked (MASKED + code). Step 43 hands IBDmix the call and a
+        # mask of those positions, as Chen et al. do: IBDmix scores nothing
+        # there except a homozygous mismatch, which still counts against a
+        # segment. Dropping the call instead (code 9) let segments run through
+        # masked sequence nothing could contradict.
+        codes = [c + MASKED if (out and c != 9) else c for c, out in zip(codes, outside)]
         info = ";".join([f"{n}={c}" for n, c in zip(ARCHAICS, codes)] + [f"AF_{p}={v}" for p, v in zip(POPS, afs)])
         out.write(f"{chrom}\t{cur}\t.\t{ref}\t{alt}\t.\t.\t{info}\n")
         rows += 1
@@ -329,6 +339,7 @@ def read_vcf(path):
 
 
 CLASH = object()
+ARCHAIC_CODES = {str(v) for v in (0, 1, 2, 9, MASKED, MASKED + 1, MASKED + 2)}
 
 
 def pick_call(prev, call):
@@ -410,10 +421,20 @@ def cmd_genotypes(a):
         n = first = last = dropped = carried = 0
         num = chrom[3:]
         path = os.path.join(a.out_dir, f"{chrom}.gt.gz")
+        # Per archaic genome, the runs of written rows whose call is masked:
+        # [first, last] positions, closed at the next unmasked row.
+        runs = {g: [] for g in ARCHAICS}
+        open_run = {g: None for g in ARCHAICS}
         with gzip.open(path, "wt", compresslevel=1) as out:
             out.write(head + "\n")
             for c in read_table(tables[chrom]):
                 pos, ref, alt = int(c[1]), c[2], c[3]
+                arch = []
+                for g, v in zip(ARCHAICS, c[4:7]):
+                    if v not in ARCHAIC_CODES:
+                        die(f"{tables[chrom]}: {chrom}:{pos} has {g} code {v!r}; the table holds 0, 1, 2, 9 "
+                            f"or {MASKED} to {MASKED + 2}")
+                    arch.append(int(v))
                 call = calls.get(pos)
                 if call is None:
                     code = 0
@@ -430,7 +451,17 @@ def cmd_genotypes(a):
                 except ValueError:
                     ac = 0
                 ac = min(max(ac, 0), two_n)
-                out.write(f"{num}\t{pos}\t{ref}\t{alt}\t{c[4]}\t{c[5]}\t{c[6]}\t{code}\t{pseudo[ac]}\n")
+                for g, v in zip(ARCHAICS, arch):
+                    if v >= MASKED:
+                        if open_run[g] is None:
+                            open_run[g] = [pos, pos]
+                        else:
+                            open_run[g][1] = pos
+                    elif open_run[g] is not None:
+                        runs[g].append(open_run[g])
+                        open_run[g] = None
+                gts = "\t".join(str(v - MASKED if v >= MASKED else v) for v in arch)
+                out.write(f"{num}\t{pos}\t{ref}\t{alt}\t{gts}\t{code}\t{pseudo[ac]}\n")
                 if n == 0:
                     first = pos
                 last = pos
@@ -438,6 +469,13 @@ def cmd_genotypes(a):
         if n == 0:
             os.remove(path)
             continue
+        # IBDmix's mask (-r): chromosome as in the genotype file, and a line
+        # covers the positions start + 1 to end, as in a BED.
+        for g in ARCHAICS:
+            if open_run[g] is not None:
+                runs[g].append(open_run[g])
+            with open(os.path.join(a.out_dir, f"{chrom}.{g}.mask.bed"), "w") as f:
+                f.writelines(f"{num}\t{s0 - 1}\t{e0}\n" for s0, e0 in runs[g])
         spans.append((chrom, first, last, n, carried, dropped))
     with open(os.path.join(a.out_dir, "spans.tsv"), "w") as f:
         f.write("chrom\tfirst\tlast\tsites\tsites_with_your_alt\tsites_other_allele\n")

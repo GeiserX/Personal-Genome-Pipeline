@@ -4,9 +4,10 @@
 #   - setup.sh --archaic builds the table for GRCh37 chr22 only
 #     (ARCHAIC_REGIONS): the three archaic chr22 files from MPI-EVA, checked
 #     against their pinned md5 lists, and the 1000 Genomes sites, lifted to
-#     GRCh38, with each archaic genome read only inside its own FilterBed,
-#     every row inside the 1000 Genomes GRCh38 strict mask, and no row in a
-#     segmental duplication or within 5 bp of a 1000 Genomes indel;
+#     GRCh38, every row inside the 1000 Genomes GRCh38 strict mask, and each
+#     archaic call outside its genome's FilterBed, in a segmental duplication
+#     or within 5 bp of a 1000 Genomes indel marked masked (code 10 to 12),
+#     which step 43 hands IBDmix as its mask;
 #   - HG002 (GIAB's v4.2.1 genotypes on chr22): the step runs, the shares are
 #     numbers, the analysed span is most of the chromosome, and the
 #     Neanderthal total sits inside the range Chen et al.'s own released
@@ -61,12 +62,15 @@ check "only chr22 was built" bash -c '[ "$(cd "$1" && ls chr*.tsv.gz)" = chr22.t
 TABLE="${DATA}/chr22.tsv.gz"
 ROWS=$(gzip -dc "$TABLE" 2>/dev/null | awk 'END {print NR - 1}')
 check_ge "table rows on chr22" "$ROWS" 100000
-# The masks and the excluded regions must take sites out. Measured on this
-# chromosome: 672,659 rows with neither (data version snpad2016-1kgp3-v1, run
-# 41621716972), 648,493 with the masks alone (run 41847280046). A build that
-# keeps 645,000 or more has lost the exclusions, and one that keeps 650,000 or
-# more has lost both.
-check "the masks and the exclusions dropped sites (fewer than 645,000 rows)" test "${ROWS:-0}" -lt 645000
+# The FilterBeds and the excluded regions mark calls masked (10 plus the ALT
+# count) instead of dropping them, as Chen et al. keep those sites in IBDmix's
+# input and mask them there. A build that lost the masks has no such code.
+for i in 5 6 7; do
+  check_ge "rows where archaic column $((i - 4)) is masked" \
+    "$(gzip -dc "$TABLE" | awk -F'\t' -v i="$i" 'NR > 1 && $i >= 10 && $i <= 12 {n++} END {print n + 0}')" 10000
+done
+check "every archaic code is 0, 1, 2, 9 or 10 to 12" \
+  bash -c 'gzip -dc "$1" | awk -F"\t" "NR > 1 { for (i = 5; i <= 7; i++) if (\$i !~ /^(0|1|2|9|10|11|12)\$/) bad = 1 } END {exit bad}"' _ "$TABLE"
 check "every row is on GRCh38 chr22" \
   bash -c 'gzip -dc "$1" | awk -F"\t" "NR > 1 && \$1 != \"chr22\" {bad = 1} END {exit bad}"' _ "$TABLE"
 check_ge "rows where Vindija carries the ALT inside the plant window" \
