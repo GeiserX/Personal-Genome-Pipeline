@@ -18,6 +18,12 @@ interval, which counts the anchor base, is as long as the net change. Symbolic (
 breakend records pass unchanged. A rewritten record keeps its old values in
 ORIG_SVLEN and ORIG_END.
 
+The input holds one sample. Step 05 and the reports read the genotype and
+phase of the first sample column (bin/annotsv_postfilter.py sample_format),
+so a VCF with more sample columns would let another person's genotype, or a
+0/0, decide whether a deletion counts: such an input stops the script (exit
+2) with the sample names.
+
 Usage: sv_svlen_fix.py IN.vcf[.gz]|- > OUT.vcf
 """
 import gzip
@@ -82,6 +88,12 @@ def main(argv):
     for line in fh:
         if line.startswith("#"):
             if line.startswith("#CHROM"):
+                samples = line.rstrip("\n").split("\t")[9:]
+                if len(samples) > 1:
+                    sys.stderr.write("ERROR: the SV VCF holds {0} samples ({1}); AnnotSV's input must hold one. "
+                                     "Pick it first: bcftools view -s <sample>\n".format(
+                                         len(samples), ", ".join(samples[:5]) + (", ..." if len(samples) > 5 else "")))
+                    return 2
                 for h in NEW_INFO:
                     if h not in seen:
                         out.write(h + "\n")

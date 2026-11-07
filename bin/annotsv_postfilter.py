@@ -61,9 +61,13 @@ Rule_detail says why:
                      record's own read depth, duphold's DHFFC (a deletion
                      needs < 0.7) or DHBFC (a duplication needs > 1.3), step
                      15's thresholds; else, for a Delly call over 1,000 bp,
-                     its RDCN (a deletion needs 0 or 1 copies, a duplication
-                     3 or more, or 2 or more on chrX and chrY, where the sex
-                     is not known here); a CNVpytor call is a read-depth call,
+                     its RDCN, read as bin/cnvpytor_to_vcf.py reads it when
+                     step 05 adds a Delly call: a deletion needs fewer copies
+                     than normal and a duplication more, where normal is 1 on
+                     a male's chrX and chrY outside the PARs (--sex, --par-bed)
+                     and 2 elsewhere; with no --sex either 1 or 2 is normal
+                     there, so a deletion needs 0 or 1 copies and a
+                     duplication 2 or more; a CNVpytor call is a read-depth call,
                      so yes. A Delly call step 05 added (FORMAT GT only)
                      over 1,000 bp is yes: cnvpytor_to_vcf.py set aside the
                      ones whose RDCN does not show the change. "not checked"
@@ -94,13 +98,18 @@ Rule_detail says why:
                      other gene is left.
 
 Usage: annotsv_postfilter.py --class45 CLASS45.tsv [--genes GENES.bed]
-       [--rules RULES.tsv] [--consensus CONSENSUS.vcf.gz] --out CHECKED.tsv
+       [--rules RULES.tsv] [--consensus CONSENSUS.vcf.gz]
+       [--sex male|female] [--par-bed PAR.bed] --out CHECKED.tsv
 """
 import argparse
 import csv
 import gzip
 import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import cnvpytor_to_vcf  # noqa: E402  the Delly RDCN rule step 05 applies when it adds a call
+import family_report  # noqa: E402  the PAR intervals
 
 EDGE_BP = 5
 COMMON_AF = 0.01
@@ -229,8 +238,10 @@ def sv_span(row):
     return start, max(end, start + 1)
 
 
-def depth_support(row, caller):
-    """(yes|no|not checked|., detail) for a deletion or duplication."""
+def depth_support(row, caller, sex="", par=None):
+    """(yes|no|not checked|., detail) for a deletion or duplication. sex:
+    male, female or "" (not given); par: family_report.read_par() of the
+    pseudoautosomal regions, or None."""
     t = sv_type(row)
     if t not in ("DEL", "DUP"):
         return ".", ""
@@ -247,9 +258,18 @@ def depth_support(row, caller):
     except (KeyError, ValueError):
         length = 0
     if rdcn is not None and rdcn >= 0 and length > DELLY_DEPTH_BP:
-        sex_chrom = chrom_key(row.get("SV_chrom", "")).upper() in ("X", "Y")
-        yes = rdcn <= 1 if t == "DEL" else rdcn >= (2 if sex_chrom else 3)
-        return ("yes" if yes else "no"), f"Delly RDCN {rdcn:g}"
+        # cnvpytor_to_vcf.py's rule, so a call reads the same in both places:
+        # the normal copies are 1 on a male's chrX and chrY outside the PARs,
+        # 2 elsewhere, and either one there when the sex is not given.
+        chrom = "chr" + chrom_key(row.get("SV_chrom", "")).upper()
+        try:
+            start = int(row["SV_start"])
+        except (KeyError, ValueError):
+            start = 0
+        cn = str(int(rdcn)) if rdcn.is_integer() else f"{rdcn:g}"
+        no = cnvpytor_to_vcf.delly_depth_contradicts(t, chrom, start, start + length, ["RDCN"], [cn], sex,
+                                                     family_report.in_par(par or {}, chrom, start))
+        return ("no" if no else "yes"), f"Delly RDCN {rdcn:g}"
     if caller == "delly" and rdcn is None and length > DELLY_DEPTH_BP:
         # Step 05 adds a Delly call through cnvpytor_to_vcf.py, which keeps
         # FORMAT GT only, after it has set aside every call over 1,000 bp
@@ -325,10 +345,11 @@ def region_rules(row, rules, transcripts):
     return hits, new_genes, downgrade
 
 
-def check_rows(rows, transcripts=None, rules=None):
+def check_rows(rows, transcripts=None, rules=None, sex="", par=None):
     """The class 4 and 5 rows with the added columns. transcripts None: the
     genes file was not given, so the exon edges and gene aliases are not
-    checked. rules: read_rules() of the rule table, or None."""
+    checked. rules: read_rules() of the rule table, or None. sex and par:
+    as depth_support takes them."""
     out = []
     for r in rows:
         o = {k: r.get(k, "") for k in KEEP}
@@ -349,7 +370,7 @@ def check_rows(rows, transcripts=None, rules=None):
         o["Population_source"] = src
         o["Common"] = "yes" if af is not None and af >= COMMON_AF else "no"
         o["AnnotSV_class"] = r.get("ACMG_class", "")
-        o["Depth_support"], depth_detail = depth_support(r, o["Caller"])
+        o["Depth_support"], depth_detail = depth_support(r, o["Caller"], sex, par)
         hits, new_genes, downgrade = region_rules(r, rules or {}, transcripts)
         if o["Depth_support"] == "no":
             hits.insert(0, ("no_depth_support", f"read depth does not show the change ({depth_detail})"))
@@ -432,8 +453,13 @@ def main(argv=None):
     ap.add_argument("--genes", help="AnnotSV's genes.RefSeq.sorted.bed")
     ap.add_argument("--rules", help="assets/sv_rule_regions.tsv")
     ap.add_argument("--consensus", help="step 22's consensus VCF")
+    ap.add_argument("--sex", choices=("male", "female", ""), default="",
+                    help="the sample's sex, for the normal copies on chrX and chrY (default: not given)")
+    ap.add_argument("--par-bed", help="the pseudoautosomal regions (assets/par_grch38.bed)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
+    if a.par_bed and not os.path.isfile(a.par_bed):
+        sys.exit(f"ERROR: no PAR file {a.par_bed}")
     rows = read_tsv(a.class45) if os.path.getsize(a.class45) else []
     if rows and not {"SV_chrom", "SV_start", "SV_end", "SV_type", "ACMG_class"} <= set(rows[0]):
         sys.exit(f"ERROR: {a.class45} lacks one of SV_chrom, SV_start, SV_end, SV_type, ACMG_class")
@@ -447,7 +473,7 @@ def main(argv=None):
         if not os.path.isfile(a.rules):
             sys.exit(f"ERROR: no rule table {a.rules}")
         rules = read_rules(a.rules, {chrom_key(r.get("SV_chrom", "")) for r in rows})
-    checked = check_rows(rows, transcripts, rules)
+    checked = check_rows(rows, transcripts, rules, a.sex, family_report.read_par(a.par_bed))
     cols = KEEP + ADDED
     if a.consensus:
         for r, s in zip(checked, consensus_support(checked, a.consensus)):

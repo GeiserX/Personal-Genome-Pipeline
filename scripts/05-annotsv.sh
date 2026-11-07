@@ -174,7 +174,8 @@ fi
 # caller, whether a deletion sits on the exon edges of one transcript of
 # AnnotSV's genes file (a processed transcript aligned across an intron), the
 # benign-set frequency of its type, and whether its read depth shows the
-# change. The rule table moves to class 3 a call inside a coding tandem
+# change (a Delly RDCN against the same sex- and PAR-aware normal copies as
+# above). The rule table moves to class 3 a call inside a coding tandem
 # repeat, the IG and TR loci or the MHC, one the depth contradicts, and one
 # whose gene symbol is a pseudogene's alias. How many callers saw it comes
 # from step 22's consensus, which the reports join when they are written.
@@ -187,9 +188,10 @@ else
   echo "Exon edges: no ${GENES_BED#"$GENOME_DIR"/} in the annotation data, so no deletion is checked against them."
 fi
 run_in --cpus 1 --memory 2g -v "${PGP_ROOT}/bin:/pgp-bin:ro" \
-  -v "${RULES_TSV}:/pgp/sv_rule_regions.tsv:ro" "${ANNOTSV_IMAGE}" \
+  -v "${RULES_TSV}:/pgp/sv_rule_regions.tsv:ro" \
+  -v "${PGP_ROOT}/assets/par_grch38.bed:/pgp/par_grch38.bed:ro" "${ANNOTSV_IMAGE}" \
   python3 /pgp-bin/annotsv_postfilter.py --class45 "$(cpath "$CLASS45")" ${GENES_ARGS[@]+"${GENES_ARGS[@]}"} \
-    --rules /pgp/sv_rule_regions.tsv --out "$(cpath "$CHECKED")"
+    --rules /pgp/sv_rule_regions.tsv --sex "$SEX" --par-bed /pgp/par_grch38.bed --out "$(cpath "$CHECKED")"
 
 echo "=== AnnotSV complete ==="
 echo "Input: ${INPUT_VCF}"

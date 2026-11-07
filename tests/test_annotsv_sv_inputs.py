@@ -226,6 +226,17 @@ def test_svlen(w):
     rc, out2, err2 = run("sv_svlen_fix.py", again)
     check("a second run changes nothing", rc == 0 and out2 == out, err2)
 
+    # One sample only: the reports read the GT and PS of the first sample
+    # column, so a second person's column (here the carrier, after a 0/0)
+    # must stop the step, not be read silently.
+    two = os.path.join(w, "two.vcf")
+    with open(two, "w") as f:
+        f.write(SV.replace("\ts1\n", "\ts1\ts2\n")
+                + "chr20\t1300000\tsym\tN\t<DEL>\t50\tPASS\tEND=1310000;SVTYPE=DEL\tGT\t0/0\t0/1\n")
+    rc, out3, err3 = run("sv_svlen_fix.py", two)
+    check("a VCF with two sample columns stops (exit 2) and names them",
+          rc == 2 and "holds 2 samples (s1, s2)" in err3 and not records(out3), (rc, err3))
+
 
 BASE = (
     "##fileformat=VCFv4.1\n##contig=<ID=chr1,length=248956422>\n##contig=<ID=chr20,length=64444167>\n"
@@ -294,6 +305,39 @@ def test_extra_callers(w):
     check("the summary counts what each caller gave",
           "delly: 2 PASS DEL/DUP calls, 1 added" in err and "cnvpytor: 3 DEL/DUP calls with e-val < 0.01 and q0 < 0.5, 2 added" in err,
           err)
+
+    # A Manta record that is filtered or genotyped 0/0 is no call: it must not
+    # hide the Delly PASS deletion it overlaps.
+    for label, gt, filt in (("a 0/0", "0/0", "PASS"), ("a MinGQ", "0/1", "MinGQ"), ("a ./.", "./.", "PASS")):
+        b = os.path.join(w, "base_nocall.vcf")
+        with open(b, "w") as f:
+            f.write(BASE + "chr20\t2000100\tMantaDEL:9\tN\t<DEL>\t500\t{0}\tEND=2049900;SVTYPE=DEL;SVLEN=-49800\tGT\t{1}\n"
+                    .format(filt, gt))
+        rc, out, err = run("cnvpytor_to_vcf.py", "--base", b, "--delly", delly)
+        ids = [r[2] for r in records(out)]
+        check("{0} Manta deletion stays and does not hide Delly's DEL00000002".format(label),
+              rc == 0 and "MantaDEL:9" in ids and "DEL00000002" in ids, (ids, err))
+    with open(b, "w") as f:
+        f.write(BASE + "chr20\t2000100\tMantaDEL:9\tN\t<DEL>\t500\tPASS\tEND=2049900;SVTYPE=DEL;SVLEN=-49800\tGT\t0|1\n")
+    rc, out, err = run("cnvpytor_to_vcf.py", "--base", b, "--delly", delly)
+    check("control: a PASS 0|1 Manta deletion still covers Delly's DEL00000002",
+          rc == 0 and "DEL00000002" not in [r[2] for r in records(out)], err)
+    sites = "".join("\t".join(l.split("\t")[:8]) + "\n" for l in (BASE + "chr20\t2000100\tMantaDEL:9\tN\t<DEL>\t500\tPASS\tEND=2049900;SVTYPE=DEL\tGT\t0/0\n").splitlines())
+    rc, out, err = run("cnvpytor_to_vcf.py", "--base", "-", "--delly", delly, stdin=sites)
+    check("a sites-only base deletion covers Delly's DEL00000002 (no genotype to read)",
+          rc == 0 and "DEL00000002" not in [r[2] for r in records(out)], (records(out), err))
+
+    # A Delly PASS deletion genotyped 0/0 or ./. is no call either: it is not
+    # added, and CNVpytor's deletion at the same place is added instead.
+    for gt in ("0/0", "./."):
+        with gzip.open(delly, "wt") as f:
+            f.write(DELLY.replace("\t1/1:40\n", "\t{0}:40\n".format(gt)))
+        rc, out, err = run("cnvpytor_to_vcf.py", "--base", base, "--delly", delly, "--cnvpytor", cnvp)
+        ids = [r[2] for r in records(out)]
+        check("a {0} Delly deletion is not added and does not hide CNVpytor_del0".format(gt),
+              rc == 0 and "DEL00000002" not in ids and "CNVpytor_del0" in ids, (ids, err))
+    with gzip.open(delly, "wt") as f:
+        f.write(DELLY)
 
     rc, out, err = run("cnvpytor_to_vcf.py", "--base", "-", "--base-name", "sv_vcf", stdin=BASE)
     check("no other caller: stdin in, the base out with SVCALLER=sv_vcf",

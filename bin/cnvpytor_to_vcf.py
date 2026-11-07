@@ -25,6 +25,11 @@ A call is covered when a record of the same type (DEL, or DUP and DUP:TANDEM)
 on the same chromosome overlaps it reciprocally by at least --min-overlap
 (default 0.5) of the longer of the two. Delly's calls are added before
 CNVpytor's, so a deletion both of them call and Manta misses is added once.
+Only a base record with FILTER PASS (or .) and an allele other than 0 in its
+first sample covers a call: a filtered Manta record (MinGQ and the rest) or
+one genotyped 0/0 or ./. stays in the file but hides nothing. A sites-only
+base covers with every DEL and DUP. A Delly PASS call genotyped 0/0 or ./. is
+not added either, so it covers no CNVpytor call.
 
 Every record says where it came from in INFO SVCALLER (the base's records
 get --base-name, default manta). An added record keeps the caller's ID, END,
@@ -155,6 +160,24 @@ def first_gt(fields):
     return values[i] if i < len(values) and values[i] else "./."
 
 
+def call_holds(fields, n_samples):
+    """True when a record is a call this sample carries.
+
+    A record Manta filtered (MinGQ, MaxDepth and the rest) or genotyped as
+    reference (0/0) or no-call (./.) is not a variant this sample carries;
+    letting it cover a Delly or CNVpytor call would drop that call, and the
+    summary (collect_summary.py) skips a 0/0 record, so the deletion would be
+    lost. The same holds for a Delly PASS record genotyped 0/0 or ./.: it is
+    not added, and so does not cover a CNVpytor call. A sites-only record (no
+    sample column) has no genotype and counts as a call.
+    """
+    if fields[6] not in ("PASS", "."):
+        return False
+    if not n_samples:
+        return True
+    return any(a not in ("0", ".", "") for a in first_gt(fields).replace("|", "/").split("/"))
+
+
 def as_float(value):
     try:
         return float(value)
@@ -214,7 +237,7 @@ def main(argv=None):
     for f in base:
         info = info_dict(f[7])
         kind, sp = sv_type(f, info), span(f, info)
-        if kind in ("DEL", "DUP") and sp:
+        if kind in ("DEL", "DUP") and sp and call_holds(f, n_samples):
             known.add(f[0], kind, sp[0], sp[1])
         f[7] = ("" if f[7] in ("", ".") else f[7] + ";") + "SVCALLER=" + args.base_name
 
@@ -249,7 +272,7 @@ def main(argv=None):
         no_depth = [0]
 
         def delly_keep(f, info):
-            if f[6] != "PASS":
+            if f[6] != "PASS" or not call_holds(f, 1 if len(f) > 9 else 0):
                 return False
             sp = span(f, info)
             fmt = f[8].split(":") if len(f) > 9 else []

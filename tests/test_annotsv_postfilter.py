@@ -32,7 +32,10 @@ Checks:
      Manta deletions at one place, DHFFC 0.95 and 0.5: the first is class 3
      (no depth support), the second stays 4; a duplication with DHBFC 1.1
      is class 3; Delly RDCN 2 on a deletion is no support, RDCN 1 is; on
-     chrX a duplication with RDCN 2 counts; a record with no depth value is
+     chrX a duplication with RDCN 2 counts with no sex given; with --sex
+     and --par-bed a male's chrX deletion needs RDCN 0, a female's chrX
+     duplication 3 or more, and inside the PAR a duplication needs 3 for
+     any sex; a record with no depth value is
      "not checked" and keeps its class; a CNVpytor call has support; a
      Delly call with FORMAT GT only (as step 05 adds it) has support over
      1,000 bp and is "not checked" at 800 bp; the
@@ -157,6 +160,37 @@ def run7(work, name, with_rules=True):
         return {r["ID"]: r for r in csv.DictReader(f, delimiter="\t")}, p.stderr
 
 
+SEX_ROWS = "".join([
+    row7("XDEL1", "X", 50000000, 50050000, "DEL", 4, "delly", "G20", "GT:RDCN", "1/1:1"),
+    row7("XDEL0", "X", 51000000, 51050000, "DEL", 4, "delly", "G21", "GT:RDCN", "1/1:0"),
+    row7("XDUP2", "X", 52000000, 52050000, "DUP", 4, "delly", "G22", "GT:RDCN", "0/1:2"),
+    row7("PARDUP2", "X", 1000000, 1050000, "DUP", 4, "delly", "G23", "GT:RDCN", "0/1:2"),
+    row7("PARDEL1", "X", 1000000, 1050000, "DEL", 4, "delly", "G24", "GT:RDCN", "0/1:1"),
+    row7("YDEL1", "Y", 20000000, 20050000, "DEL", 4, "delly", "G25", "GT:RDCN", "1/1:1"),
+    row7("YDUP2", "Y", 21000000, 21050000, "DUP", 4, "delly", "G26", "GT:RDCN", "0/1:2"),
+    # PAR1 ends at chrX:2,781,479 (assets/par_grch38.bed): the last base in
+    # it, then the first base past it.
+    row7("PAREDGE_IN", "X", 2781479, 2831479, "DUP", 4, "delly", "G27", "GT:RDCN", "0/1:2"),
+    row7("PAREDGE_OUT", "X", 2781480, 2831480, "DUP", 4, "delly", "G28", "GT:RDCN", "0/1:2"),
+    row7("BIGDUP", "20", 48000000, 48050000, "DUP", 4, "delly", "G29", "GT:RDCN", "0/1:1000000"),
+])
+
+
+def run_sex(work, name, sex, par):
+    """{ID: written row} of the command line on SEX_ROWS with --sex and --par-bed."""
+    c45 = os.path.join(work, name + ".tsv")
+    with open(c45, "w") as f:
+        f.write("\t".join(HEAD7) + "\n" + SEX_ROWS)
+    dst = os.path.join(work, name + "_checked.tsv")
+    p = subprocess.run([sys.executable, os.path.join(REPO, "bin", "annotsv_postfilter.py"), "--class45", c45,
+                        "--sex", sex, "--par-bed", par, "--out", dst], capture_output=True, text=True)
+    if p.returncode != 0 or not os.path.isfile(dst):
+        print(f"  (the command failed: {p.stderr.strip()[-300:]})")
+        return {}, p.stderr
+    with open(dst) as f:
+        return {r["ID"]: r for r in csv.DictReader(f, delimiter="\t")}, p.stderr
+
+
 def rules_section(work):
     got, err = run7(work, "rules")
 
@@ -193,7 +227,7 @@ def rules_section(work):
     check("Delly RDCN 2 on a deletion: no support; RDCN 1: support",
           (col("DELLY2", "Depth_support"), col("DELLY1", "Depth_support")) == ("no", "yes"),
           (got.get("DELLY2"), got.get("DELLY1")))
-    check("a chrX duplication with RDCN 2 counts (the sex is not known here)", col("XDUP", "Depth_support") == "yes",
+    check("a chrX duplication with RDCN 2 counts when the sex is not given", col("XDUP", "Depth_support") == "yes",
           got.get("XDUP"))
     check("no depth value: not checked, class kept",
           (col("NODEPTH", "Depth_support"), col("NODEPTH", "ACMG_class")) == ("not checked", "4"), got.get("NODEPTH"))
@@ -203,6 +237,25 @@ def rules_section(work):
     check("the same call of 800 bp had no RDCN gate: not checked, class kept",
           (col("DELLY_SHORT", "Depth_support"), col("DELLY_SHORT", "ACMG_class")) == ("not checked", "4"),
           got.get("DELLY_SHORT"))
+    # Delly RDCN on chrX and chrY by sex and PAR (--sex, --par-bed), the rule
+    # cnvpytor_to_vcf.py applies when step 05 adds a Delly call.
+    par = os.path.join(REPO, "assets", "par_grch38.bed")
+    yes, no = ("yes", "4"), ("no", "3")
+    for sex, want_sex in (("male", {"XDEL1": no, "XDUP2": yes, "PARDUP2": no, "XDEL0": yes, "PARDEL1": yes,
+                                    "YDEL1": no, "YDUP2": yes, "PAREDGE_IN": no, "PAREDGE_OUT": yes,
+                                    "BIGDUP": yes}),
+                          ("female", {"XDEL1": yes, "XDUP2": no, "PARDUP2": no, "XDEL0": yes, "PARDEL1": yes,
+                                      "YDEL1": yes, "YDUP2": no, "PAREDGE_IN": no, "PAREDGE_OUT": no,
+                                      "BIGDUP": yes}),
+                          ("", {"XDEL1": yes, "XDUP2": yes, "PARDUP2": no, "XDEL0": yes, "PARDEL1": yes,
+                                "YDEL1": yes, "YDUP2": yes, "PAREDGE_IN": no, "PAREDGE_OUT": yes,
+                                "BIGDUP": yes})):
+        sx, _ = run_sex(work, "sex_" + (sex or "none"), sex, par)
+        got_sex = {i: (sx.get(i, {}).get("Depth_support"), sx.get(i, {}).get("ACMG_class")) for i in want_sex}
+        check(f"sex {sex or 'not given'}: chrX and chrY RDCN against 1 copy (male), 2 (female), either (not "
+              f"given); inside the PAR, up to its last base, 2 copies; RDCN 1000000 is a gain",
+              got_sex == want_sex, got_sex)
+
     moved = sorted(i for i, r in got.items() if r["ACMG_class"] != r["AnnotSV_class"])
     want = sorted(["TR_IN", "IGH_IN", "IGH_MOST", "MHC_IN", "ALIAS", "D_LOW", "DUP_LOW", "DELLY2"])
     check("exactly the eight rows above are moved to class 3", moved == want, moved)
