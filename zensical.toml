@@ -15,11 +15,14 @@ repo_name = "GeiserX/OwnGenome"
 edit_uri = "edit/main/docs/"
 strict = true
 extra_css = ["stylesheets/theme.css"]
+# releases/ keeps release notes off the site until their release is tagged; the
+# cut moves the page from exclude_docs into the nav.
 exclude_docs = """
 [A-Z]*.md
 design/
 research/
 notes/
+releases/
 requirements-docs.txt
 """
 nav = [
@@ -136,7 +139,6 @@ nav = [
       { Testing = "testing.md" },
       { "Keeping versions up to date" = "updating.md" },
       { Glossary = "glossary.md" },
-      { "OwnGenome 1.0.0" = "releases/v1.0.0.md" },
       { "Recommended Resources" = "resources.md" },
     ] },
 ]
