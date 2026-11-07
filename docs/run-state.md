@@ -98,6 +98,6 @@ It prints plain lines and exits 0. Standard library only.
 
 **As a library.** `snapshot(events, work_dir, outdir, disk_warn_percent, mem_warn_percent, max_memory, trace_rows)` returns `{disk, tasks, host, warn_used_ratio, mem_warn_ratio}`; `task_memory`, `host_memory` and `disk` give each part alone. It holds no path, and it formats nothing: a page or a metrics endpoint formats the numbers itself. It measures when called; it does not poll and does not project when a disk will fill.
 
-## What it does not do yet
+## The page built on it
 
-It does not serve a page. It is the data a live view of the run can be built on.
+`bin/run_state.py` serves no page itself. The live site's server, `bin/owngenome_live.py`, reads the run's messages with it and serves its state as `state.json` to the run page ([Watch a Run Live](live-site.md)).
