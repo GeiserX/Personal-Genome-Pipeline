@@ -199,10 +199,9 @@ CATALOGS="callability bash ${REPO}/scripts/ci/build-callability.sh
 cn-intervals python3 ${REPO}/scripts/ci/build-cn-intervals.py"
 # catalog_files: "FOLDER NAME URL SHA256" of every download of CATALOGS.
 catalog_files() {
-  local dir cmd out
-  while read -r dir cmd; do
-    # shellcheck disable=SC2086  # cmd is a command and its arguments
-    out=$($cmd --list) && [ -n "$out" ] || { echo "ERROR: ${cmd} --list gave nothing" >&2; return 1; }
+  local dir interp builder out
+  while read -r dir interp builder; do
+    out=$("$interp" "$builder" --list) && [ -n "$out" ] || { echo "ERROR: ${builder} --list gave nothing" >&2; return 1; }
     sed "s|^|${dir} |" <<< "$out"
   done <<< "$CATALOGS"
 }

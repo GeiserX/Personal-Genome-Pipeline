@@ -9,8 +9,9 @@
 # database is built for the HLA-DQB1 row of assets/locityper_loci.bed
 # (LOCITYPER_LOCI). HLA-DRB1, the other MHC row, is left out for time: with
 # both, jellyfish took 35 minutes and the pairwise alignments of
-# `locityper augment` 23 more (fork run 42301973505). One locus halves the
-# alignments, not jellyfish, whose time does not depend on the loci, so the
+# `locityper augment` 23 more (fork run 42301973505). With HLA-DQB1 alone
+# augment takes about a minute, but jellyfish, whose time does not depend on
+# the loci, still takes 36 (38 minutes in all, fork run 42325306077), so the
 # case keeps a limit of 90 minutes instead of the runner's 60 (the
 # case-timeout line below). It runs in a GENOME_DIR of its own with a
 # reference of chr6 and chr20 cut from the fixture's, so jellyfish

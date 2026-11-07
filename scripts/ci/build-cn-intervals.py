@@ -142,7 +142,8 @@ def fetch(name, url, want, folder):
                 os.replace(path + ".part", path)
                 break
             except OSError as e:
-                if i == 2:
+                # A missing or forbidden file stays so: no point waiting.
+                if i == 2 or getattr(e, "code", None) in (403, 404):
                     raise BuildError(f"cannot download {url}: {e}")
                 time.sleep(30)
     got = sha256(path)
@@ -374,6 +375,8 @@ def main(argv=None):
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--list", action="store_true")
     a = ap.parse_args(argv)
+    if a.list and a.check:
+        ap.error("--list and --check do not go together")
     if a.list:
         try:
             files = [("clingen_recurrent_cnv.bed", versions_env("CLINGEN_RECURRENT_CNV_URL"),
