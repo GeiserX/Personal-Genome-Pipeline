@@ -327,6 +327,18 @@ def test_extra_callers(w):
     check("a sites-only base deletion covers Delly's DEL00000002 (no genotype to read)",
           rc == 0 and "DEL00000002" not in [r[2] for r in records(out)], (records(out), err))
 
+    # A Delly PASS deletion genotyped 0/0 or ./. is no call either: it is not
+    # added, and CNVpytor's deletion at the same place is added instead.
+    for gt in ("0/0", "./."):
+        with gzip.open(delly, "wt") as f:
+            f.write(DELLY.replace("\t1/1:40\n", "\t{0}:40\n".format(gt)))
+        rc, out, err = run("cnvpytor_to_vcf.py", "--base", base, "--delly", delly, "--cnvpytor", cnvp)
+        ids = [r[2] for r in records(out)]
+        check("a {0} Delly deletion is not added and does not hide CNVpytor_del0".format(gt),
+              rc == 0 and "DEL00000002" not in ids and "CNVpytor_del0" in ids, (ids, err))
+    with gzip.open(delly, "wt") as f:
+        f.write(DELLY)
+
     rc, out, err = run("cnvpytor_to_vcf.py", "--base", "-", "--base-name", "sv_vcf", stdin=BASE)
     check("no other caller: stdin in, the base out with SVCALLER=sv_vcf",
           rc == 0 and "none given" in err and [info(r).get("SVCALLER") for r in records(out)] == ["sv_vcf"] * 2, err)
