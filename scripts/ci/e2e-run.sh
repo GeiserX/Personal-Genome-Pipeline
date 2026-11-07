@@ -865,6 +865,10 @@ for c in "${CASES[@]}"; do
     [[ "$c" == $PATTERN ]] || continue
   fi
   log="${LOG_DIR}/${name}.log"
+  # A case may raise its own limit with a line "# case-timeout: SECONDS"
+  # (never below CASE_TIMEOUT).
+  ctimeout=$(sed -n 's/^# case-timeout: \([0-9][0-9]*\)$/\1/p' "${REPO}/tests/e2e/${c}" | head -n 1)
+  [ "${ctimeout:-0}" -gt "$CASE_TIMEOUT" ] || ctimeout=$CASE_TIMEOUT
   start=$(date +%s)
   tstart=$(date +%s.%N)
   echo "::group::${name}"
@@ -874,7 +878,7 @@ for c in "${CASES[@]}"; do
     rc=-2
   else
     set +e
-    timeout -k 30 "$CASE_TIMEOUT" "${CASE_ENV[@]}" bash "${REPO}/tests/e2e/${c}" 2>&1 | tee "$log"
+    timeout -k 30 "$ctimeout" "${CASE_ENV[@]}" bash "${REPO}/tests/e2e/${c}" 2>&1 | tee "$log"
     rc=${PIPESTATUS[0]}
     set -e
   fi
@@ -896,7 +900,7 @@ for c in "${CASES[@]}"; do
     -1)  result="FAIL (network-block control)"; failed=$((failed + 1)) ;;
     -3)  result="FAIL (no check ran)"; failed=$((failed + 1)) ;;
     -2)  result="FAIL (data fill over ${E2E_DATA_BUDGET:-2400}s)"; failed=$((failed + 1)) ;;
-    124) result="FAIL (timeout ${CASE_TIMEOUT}s)"; failed=$((failed + 1)) ;;
+    124) result="FAIL (timeout ${ctimeout}s)"; failed=$((failed + 1)) ;;
     *)   result="FAIL (exit ${rc})"; failed=$((failed + 1)) ;;
   esac
   secs=$(( $(date +%s) - start ))

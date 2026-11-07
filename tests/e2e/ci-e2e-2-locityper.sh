@@ -9,9 +9,11 @@
 # database is built for the HLA-DQB1 row of assets/locityper_loci.bed
 # (LOCITYPER_LOCI). HLA-DRB1, the other MHC row, is left out for time: with
 # both, jellyfish took 35 minutes and the pairwise alignments of
-# `locityper augment` 23 more (fork run 42301973505), close to the case's
-# 60-minute limit. It runs in a GENOME_DIR of its own
-# with a reference of chr6 and chr20 cut from the fixture's, so jellyfish
+# `locityper augment` 23 more (fork run 42301973505). One locus halves the
+# alignments, not jellyfish, whose time does not depend on the loci, so the
+# case keeps a limit of 90 minutes instead of the runner's 60 (the
+# case-timeout line below). It runs in a GENOME_DIR of its own with a
+# reference of chr6 and chr20 cut from the fixture's, so jellyfish
 # counts 235 Mb instead of the fixture's 1.8 Gb; the fixture's reads over the
 # MHC and chr20:10.0-10.5 Mb are aligned to it, since Locityper needs the
 # BAM's contigs to be the reference's. Step 53 measures depth on chr20
@@ -20,6 +22,7 @@
 #
 # Red controls: the step stops without a database, without the BAM's index,
 # and with a database whose DONE names another reference.
+# case-timeout: 5400
 . "$(dirname "$0")/lib.sh"
 
 G="${CASE_TMP}/genome"
@@ -100,7 +103,6 @@ run53 "${CASE_TMP}/nobai.log"
 check_eq "red control: step 53 stops (exit 1) without the BAM's index" "$STEP_RC" 1
 check "red control: and names it" grep -q "File not found: .*${SAMPLE}_sorted.bam.bai" "${CASE_TMP}/nobai.log"
 mv "${CASE_TMP}/bai" "${S}/aligned/${SAMPLE}_sorted.bam.bai"
-cp "${DB}/DONE" "${CASE_TMP}/DONE"
 sed -i 's/fai=[0-9a-f]* /fai=0000 /' "${DB}/DONE"
 run53 "${CASE_TMP}/stale.log"
 check_eq "red control: step 53 stops (exit 1) on a database built from another reference" "$STEP_RC" 1
