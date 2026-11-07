@@ -1423,7 +1423,7 @@ with zipfile.ZipFile(z) as f:
 # DONE names the inputs, so a changed one builds again.
 install_locityper_data() {
   local dir=${LOCITYPER_DATA:-${GENOME_DIR}/reference/locityper-${LOCITYPER_PANEL_VERSION}}
-  local loci=${LOCITYPER_LOCI:-${PGP_ROOT}/assets/locityper_loci.bed} stamp jstamp n regions bad name
+  local loci=${LOCITYPER_LOCI:-${PGP_ROOT}/assets/locityper_loci.bed} stamp jstamp n regions bad name hsize
   case "$dir" in /*) ;; *) dir="${GENOME_DIR}/${dir}" ;; esac
   cpath "$dir" >/dev/null || return 1
   if [ ! -s "$REF_FASTA" ] || [ ! -s "${REF_FASTA}.fai" ]; then
@@ -1455,8 +1455,12 @@ install_locityper_data() {
   if [ ! -s "${dir}/counts.jf" ] || [ "$(cat "${dir}/counts.stamp" 2>/dev/null)" != "$jstamp" ]; then
     echo "  k-mer counts of $(basename "$REF_FASTA") (jellyfish, several GB of RAM for GRCh38)..."
     rm -f "${dir}/counts.jf" "${dir}/counts.stamp"
+    # The hash holds one entry per distinct k-mer, at most one per base, so it
+    # is sized to the reference's length (about 3.1G for GRCh38), never below
+    # 10M. A fixed 3G made a 235 Mb reference take 36 minutes on 16 GB.
+    hsize=$(awk '{n += $2} END {n = n < 10000000 ? 10000000 : n; printf "%d", n}' "${REF_FASTA}.fai")
     if ! run_in --rw "$dir" "$LOCITYPER_IMAGE" jellyfish count --canonical --lower-count 2 --out-counter-len 2 \
-        --mer-len 25 --threads "$THREADS" --size 3G --output "$(cpath "${dir}/counts.jf.part")" "$REF_FASTA_C"; then
+        --mer-len 25 --threads "$THREADS" --size "$hsize" --output "$(cpath "${dir}/counts.jf.part")" "$REF_FASTA_C"; then
       rm -f "${dir}/counts.jf.part"
       echo "[WARN] jellyfish could not count the reference's k-mers"
       return 1
