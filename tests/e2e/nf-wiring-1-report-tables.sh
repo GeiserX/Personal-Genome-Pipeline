@@ -158,6 +158,9 @@ check "the VEP file is bgzipped and indexed" test -s "${SD}/vep/${S}_vep.vcf.gz.
 run_step 24-html-report.sh "$S"
 check_step_exit 24-html-report.sh
 
+# The report assets main.nf passes HTML_REPORT (report_assets)
+ASSET_FILES=$(for n in acmg_sf.tsv carrier_genes.tsv callability_genes.tsv mito_confirmed.tsv paralog_loci.tsv paraphase_genes.tsv; do
+  printf "file('%s/assets/%s'), " "$REPO" "$n"; done | sed 's/, $//')
 report_nf() {  # report_nf NAME MODULE
   cat > "${NP}/main.nf" <<NF
 include { HTML_REPORT } from '$2'
@@ -170,7 +173,7 @@ workflow {
         file('${SD}/qc/${S}_read_count.tsv'),
         file('${SD}/clinical/${S}_clinical.vcf.gz'), file('${SD}/clinical/${S}_clinical_summary.tsv'),
         file('${SD}/slivar/${S}_prioritized.vcf.gz'), file('${SD}/slivar/${S}_slivar_summary.tsv'),
-        file('${REPO}/assets/acmg_sf.tsv')]]))
+        ${ASSET_FILES}]]))
 }
 NF
   nf_run "$1"
@@ -190,6 +193,11 @@ for k in ("read_count", "clinvar", "cpsr", "clinical", "slivar"):
     x, y = ({i: v for i, v in s.get(k, {"state": "absent"}).items() if i != "file_date"} for s in (b, n))
     ok = x == y and x["state"] == "ok"
     print(f"  {k}: bash {x['state']}, nextflow {y['state']}{'' if ok else ', differ'}")
+    if not ok:
+        for i in sorted(set(x) | set(y)):
+            if x.get(i) != y.get(i):
+                print(f"    {i}: bash {json.dumps(x.get(i))[:400]}")
+                print(f"    {i}: nextflow {json.dumps(y.get(i))[:400]}")
     bad += not ok
 sys.exit(bad)
 PY

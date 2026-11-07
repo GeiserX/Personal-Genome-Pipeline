@@ -61,14 +61,16 @@ SHEET="${CASE_TMP}/sheet.csv"
 printf 'sample,vcf,vcf_index,bam,bam_index,sex\n%s,%s,%s,%s,%s,male\n' "$SAMPLE" "$VCF" "${VCF}.tbi" "$BAM" "${BAM}.bai" > "$SHEET"
 OUT_REL="nf-wiring-sv"
 OUT="${G}/${OUT_REL}"
-# nf_run DIR NAME TOOLS: main.nf of DIR with the real images on the fixture
+# nf_run DIR NAME TOOLS: main.nf of DIR with the real images on the fixture. The
+# fixture BAM is a slice, so indexcov's sex call is noise: --sex_check warn keeps
+# the declared male (ExpansionHunter reads it).
 nf_run() {
   rm -rf "$OUT"
   echo "+ nextflow run main.nf -profile docker --tools $3 ($2)"
   (
     cd "$CASE_TMP" && nextflow run "$1/main.nf" -profile docker -ansi-log false \
       -work-dir "${E2E_WORK}/nf-work-$2" --input "$SHEET" --reference "$REF" --tools "$3" \
-      --expansion_catalog "$CAT" --cnvpytor_resources "$RES" \
+      --expansion_catalog "$CAT" --cnvpytor_resources "$RES" --sex_check warn \
       --outdir "$OUT" --max_cpus 4 --max_memory 14.GB
   ) > "${CASE_TMP}/$2.log" 2>&1
 }
@@ -120,5 +122,7 @@ BR=$?
 check "control: the run with the broken flag fails" test "$BR" -ne 0
 check "control: at EXPANSION_HUNTER" grep -q "Error executing process > '.*EXPANSION_HUNTER" "${CASE_TMP}/broken.log"
 
-rm -rf "$OUT" "$BROKEN" "$RES" "${E2E_WORK}/nf-work-tools" "${E2E_WORK}/nf-work-broken"
+# The tasks' files are root's: remove them from a container.
+docker run --rm -v "${E2E_WORK}:/w" "$BCFTOOLS_IMAGE" rm -rf /w/nf-work-tools /w/nf-work-broken "/w/genome/${OUT_REL}"
+rm -rf "$BROKEN" "$RES"
 finish
