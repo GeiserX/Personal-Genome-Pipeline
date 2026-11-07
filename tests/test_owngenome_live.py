@@ -858,13 +858,16 @@ def main():
         page = f"/runs/{RUN}/cpsr/{RUN}.cpsr.grch38.html"
         check("the report's cpsr/ folder link opens the CPSR HTML report in it",
               code == 302 and hd.get("location") == page, (code, hd.get("location")))
-        code, _, body = request(port, "GET", page, headers=auth)
-        check("the CPSR HTML report in the linked folder is served", code == 200 and b"<title>CPSR" in body, code)
+        code, hd, body = request(port, "GET", page, headers=auth)
+        check("the CPSR HTML report in the linked folder is served sandboxed",
+              code == 200 and b"<title>CPSR" in body
+              and hd.get("content-security-policy") == owngenome_live.RUN_HTML_CSP, (code, hd))
         c1, _, _ = request(port, "GET", f"/runs/{RUN}/cpsr/{RUN}.cpsr.grch38.classification.tsv.gz", headers=auth)
         c2, _, _ = request(port, "GET", f"/runs/{RUN}/twopages/", headers=auth)
         c3, _, _ = request(port, "GET", f"/runs/{RUN}/clinvar/", headers=auth)
-        check("a linked folder serves only its HTML, a folder with two HTML files and an unlinked folder are 404",
-              (c1, c2, c3) == (404, 404, 404), (c1, c2, c3))
+        c4, _, _ = request(port, "GET", f"/runs/{RUN}/twopages/a.html", headers=auth)
+        check("a linked folder serves only its one HTML; a folder with two HTML files (itself or either file) "
+              "and an unlinked folder are 404", (c1, c2, c3, c4) == (404, 404, 404, 404), (c1, c2, c3, c4))
         code, _, body = request(port, "GET", "/", headers=auth)
         check("the index lists the run", code == 200 and f'/runs/{RUN}/'.encode() in body, code)
         log = open(os.path.join(state_dir, "access.log")).read()
