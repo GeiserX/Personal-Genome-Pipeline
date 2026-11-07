@@ -8,7 +8,9 @@
 # fixture's contigs (as bash-step-09-str does); CNVpytor the pinned v1.3.2
 # GC and mask files docs/00-reference-setup.md downloads.
 # Control: a copy of the pipeline whose EXPANSION_HUNTER passes a wrong flag
-# fails the run, so a broken module command line cannot ship green.
+# fails that task, so a broken module command line cannot ship green.
+# nextflow.config ignores a failed EXPANSION_HUNTER (report-only), so the run
+# still exits 0: failed_tasks.tsv names it and no repeat VCF is published.
 . "$(dirname "$0")/lib.sh"
 
 command -v nextflow >/dev/null || { fail "nextflow is not on PATH"; finish; }
@@ -117,10 +119,12 @@ cp -R "${REPO}/main.nf" "${REPO}/nextflow.config" "${REPO}/nextflow_schema.json"
 sed -i 's/--reads \${bam}/--readz ${bam}/' "${BROKEN}/modules/local/expansion_hunter/main.nf"
 check_eq "control copy: EXPANSION_HUNTER passes --readz" \
   "$(grep -c -- '--readz \${bam}' "${BROKEN}/modules/local/expansion_hunter/main.nf")" 1
+rm -f "${CASE_TMP}/failed_tasks.tsv"
 nf_run "$BROKEN" broken expansion_hunter
-BR=$?
-check "control: the run with the broken flag fails" test "$BR" -ne 0
-check "control: at EXPANSION_HUNTER" grep -q "Error executing process > '.*EXPANSION_HUNTER" "${CASE_TMP}/broken.log"
+echo "control run exit: $?"
+check "control: failed_tasks.tsv names EXPANSION_HUNTER as failed and ignored" \
+  grep -qE $'(^|:)EXPANSION_HUNTER\tignored$' "${CASE_TMP}/failed_tasks.tsv"
+check "control: no repeat VCF is published" test ! -e "$EH"
 
 # The tasks' files are root's: remove them from a container.
 docker run --rm -v "${E2E_WORK}:/w" "$BCFTOOLS_IMAGE" rm -rf /w/nf-work-tools /w/nf-work-broken "/w/genome/${OUT_REL}"
