@@ -6,8 +6,11 @@
 # commands; this case runs the scripts.
 #
 # The fixture holds reads over the MHC but none over FCGR or KIR, so the
-# database is built for the two chr6 rows of assets/locityper_loci.bed
-# (HLA-DRB1 and HLA-DQB1, LOCITYPER_LOCI). It runs in a GENOME_DIR of its own
+# database is built for the HLA-DQB1 row of assets/locityper_loci.bed
+# (LOCITYPER_LOCI). HLA-DRB1, the other MHC row, is left out for time: with
+# both, jellyfish took 35 minutes and the pairwise alignments of
+# `locityper augment` 23 more (fork run 42301973505), close to the case's
+# 60-minute limit. It runs in a GENOME_DIR of its own
 # with a reference of chr6 and chr20 cut from the fixture's, so jellyfish
 # counts 235 Mb instead of the fixture's 1.8 Gb; the fixture's reads over the
 # MHC and chr20:10.0-10.5 Mb are aligned to it, since Locityper needs the
@@ -43,8 +46,8 @@ check_ge "reads aligned to the cut reference" \
   "$(docker run --rm -v "${G}:/g:ro" "$SAMTOOLS_IMAGE" samtools view -c -F 0x904 "/g/${SAMPLE}/aligned/${SAMPLE}_sorted.bam" 2>/dev/null)" 10000
 
 LOCI="${CASE_TMP}/loci.bed"
-awk -F'\t' '!/^#/ && $1 == "chr6"' "${REPO}/assets/locityper_loci.bed" > "$LOCI"
-check_eq "the chr6 loci of assets/locityper_loci.bed" "$(cut -f4 "$LOCI" | paste -sd' ' -)" "HLA-DRB1 HLA-DQB1"
+awk -F'\t' '!/^#/ && $4 == "HLA-DQB1"' "${REPO}/assets/locityper_loci.bed" > "$LOCI"
+check_eq "the HLA-DQB1 row of assets/locityper_loci.bed" "$(cut -f1,4 "$LOCI" | tr '\t' ' ')" "chr6 HLA-DQB1"
 
 # run53 LOG: step 53 on HG002 in G, its exit code in STEP_RC.
 run53() {
@@ -65,11 +68,9 @@ DB="${G}/reference/locityper-${LOCITYPER_PANEL_VERSION}"
 echo "+ LOCITYPER_LOCI=${LOCI} scripts/setup.sh --locityper-data ${G}"
 GENOME_DIR="$G" LOCITYPER_LOCI="$LOCI" THREADS="${THREADS:-4}" "${REPO}/scripts/setup.sh" --locityper-data "$G" 2>&1 | tee "$STEP_LOG"
 check_eq "setup.sh --locityper-data exits 0" "${PIPESTATUS[0]}" 0
-check "and says the database is built" grep -q "\[OK\] Locityper's database (step 53, 2 loci" "$STEP_LOG"
-for l in HLA-DRB1 HLA-DQB1; do
-  check "the database holds ${l} (Locityper's success file)" test -e "${DB}/db/loci/${l}/success"
-done
-check_eq "its loci.bed is the two chr6 rows" "$(cut -f4 "${DB}/loci.bed" 2>/dev/null | paste -sd' ' -)" "HLA-DRB1 HLA-DQB1"
+check "and says the database is built" grep -q "\[OK\] Locityper's database (step 53, 1 loci" "$STEP_LOG"
+check "the database holds HLA-DQB1 (Locityper's success file)" test -e "${DB}/db/loci/HLA-DQB1/success"
+check_eq "its loci.bed is the HLA-DQB1 row" "$(cut -f4 "${DB}/loci.bed" 2>/dev/null | paste -sd' ' -)" "HLA-DQB1"
 check "its DONE names the reference's .fai" grep -q "fai=$(sha256sum "${G}/reference/GRCh38_no_alt_analysis_set.fasta.fai" | cut -d' ' -f1) " "${DB}/DONE"
 GENOME_DIR="$G" LOCITYPER_LOCI="$LOCI" THREADS="${THREADS:-4}" "${REPO}/scripts/setup.sh" --locityper-data "$G" > "${CASE_TMP}/again.log" 2>&1
 check_eq "a second setup.sh --locityper-data exits 0" "$?" 0
@@ -81,16 +82,15 @@ check_eq "scripts/53-locityper.sh exits 0" "$STEP_RC" 0
 TABLE="${S}/locityper/${SAMPLE}_locityper.tsv"
 check_eq "the table's columns are those of bin/locityper_report.py" "$(head -n 1 "$TABLE" 2>/dev/null | tr '\t' ' ')" \
   "locus region status genotype haplotype_1 haplotype_2 quality total_reads unexplained_reads weighted_distance warnings filter reason"
-check_eq "one row per locus, in the database's order" "$(awk -F'\t' 'NR > 1 {print $1}' "$TABLE" 2>/dev/null | paste -sd' ' -)" "HLA-DRB1 HLA-DQB1"
-for l in HLA-DRB1 HLA-DQB1; do
-  row=$(awk -F'\t' -v l="$l" '$1 == l' "$TABLE" 2>/dev/null)
-  check_eq "${l}: called" "$(cut -f3 <<< "$row")" called
-  check "${l}: two panel haplotypes" has '^[^,.][^,]*,[^,.][^,]*$' "$(cut -f4 <<< "$row")"
-  check "${l}: a numeric quality" has '^[0-9]+(\.[0-9]+)?$' "$(cut -f7 <<< "$row")"
-  check_ge "${l}: reads used" "$(cut -f8 <<< "$row")" 1
-  check "${l}: the authors' filter is pass or fail" has '^(pass|fail)$' "$(cut -f12 <<< "$row")"
-  check "${l}: Locityper's result file" test -s "${S}/locityper/work/gt/loci/${l}/res.json.gz"
-done
+check_eq "one row per locus of the database" "$(awk -F'\t' 'NR > 1 {print $1}' "$TABLE" 2>/dev/null | paste -sd' ' -)" "HLA-DQB1"
+l=HLA-DQB1
+row=$(awk -F'\t' -v l="$l" '$1 == l' "$TABLE" 2>/dev/null)
+check_eq "${l}: called" "$(cut -f3 <<< "$row")" called
+check "${l}: two panel haplotypes" has '^[^,.][^,]*,[^,.][^,]*$' "$(cut -f4 <<< "$row")"
+check "${l}: a numeric quality" has '^[0-9]+(\.[0-9]+)?$' "$(cut -f7 <<< "$row")"
+check_ge "${l}: reads used" "$(cut -f8 <<< "$row")" 1
+check "${l}: the authors' filter is pass or fail" has '^(pass|fail)$' "$(cut -f12 <<< "$row")"
+check "${l}: Locityper's result file" test -s "${S}/locityper/work/gt/loci/${l}/res.json.gz"
 check "Locityper's log beside the table" test -s "${S}/locityper/${SAMPLE}_locityper.log"
 echo "${CASE_NAME}: $(awk -F'\t' 'NR > 1 {printf "%s %s q%s %s; ", $1, $4, $7, $12}' "$TABLE" 2>/dev/null)" >> "$E2E_NOTES"
 
