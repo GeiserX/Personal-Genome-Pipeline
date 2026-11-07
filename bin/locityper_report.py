@@ -16,8 +16,10 @@ database was built from (assets/locityper_loci.bed: chrom, start, end, name;
                          which of their two copies), "." when not called
   quality                Locityper's genotype quality, Phred: the chance that
                          another genotype (often a very similar one) is right
-  total_reads            reads Locityper used at the locus
+  total_reads            reads Locityper used at the locus ("." when its
+                         result gives no count)
   unexplained_reads      reads that fit some haplotype but not the two picked
+                         ("." when its result gives no count)
   weighted_distance      the distance from the call to the other likely
                          genotypes, weighted by their probability (edit
                          distance in bp with a database augmented by
@@ -27,7 +29,8 @@ database was built from (assets/locityper_loci.bed: chrom, start, end, name;
                          for their HLA and KIR benchmark (Prodanov et al.
                          2025, Zenodo 15879519 README): no warning, a weighted
                          distance of 30 or less, and fewer than 1000 or fewer
-                         than 20% unexplained reads. "." when not called
+                         than 20% unexplained reads; fail when Locityper gave
+                         no read counts. "." when not called
   reason                 why a locus was not called, or why the filter failed
 
 A locus Locityper did not finish is "not called", never a genotype. Exit code
@@ -82,6 +85,10 @@ def fmt(x, digits):
     return f"{v:.{digits}f}"
 
 
+def dot(n):
+    return "." if n is None else str(n)
+
+
 def warnings_of(res):
     w = res.get("warnings")
     if w in (None, "", "*", []):
@@ -89,6 +96,20 @@ def warnings_of(res):
     if isinstance(w, str):
         return [x for x in w.replace(";", ",").split(",") if x.strip()]
     return [str(x) for x in w]
+
+
+def count(res, key):
+    """A read count of res.json.gz as an int, None when it is absent or not a whole number."""
+    v = res.get(key)
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return v if v >= 0 else None
+    if isinstance(v, float) and v.is_integer() and v >= 0:
+        return int(v)
+    if isinstance(v, str) and v.strip().isdigit():
+        return int(v)
+    return None
 
 
 def judge(res, warns):
@@ -105,9 +126,10 @@ def judge(res, warns):
         why.append("no weighted distance (the database has no haplotype alignments: setup.sh runs locityper augment)")
     elif wd > MAX_WEIGHT_DIST:
         why.append(f"weighted distance {wd:.2f} is above {MAX_WEIGHT_DIST:g}")
-    total = int(res.get("total_reads") or 0)
-    unexpl = int(res.get("unexpl_reads") or 0)
-    if not (unexpl < MAX_UNEXPLAINED or (total > 0 and unexpl < MAX_UNEXPLAINED_SHARE * total)):
+    total, unexpl = count(res, "total_reads"), count(res, "unexpl_reads")
+    if total is None or unexpl is None:
+        why.append("Locityper gave no read counts (total_reads, unexpl_reads), so the unexplained-read rule cannot be checked")
+    elif not (unexpl < MAX_UNEXPLAINED or (total > 0 and unexpl < MAX_UNEXPLAINED_SHARE * total)):
         why.append(f"{unexpl} of {total} reads unexplained (1000 or more, and 20% or more)")
     return ("fail" if why else "pass"), "; ".join(why)
 
@@ -137,7 +159,7 @@ def row_for(name, region, gt_dir, exit_code):
     return {
         "locus": name, "region": region, "status": "called", "genotype": ",".join(haps),
         "haplotype_1": haps[0], "haplotype_2": haps[1], "quality": fmt(res.get("quality"), 1),
-        "total_reads": str(int(res.get("total_reads") or 0)), "unexplained_reads": str(int(res.get("unexpl_reads") or 0)),
+        "total_reads": dot(count(res, "total_reads")), "unexplained_reads": dot(count(res, "unexpl_reads")),
         "weighted_distance": fmt(res.get("weight_dist"), 3), "warnings": ",".join(warns) or ".",
         "filter": filt, "reason": why or ".",
     }

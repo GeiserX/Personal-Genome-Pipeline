@@ -72,7 +72,7 @@ Step 35 (and the PARASCOPY module) runs these three rows one after the other and
 - **CCL3L1**: the no-ALT reference holds one copy of CCL3L1/CCL3L3 (CCL3L3), so every read of either lands there and the row counts both together. The count goes back to Gonzalez 2005 (PMID 15637236), but the disease links reported for it are disputed, so no reading is given. The test fails when a CCL3L1 reading names a disease.
 - **DEFB4** has no row. The beta-defensin repeat that carries it (DEFB4B to DEFB103B) lies in the paralog copies of SPAG11A's Parascopy model, so Parascopy owns it under the rule below. The test plants a DEFB4 row there and checks that the owner check catches it.
 
-The report does not show `<sample>_cn_dosage.tsv` yet; the table and the step log are where to read it.
+Both reports show `<sample>_cn_dosage.tsv` in step 35's section, one line per locus ([step 35](35-paralogs.md#in-the-reports)). `main.nf` does not pass it to the Nextflow `HTML_REPORT` yet, so there the report says the table is not in the output; step 24 reads it from the sample folder.
 
 ### The CYP21A2 row
 
@@ -98,7 +98,7 @@ A site is low when its estimate is more than 0.6 copies under the larger of the 
 
 A row on chrX or chrY is read against the sample's own count there: its controls sit on the same chromosome, so a male's one X or Y gives 1 copy, and `expected` says so. The sex is the declared one: step 35's second argument, and in Nextflow the samplesheet's sex column. Step 16's inferred sex is not used, so both give the same table. A chrY row on a female is `not applicable`; without a sex, chrX and chrY rows are `not assessed` (`sex_unknown`). Every row needs 8x of control depth (4x on chrY), flanks within 1.5x of each other, and an estimate within 0.3 of a whole number; a control with no read makes that row `not assessed` (`broken_control`) and the others still run. A failed bedcov pass writes every row as `not assessed` (`check_failed`).
 
-The couple screen (step 39) reads the table with `couple_report.py screen --cn-intervals ID=<id>_cn_intervals.tsv`: each carrier allele is present, absent or not assessable for each partner, and a male partner's AZF deletions are listed the same way (present means the deletion is there). With `--cnvpytor ID=<id>_cnvs.vcf.gz` (step 18), a CNVpytor call that disagrees with the depth call is printed beside it. Step 39 and the Nextflow couple screen pass both when the partner has them.
+The couple screen (step 39) reads the table with `couple_report.py screen --cn-intervals ID=<id>_cn_intervals.tsv`: each carrier allele is present, absent or not assessable for each partner, and a male partner's AZF deletions are listed the same way (present means the deletion is there). With `--cnvpytor ID=<id>_cnvs.vcf.gz` (step 18), a CNVpytor call that disagrees with the depth call is printed beside it. Step 39 and the Nextflow couple screen pass both when the partner has them. Both reports show the table in step 35's section: the counts by status and each row with a deletion or a duplication.
 
 To change a row, change the script (its hand rows or a pinned download) and run `scripts/ci/build-cn-intervals.py`; `--check` fails when the catalog is not what the downloads give.
 

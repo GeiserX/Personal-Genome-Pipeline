@@ -45,6 +45,7 @@ This pipeline takes raw sequencing data (FASTQ/BAM/VCF) from any vendor and runs
 Put the reads at `$GENOME_DIR/<sample>/fastq/<sample>_R1.fastq.gz` and `_R2.fastq.gz` (a BAM or a VCF works too), then:
 
 ```bash
+git clone https://github.com/GeiserX/OwnGenome.git && cd OwnGenome   # main; `git checkout <tag>` for a release
 export GENOME_DIR=/path/to/your/data SAMPLE=your_name
 ./scripts/setup.sh $GENOME_DIR          # the GRCh38 reference, ClinVar and the images, once
 ./scripts/validate-setup.sh $SAMPLE

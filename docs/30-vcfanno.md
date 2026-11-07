@@ -17,16 +17,16 @@ See [docs/00-reference-setup.md](00-reference-setup.md) for download instruction
 
 ## Annotation Databases
 
-| Database | File | Size | License |
-|---|---|---|---|
-| CADD v1.7 SNVs | `whole_genome_SNVs.tsv.gz` + `.tbi` | ~81.5 GB | Non-commercial |
-| CADD v1.7 indels | `gnomad.genomes.r4.0.indel.tsv.gz` + `.tbi` | ~1.2 GB | Non-commercial |
-| SpliceAI SNVs (masked) | `spliceai_scores.masked.snv.hg38.vcf.gz` + `.tbi` | ~27 GB | Academic and not-for-profit use only |
-| SpliceAI indels (masked) | `spliceai_scores.masked.indel.hg38.vcf.gz` + `.tbi` | ~64 GB | Academic and not-for-profit use only |
-| REVEL v1.3 | `revel_grch38.tsv.gz` + `.tbi` | ~526 MB | Free for research |
-| AlphaMissense | `AlphaMissense_hg38.tsv.gz` + `.tbi` | ~613 MB | CC BY-NC-SA 4.0 |
+| Database | File | Size | License | Nextflow parameters |
+|---|---|---|---|---|
+| CADD v1.7 SNVs | `whole_genome_SNVs.tsv.gz` + `.tbi` | ~81.5 GB | Non-commercial | `--cadd_snv`, `--cadd_snv_index` |
+| CADD v1.7 indels | `gnomad.genomes.r4.0.indel.tsv.gz` + `.tbi` | ~1.2 GB | Non-commercial | `--cadd_indel`, `--cadd_indel_index` |
+| SpliceAI SNVs (masked) | `spliceai_scores.masked.snv.hg38.vcf.gz` + `.tbi` | ~27 GB | Academic and not-for-profit use only | `--spliceai_snv`, `--spliceai_snv_index` |
+| SpliceAI indels (masked) | `spliceai_scores.masked.indel.hg38.vcf.gz` + `.tbi` | ~64 GB | Academic and not-for-profit use only | `--spliceai_indel`, `--spliceai_indel_index` |
+| REVEL v1.3 | `revel_grch38.tsv.gz` + `.tbi` | ~526 MB | Free for research | `--revel`, `--revel_index` |
+| AlphaMissense | `AlphaMissense_hg38.tsv.gz` + `.tbi` | ~613 MB | CC BY-NC-SA 4.0 | `--alphamissense`, `--alphamissense_index` |
 
-All databases are optional. The script detects which files are present and annotates accordingly. A missing database is skipped with a `Skipping:` line in the log.
+All databases are optional. The script detects which files are present and annotates accordingly. A missing database is skipped with a `Skipping:` line in the log. In a Nextflow run each file and its `.tbi` are separate parameters (the last column); `run-all.sh` passes every pair it finds under `${GENOME_DIR}/annotations/`, and the step runs when `vcfanno` is in `--tools` and at least one file is given.
 
 The pipeline uses SpliceAI's **masked** scores, which SpliceAI's authors recommend for variant interpretation. [Reference setup](00-reference-setup.md#spliceai-pre-scored-91-gb) downloads the masked files. The script also accepts the raw files (`spliceai_scores.raw.*`): when both sets are present and indexed it uses the raw ones, and the log names the file in use. The precomputed SpliceAI scores are not open source: they are free for academic and not-for-profit use, and other use needs a commercial license from Illumina.
 

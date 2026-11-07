@@ -68,13 +68,9 @@ v0.5.0 started as post-processing: alignment and variant calling were left to nf
 
 v0.5.0 shipped 27 modules in 6 workflows, for interpretation after calling. CI ran their stub-testable subset; the tools that need a database were checked by hand.
 
-Today the Nextflow path has 39 modules in 7 workflows and runs from FASTQ to the report. The e2e job runs the real tools of most steps on a slice of HG002 and compares the pipeline with the bash steps on the same reads ([docs/testing.md](docs/testing.md)). The Nextflow ExpansionHunter module is only stub-run. VEP, CPSR and AnnotSV need databases the e2e job does not download, and GRIDSS needs a 31 GB Java heap, so no e2e case runs them; CI runs their images' smoke tests instead ([docs/testing.md](docs/testing.md)). See [docs/nextflow.md](docs/nextflow.md) for known limitations.
+Today the Nextflow pipeline runs from FASTQ, a BAM, a CRAM or a VCF to the report. The e2e job runs the real tools of most steps on a slice of HG002 and compares the pipeline with the bash steps on the same reads ([docs/testing.md](docs/testing.md)). The Nextflow ExpansionHunter module is only stub-run. VEP, CPSR and AnnotSV need databases the e2e job does not download, and GRIDSS needs a 31 GB Java heap, so no e2e case runs them; CI runs their images' smoke tests instead ([docs/testing.md](docs/testing.md)). See [docs/nextflow.md](docs/nextflow.md) for known limitations.
 
 - [x] **PR #17 — Full Nextflow pipeline** (v0.5.0): All 6 workflows (PGX, ANNOTATION, CLINICAL, BAM_ANALYSIS, SV, REPORTING) with 27 modules, `--tools` gating, stub CI, Docker + Singularity profiles
-
-### Parallel track: nf-core module contributions
-
-PharmCAT, pypgx, and slivar modules will be contributed to [nf-core/modules](https://github.com/nf-core/modules) under MIT license — independent of the pipeline's GPL-3.0 license. Once merged, these modules will be available to all nf-core pipelines.
 
 ### Bash scripts
 
@@ -82,7 +78,7 @@ PharmCAT, pypgx, and slivar modules will be contributed to [nf-core/modules](htt
 
 ## v0.6.0 to v0.8.2 — Hardening and tool upgrades ✅
 
-Released on 2026-07-01. These releases went to hardening and upgrades instead of the multi-sample and reporting work first planned for v0.6.0 and v0.7.0, which moved to the planned sections below.
+Released on 2026-07-01. These releases went to hardening and upgrades instead of the multi-sample and reporting work first planned for v0.6.0 and v0.7.0; v1.0.0 delivers most of that work.
 
 - [x] **v0.6.0** — Stranger STR annotation (step 9b), a CPIC step that fails loudly instead of silently, safe tool bumps, Nextflow 25.10 support, GitHub-hosted CI runners
 - [x] **v0.7.0** — DeepVariant 1.10, VEP 116, Delly 2.1, and ACMG secondary findings in CPSR (step 17)
@@ -90,31 +86,43 @@ Released on 2026-07-01. These releases went to hardening and upgrades instead of
 - [x] **v0.8.0** — CNV calling moved from CNVnator to CNVpytor 1.3.2 (step 18)
 - [x] **v0.8.1, v0.8.2** — CNVpytor restricted to the main chromosomes; the pypgx image pinned to 0.26.0 to match its bundle
 
+## v1.0.0 — One pipeline from the reads to the report, stable options and outputs
+
+The next release, and the first stable one. From 1.0.0 on, options, config keys, and output file names and formats change only in a backward-compatible way within 1.x; a breaking change waits for 2.0. What it ships beyond v0.8.2:
+
+- [x] **One pipeline from FASTQ** — Nextflow runs fastp, minimap2 with read groups and duplicate marking, the indexcov sex check and DeepVariant with a gVCF, and a samplesheet row can also start from a BAM, a CRAM or a VCF. `run-all.sh` is a thin launcher of that pipeline ([docs/nextflow.md](docs/nextflow.md), [docs/parameters.md](docs/parameters.md))
+- [x] **A reference without ALT contigs** — GRCh38's no-ALT analysis set, and an optional copy with the false duplications masked (`setup.sh --masked-reference`), so depth at CYP2D6, MHC and KIR is real ([docs/00-reference-setup.md](docs/00-reference-setup.md), [docs/realignment.md](docs/realignment.md))
+- [x] **Sample checks before interpretation** — a vendor VCF checked before any step runs on it, and the hard genes this genome's reads could not cover ([docs/vcf-first.md](docs/vcf-first.md), [docs/16b-mosdepth.md](docs/16b-mosdepth.md))
+- [x] **New steps 33 to 53** — sample identity, CRAM archive, paralog genes (Parascopy, Paraphase), PGx consensus, Y haplogroup, raw-data export, blood groups, traits, archaic and ancient ancestry, Y-STRs, Lp(a), viral DNA, Exomiser, CHIP, mobile element insertions, MoChA, VNtyper and Locityper; most are opt-in ([docs/pipeline-overview.md](docs/pipeline-overview.md))
+- [x] **Copy number from depth** at catalog loci such as SMN1, CYP21A2, HP and recurrent deletions like 1q21.1 ([docs/cn-loci.md](docs/cn-loci.md))
+- [x] **A report people can read** — chapters, charts, how sure each finding is, what changed since the previous run, and a lookup by gene or rsID ([docs/24-html-report.md](docs/24-html-report.md), [docs/delta-report.md](docs/delta-report.md), [docs/lookup.md](docs/lookup.md))
+- [x] **See the reads behind a finding** — the genome viewer opens any finding with your own reads, without uploading anything ([docs/viewer.md](docs/viewer.md))
+- [x] **Projection onto the 1000 Genomes reference panel** — step 26 projects the sample onto pgsc_calc's panel and names the most similar population, replacing the single-sample PCA
+- [x] **Carrier cross-check automation** — step 39 screens two partners of a pedigree for shared recessive and X-linked risk ([docs/39-couple.md](docs/39-couple.md))
+- [x] **PRS percentile estimation** — step 25 runs pgsc_calc, which with the ancestry panel reports each score as a percentile among the most similar reference group
+- [x] **Somalier sample identity QC** — step 33 (`sample_qc` in Nextflow): somalier's sex from the reads checked against the declared sex, the relatedness of every pair of samples in a run, and VerifyBamID2's contamination estimate ([docs/33-sample-qc.md](docs/33-sample-qc.md))
+- [x] **GLNexus joint genotyping** — step 38 joint-calls the family's DeepVariant gVCFs with GLnexus ([docs/multi-sample.md](docs/multi-sample.md#family-analysis-step-38-opt-in))
+- [x] **Trio analysis support** — step 38 checks the declared relationships with somalier, phases each child of a complete trio by inheritance (WhatsHap), and writes de novo candidates when both parents are sequenced and compound heterozygotes in trans or in cis ([docs/multi-sample.md](docs/multi-sample.md#family-analysis-step-38-opt-in))
+- [x] **Interactive HTML dashboard** — step 24's single-page report: seven chapters with a table of contents, charts, a closing list of every gene and rsID the results name, and one section printable on its own; the live site adds a search box over the same list ([docs/24-html-report.md](docs/24-html-report.md))
+- [x] **Database refresh** — `setup.sh --refresh clinvar` fetches the latest ClinVar in place, a monthly issue lists which databases and images have a newer release, and `bin/owngenome_recheck.py` says which results a newer ClinVar or catalog would change ([docs/updating.md](docs/updating.md), [docs/recheck.md](docs/recheck.md))
+- [x] **Progress dashboard** — a live web page, not a terminal UI: the step map, the time left as a range, and alerts before a task runs out of memory or disk ([docs/live-site.md](docs/live-site.md), [docs/run-state.md](docs/run-state.md), [docs/alerts.md](docs/alerts.md))
+
 ## Planned — Multi-sample & joint analysis
 
-Every step currently runs on a single sample in isolation. This work would make the pipeline useful for families and cohorts; no release is assigned to it yet.
+Steps 38 and 39 already work across a family (v1.0.0 above). What is left has no release assigned yet.
 
-- [x] **Projection onto the 1000 Genomes reference panel** — step 26 projects the sample onto pgsc_calc's panel and names the most similar population, replacing the single-sample PCA
 - [ ] **Multi-sample SV merging** — merge Manta/Delly calls across 2+ samples (e.g., partners, parent-child) to identify shared and private structural variants
-- [ ] **Carrier cross-check automation** — given two VCFs, automatically check shared autosomal recessive carrier status (currently manual; see `docs/multi-sample.md`)
-- [x] **PRS percentile estimation** — step 25 runs pgsc_calc, which with the ancestry panel reports each score as a percentile among the most similar reference group
-- [x] **Somalier sample identity QC** — step 33 (`sample_qc` in Nextflow): somalier's sex from the reads checked against the declared sex, the relatedness of every pair of samples in a run, and VerifyBamID2's contamination estimate
-- [ ] **GLNexus joint genotyping** — merge per-sample gVCFs into joint-called cohort VCFs; requires switching DeepVariant to `--output_gvcf` mode
-- [ ] **Trio analysis support** — de novo variant calling and compound heterozygote phasing for parent-child trios, with slivar inheritance model queries (de novo, compound het, X-linked recessive, autosomal recessive)
 
 ## Planned — Reporting & user experience
 
-Make results more accessible to non-bioinformaticians.
+Make results more accessible to non-bioinformaticians. The HTML report, the database refresh and the live progress page shipped in v1.0.0 (above); what is left has no release assigned yet.
 
-- [ ] **Interactive HTML dashboard** — single-page HTML report combining all step outputs with collapsible sections, variant tables, PRS charts, and pharmacogenomics summaries
 - [ ] **PDF clinical summary** — one-page printable summary designed to hand to a healthcare provider (PharmCAT results, ClinVar pathogenic hits, key carrier findings)
-- [ ] **Database refresh** — `setup.sh --refresh clinvar` to fetch the latest ClinVar in place, and a monthly issue that lists which databases and images have a newer release
-- [ ] **Progress dashboard** — real-time terminal UI showing step status, elapsed time, and resource usage during `run-all.sh` execution
 - [ ] **Conda/Bioconda alternative** — offer a non-Docker installation path for HPC environments where Docker is not available
 
-## v1.0.0 — Local-first distributed platform
+## Later — Local-first distributed platform
 
-The long-term vision: a self-hostable, open-source health data platform — the "Home Assistant of personal genomics."
+Not in any release yet. The long-term vision: a self-hostable, open-source health data platform — the "Home Assistant of personal genomics."
 
 - [ ] **Local worker agent** — lightweight daemon that runs the pipeline on the user's own hardware, reporting progress to a central coordinator. Users with powerful machines run their own analysis; users without can opt into a shared compute pool
 - [ ] **Central web UI** — result visualization, step management, multi-sample comparison dashboard. No raw genomic data stored centrally — only aggregate results and metadata
@@ -122,6 +130,7 @@ The long-term vision: a self-hostable, open-source health data platform — the 
 - [ ] **Health integration layer** — combine genomic findings with clinical history, lab results, and supplement plans in a unified personal health record. Structured data import from common lab formats (HL7 FHIR, PDF extraction)
 - [ ] **Consumer DNA one-click import** — streamlined import from 23andMe, AncestryDNA, MyHeritage, and other consumer genotyping platforms, building on the existing `chip-to-vcf.sh` converter
 - [ ] Open-source everything, self-hostable, no vendor lock-in
+- [ ] **nf-core module contributions** — offer the PharmCAT, pypgx and slivar modules to [nf-core/modules](https://github.com/nf-core/modules) under MIT, independent of the pipeline's GPL-3.0 license
 
 ## Ongoing maintenance
 
@@ -137,7 +146,7 @@ These are not versioned milestones but continuous responsibilities.
 
 These are out of scope for this pipeline and unlikely to be added.
 
-- **Cloud-only execution** — the pipeline is local-first by design. v1.0.0 envisions optional cloud portability via workflow engines, but the default path will always be local consumer hardware.
+- **Cloud-only execution** — the pipeline is local-first by design, and the default path will always be local consumer hardware.
 - **Clinical validation / CLIA compliance** — this pipeline is for personal exploration, not clinical diagnostics. It will never carry a clinical validation stamp.
 
 ---

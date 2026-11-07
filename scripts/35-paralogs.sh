@@ -157,6 +157,11 @@ echo "Models: ${POP} (${MODELS}), loci: ${LOCI}"
 mkdir -p "$OUTDIR"
 WORK="${OUTDIR}/${SAMPLE}_parascopy.part"
 rm -rf "$WORK" "${OUTDIR}/depth.part"
+# The depth tables of an earlier run go first: a step that stops after the
+# new SMN tables are in place must not leave an old HBA, dosage, CYP21A2 or
+# interval table that reads as this run's result.
+rm -f "${OUTDIR}/${SAMPLE}_hba_copy_number.tsv" "${OUTDIR}/${SAMPLE}_cn_dosage.tsv" \
+  "${OUTDIR}/${SAMPLE}_cyp21a2_psv.tsv" "${OUTDIR}/${SAMPLE}_cn_intervals.tsv"
 mkdir -p "$WORK"
 # Background depth once, then the copy number of each catalog row
 run_in --cpus "${THREADS}" --memory 8g "${PARASCOPY_IMAGE}" \

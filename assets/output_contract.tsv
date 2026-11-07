@@ -420,6 +420,8 @@ switch	EXTRA_CALLERS	-	-	-	-	stable	-	-
 switch	BENCHMARK	-	-	-	-	stable	-	-
 switch	FAMILIES	-	-	-	-	experimental	-	-
 switch	OWNGENOME_LIVE_URL	-	-	-	-	experimental	-	-
+switch	LOCITYPER_DATA	-	-	-	-	experimental	-	-
+switch	LOCITYPER_BG_REGION	-	-	-	-	experimental	-	-
 switch	NXF_VER	-	-	-	-	stable	-	-
 switch	NXF_WORK	-	-	-	-	stable	-	-
 switch	NXF_HOME	-	-	-	-	stable	-	-

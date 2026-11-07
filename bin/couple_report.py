@@ -451,6 +451,11 @@ def cyp21a2_finding(path, genes):
 CN_ALLELES = (("GJB6_D13S1830", "del(GJB6-D13S1830)"), ("CFTR_dele2_3", "CFTRdele2,3"),
               ("HBB_exon3_del", "HBB exon 3 deletion"), ("HBB_619bp_del", "HBB 619 bp deletion"),
               ("HBD_HBB_Sicilian_del", "Sicilian (delta-beta)0 deletion"))
+# The genes each allele of CN_ALLELES is a change of, as the carrier list
+# names them (del(GJB6-D13S1830) is a DFNB1 allele beside GJB2 changes).
+CN_ALLELE_GENES = (("GJB2/GJB6 (DFNB1)", ("GJB2", "GJB6"), ("GJB6_D13S1830",)),
+                   ("CFTR", ("CFTR",), ("CFTR_dele2_3",)),
+                   ("HBB", ("HBB",), ("HBB_exon3_del", "HBB_619bp_del", "HBD_HBB_Sicilian_del")))
 # Named as deletions, so present reads as "the deletion is there" (as for CN_ALLELES).
 CN_AZF = (("AZFa", "AZFa deletion"), ("AZFb", "AZFb deletion"),
           ("AZFc_DAZ", "AZFc deletion (DAZ copies; gr/gr and b2/b3 leave two of four)"))
@@ -512,6 +517,35 @@ def cnv_note(row, dels):
     if state == "absent" and hit:
         return "CNVpytor (step 18) calls a deletion here"
     return ""
+
+
+def cn_shared(a, b, intervals, found, carrier):
+    """The genes where both partners carry a change once the read-depth
+    alleles count: one has a present allele of CN_ALLELES and the other a
+    present allele or a finding in the same gene. The gene table leaves
+    these alleles out, so without this a couple who both carry CFTRdele2,3
+    would read as sharing nothing. intervals: {partner: {locus: row}} of the
+    partners with an interval table; carrier: the genes of the carrier list,
+    so a gene the list leaves out is no shared risk here either."""
+    names = dict(CN_ALLELES)
+    out = []
+    for label, genes, loci in CN_ALLELE_GENES:
+        if not any(g in carrier for g in genes):
+            continue
+        have, by_depth = {}, False
+        for s in (a, b):
+            iv = intervals.get(s) or {}
+            alleles = ["%s present (read depth, step 35: %s)" % (names[x], cn_state(iv.get(x))[1])
+                       for x in loci if cn_state(iv.get(x))[0] == "present"]
+            hits = [f["text"] for f in found.get(s, []) if f["gene"] in genes]
+            by_depth = by_depth or bool(alleles)
+            if alleles or hits:
+                have[s] = "; ".join(alleles + hits)
+        if len(have) == 2 and by_depth:
+            out.append("**%s**: %s: %s; %s: %s. Both partners may carry a change in %s: the gene table does not "
+                       "count read-depth alleles, so a clinical test has to confirm them before the chance for a "
+                       "child can be given." % (label, a, have[a], b, have[b], label))
+    return out
 
 
 def cn_lines(s, sex, intervals, dels):
@@ -648,7 +682,7 @@ COUNSEL = ("This is a screen, not a diagnosis, and not medical advice. Before ac
            "can say what a negative screen leaves out for your ancestry.")
 
 
-def write_markdown(path, a, b, sexes, rows, assessed, gaps, ngenes, common, cn=None):
+def write_markdown(path, a, b, sexes, rows, assessed, gaps, ngenes, common, cn=None, shared_cn=None):
     def sx(s):
         return sexes.get(s) or "sex unknown"
     out = ["# Couple carrier screen: %s and %s" % (a, b), "",
@@ -671,7 +705,12 @@ def write_markdown(path, a, b, sexes, rows, assessed, gaps, ngenes, common, cn=N
         out.append("")
 
     section("Shared risk: both partners carry a change in the same gene", "shared",
+            "No gene of the list where both partners carry a change in the gene table; read depth (step 35) "
+            "adds a possible shared risk, below." if shared_cn else
             "No gene of the list where both partners carry a change.")
+    if shared_cn:
+        out.extend(["Possible shared risk from read depth (step 35's carrier deletion alleles, not in the gene "
+                    "table):", ""] + ["- " + x for x in shared_cn] + [""])
     section("X-linked findings", "x_linked", "No change in an X-linked gene of the list.")
     section("Genes where only one partner carries a change", "one_partner", "None.")
     if cn:
@@ -751,10 +790,11 @@ def cmd_screen(a):
             print("%s and %s: not screened, %s %s no ClinVar screen (step 06's <sample>_clinvar_hits.vcf)"
                   % (x, y, " and ".join(lack), "has" if len(lack) == 1 else "have"))
             continue
-        found, assessed, gaps, cn = {}, {}, [], []
+        found, assessed, gaps, cn, ivs = {}, {}, [], [], {}
         for s in (x, y):
             if s in cni:
-                cn += cn_lines(s, sexes[s], read_cn_intervals(cni[s]), cnvpytor_deletions(cnv[s]) if s in cnv else None)
+                ivs[s] = read_cn_intervals(cni[s])
+                cn += cn_lines(s, sexes[s], ivs[s], cnvpytor_deletions(cnv[s]) if s in cnv else None)
             elif cni:
                 gaps.append("Carrier deletion alleles of %s: no interval table (step 35)." % s)
             aside = []
@@ -812,13 +852,16 @@ def cmd_screen(a):
         write_table(base + ".tsv", rows)
         for s in (x, y):
             write_table(os.path.join(a.out_dir, "%s_couple_carrier.tsv" % s), rows)
-        write_markdown(base + ".md", x, y, sexes, rows, assessed, gaps, len(genes), common, cn)
+        shared_cn = cn_shared(x, y, ivs, found, genes)
+        write_markdown(base + ".md", x, y, sexes, rows, assessed, gaps, len(genes), common, cn, shared_cn)
         n = {k: sum(1 for r in rows if r["result"] == k) for k in ("shared", "x_linked", "one_partner")}
         print("%s and %s: %d shared gene%s, %d X-linked, %d with one partner only (%s.tsv)" % (
             x, y, n["shared"], "" if n["shared"] == 1 else "s", n["x_linked"], n["one_partner"], base))
         for r in rows:
             if r["result"] == "shared":
                 print("  shared: %s (%s): %s" % (r["gene"], r["condition"], r["offspring_risk"]))
+        for line in shared_cn:
+            print("  possibly shared, from read depth: %s" % line.split(":", 1)[0].strip("*"))
         done += 1
     if not done:
         die(["no couple of the pedigree has a ClinVar screen for both partners: run step 06 for each"], 1)

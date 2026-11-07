@@ -12,7 +12,9 @@
 #        ExpansionHunter's (step 09, <sample>/expansion_hunter/<sample>_eh.vcf),
 #        Parascopy's SMN1 table (step 35, <sample>/paralogs/<sample>_smn_copy_number.tsv),
 #        step 35's interval table (<sample>/paralogs/<sample>_cn_intervals.tsv:
-#        the carrier deletion alleles and a male partner's AZF regions) and
+#        the carrier deletion alleles and a male partner's AZF regions), step
+#        35's CYP21A2 table (<sample>/paralogs/<sample>_cyp21a2_psv.tsv: the 30 kb
+#        chimeric deletion and pseudogene conversions) and
 #        CNVpytor's calls, its cross-check (step 18, <sample>/cnvpytor/<sample>_cnvs.vcf.gz),
 #        GENCODE's exons (setup.sh: reference/gencode.v<release>.basic.exons.bed)
 #        and AnnotSV's benign loss set (setup.sh --annotsv-data, with gnomAD-SV's
@@ -119,7 +121,8 @@ for s in ${NAMED[@]+"${NAMED[@]}"}; do
   [ -d "${GENOME_DIR}/${s}" ] || continue
   for kind in "clinvar:clinvar/${s}_clinvar_hits.vcf:06" "delly:delly/${s}_sv.vcf.gz:19" \
               "eh:expansion_hunter/${s}_eh.vcf:09" "smn:paralogs/${s}_smn_copy_number.tsv:35" \
-              "cn-intervals:paralogs/${s}_cn_intervals.tsv:35" "cnvpytor:cnvpytor/${s}_cnvs.vcf.gz:18"; do
+              "cn-intervals:paralogs/${s}_cn_intervals.tsv:35" "cyp21a2:paralogs/${s}_cyp21a2_psv.tsv:35" \
+              "cnvpytor:cnvpytor/${s}_cnvs.vcf.gz:18"; do
     IFS=: read -r k rel step <<< "$kind"
     if [ -f "${GENOME_DIR}/${s}/${rel}" ]; then
       ARGS+=("--${k}" "${s}=/genome/${s}/${rel}")

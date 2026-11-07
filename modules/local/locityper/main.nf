@@ -39,8 +39,12 @@ process LOCITYPER {
     script:
     def bg = params.locityper_bg_region ? "-b ${params.locityper_bg_region}" : ''
     """
-    # The database's k-mer counts and haplotypes come from one reference: DONE names its .fai.
-    grep -q "fai=\$(sha256sum ${fai} | cut -d' ' -f1) " ${data}/DONE || {
+    # setup.sh --locityper-data writes DONE last: without it the install stopped.
+    [ -s ${data}/DONE ] || {
+        echo "ERROR: Locityper's database ${data} is not finished (no DONE); run scripts/setup.sh --locityper-data <genome_dir> again" >&2; exit 1; }
+    # The database's k-mer counts and haplotypes come from one reference: DONE names
+    # the digests of its .fai and its FASTA (a FASTA with the same contigs and other bases is another reference).
+    grep -q "fai=\$(sha256sum ${fai} | cut -d' ' -f1) fasta=\$(sha256sum ${fasta} | cut -d' ' -f1) " ${data}/DONE || {
         echo "ERROR: Locityper's database ${data} was built from another reference than ${fasta} (setup.sh --locityper-data)" >&2; exit 1; }
     mkdir -p work
     rc=0

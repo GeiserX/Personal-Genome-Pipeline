@@ -54,8 +54,11 @@ CSQ_SHOW = [
     ("gnomADe_AF", "gnomAD exomes AF"),
     ("MAX_AF", "highest population AF"),
 ]
-# Keys of a summary.json entry that name a gene.
-GENE_KEYS = ("gene", "genes", "Gene", "SYMBOL", "symbol")
+# Keys of a summary.json entry that name a gene. "locus" is how the repeat
+# expansions, the CFTR/UGT1A1/SLC6A4 readings and the Locityper rows name
+# theirs (HTT, CFTR, HLA-DRB1); their regions sit under other keys (region,
+# chrom), so a locus value is a name.
+GENE_KEYS = ("gene", "genes", "Gene", "SYMBOL", "symbol", "locus")
 SYMBOLIC = {"<*>", "<NON_REF>", "*"}
 IMPACT_RANK = {"HIGH": 0, "MODERATE": 1, "LOW": 2, "MODIFIER": 3}
 

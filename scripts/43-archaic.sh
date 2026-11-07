@@ -65,7 +65,9 @@ run_in --cpus 1 --memory 4g -v "${PGP_ROOT}/bin:/pgp-bin:ro" "$PYTHON_IMAGE" \
     --pop "$POP" --out-dir "${W}/gt"
 
 # One IBDmix run per chromosome and archaic genome, THREADS at a time, with the
-# options of Chen et al. 2020 (their j.cell.2020.01.012-workflow/config.yaml).
+# options of Chen et al. 2020 (their j.cell.2020.01.012-workflow/config.yaml),
+# and, as there, the genome's mask (-r): the positions where its call is
+# masked score nothing except a homozygous mismatch.
 echo "[2/3] IBDmix against each archaic genome..."
 # shellcheck disable=SC2016  # $1 and $2 belong to the inner bash
 run_in --cpus "$THREADS" --memory 8g "$IBDMIX_IMAGE" bash -euo pipefail -c '
@@ -73,7 +75,7 @@ run_in --cpus "$THREADS" --memory 8g "$IBDMIX_IMAGE" bash -euo pipefail -c '
       c=$(basename "$1" .gt.gz)
       gzip -dc "$1" > "$1.txt"
       for a in Altai Vindija Denisova; do
-        ibdmix -g "$1.txt" -s "$2/gt/samples.txt" -n "$a" -o "$2/ibdmix/$c.$a.txt.part" \
+        ibdmix -g "$1.txt" -s "$2/gt/samples.txt" -n "$a" -r "$2/gt/$c.$a.mask.bed" -o "$2/ibdmix/$c.$a.txt.part" \
           -d 4 -m 1 -a 0.01 -e 0.002 -c 2 > "$2/ibdmix/$c.$a.log" 2>&1 \
           || { tail -n 20 "$2/ibdmix/$c.$a.log"; exit 1; }
         mv "$2/ibdmix/$c.$a.txt.part" "$2/ibdmix/$c.$a.txt"
